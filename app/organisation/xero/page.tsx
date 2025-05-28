@@ -21,7 +21,9 @@ interface FunctionItem {
 export default function XeroPage() {
   const { addLog } = useLog();
   const [projectCostFileUploaded, setProjectCostFileUploaded] = useState(false);
-  
+  const [isUploadingProjectCostFile, setIsUploadingProjectCostFile] = useState(false);
+  const [projectCostRunButtonText, setProjectCostRunButtonText] = useState('Run'); // New state for button text
+
   // Use the custom hook for Sync Project logic
   const {
     isSyncing,
@@ -30,6 +32,95 @@ export default function XeroPage() {
     handleSyncProject,
     handleDownloadReport,
   } = useSyncProject();
+
+  const handleProjectCostFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    
+    // Reset button text and uploaded status at the beginning of a new upload attempt
+    setProjectCostRunButtonText('Run');
+    setProjectCostFileUploaded(false);
+
+    let currentUploadLogId: string | undefined = undefined; // Variable to store the log ID for the current upload
+
+    if (!file) {
+      addLog({ message: 'No file selected for project cost update.', source: 'XeroPage' });
+      return;
+    }
+
+    // Create the initial log entry and get its ID
+    const initialMessage = `Selected file: ${file.name} (${file.type}). Preparing to upload...`;
+    currentUploadLogId = addLog({ message: initialMessage, source: 'XeroPage' });
+
+    setIsUploadingProjectCostFile(true);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const processExcelUrl = process.env.NEXT_PUBLIC_PROCESS_EXCEL_URL;
+    if (!processExcelUrl) {
+      addLog({ 
+        message: 'Error: NEXT_PUBLIC_PROCESS_EXCEL_URL is not defined. Cannot upload file.', 
+        source: 'XeroPage', 
+        idToUpdate: currentUploadLogId, // Use the captured ID
+        mode: 'replace' 
+      });
+      setIsUploadingProjectCostFile(false);
+      return;
+    }
+
+    try {
+      addLog({ 
+        message: `Uploading ${file.name} and sending to backend...`, 
+        source: 'XeroPage', 
+        idToUpdate: currentUploadLogId, // Use the captured ID
+        mode: 'append' 
+      });
+      const response = await fetch(processExcelUrl, {
+        method: 'POST',
+        body: formData,
+      });
+
+      addLog({ 
+        message: `Backend received ${file.name}. Processing file...`, 
+        source: 'XeroPage', 
+        idToUpdate: currentUploadLogId, // Use the captured ID
+        mode: 'append' 
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server responded with ${response.status}: ${errorText}`);
+      }
+
+      await response.json(); // Still need to consume the JSON body
+
+      addLog({ 
+        message: `File ${file.name} processed successfully. Data received from backend.`, 
+        source: 'XeroPage', 
+        idToUpdate: currentUploadLogId, // Use the captured ID
+        mode: 'replace' 
+      });
+      setProjectCostFileUploaded(true);
+      setProjectCostRunButtonText('Step 2'); // Change button text
+    } catch (error: any) {
+      addLog({ 
+        message: `Error processing ${file.name}: ${error.message}`, 
+        source: 'XeroPage', 
+        idToUpdate: currentUploadLogId, // Use the captured ID
+        mode: 'replace' 
+      });
+      console.error("File upload error:", error);
+    } finally {
+      setIsUploadingProjectCostFile(false);
+      // Reset file input to allow re-uploading the same file
+      event.target.value = '';
+    }
+  };
+
+  const triggerProjectCostFileInput = () => {
+    document.getElementById('projectCostFileInput')?.click();
+  };
+
 
   const functions: FunctionItem[] = [
     {
@@ -42,14 +133,18 @@ export default function XeroPage() {
     {
       name: 'Update Project Cost',
       description: 'Recalculates and updates the total project costs in Xero based on the latest expenses and resource allocations.',
-      uploadAction: () => {
-        addLog({ message: 'Upload File button clicked for Update Project Cost', source: 'XeroPage' });
-        setProjectCostFileUploaded(true);
+      uploadAction: triggerProjectCostFileInput,
+      runAction: () => {
+        if (projectCostFileUploaded) {
+          addLog({ message: `Step 2 action triggered for Update Project Cost.`, source: 'XeroPage' });
+          // Implement actual Step 2 logic here
+        } else {
+          addLog({ message: 'Please upload a file first for Update Project Cost.', source: 'XeroPage' });
+        }
       },
-      runAction: () => addLog({ message: 'Run button clicked for Update Project Cost', source: 'XeroPage' }),
       uploadIcon: ArrowUpTrayIcon,
       runIcon: PlayIcon,
-      disabled: isSyncing, // Assuming sync should disable this too
+      disabled: isSyncing || isUploadingProjectCostFile,
     },
     {
       name: 'Manhour Billing',
@@ -66,6 +161,14 @@ export default function XeroPage() {
       <p className="mt-2 text-sm text-gray-700 mb-8">
         This page provides custom functions to interact with Xero data and streamline your project management workflows.
       </p>
+      {/* Hidden file input for project cost update */}
+      <input
+        type="file"
+        id="projectCostFileInput"
+        style={{ display: 'none' }}
+        onChange={handleProjectCostFileUpload}
+        accept=".xlsx, .xls" // Accept Excel files
+      />
 
       {showDownloadReportButton && (
         <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg shadow">
@@ -96,20 +199,20 @@ export default function XeroPage() {
                   <button
                     type="button"
                     onClick={func.uploadAction}
-                    disabled={func.disabled}
+                    disabled={func.disabled || isUploadingProjectCostFile}
                     className="inline-flex items-center justify-center rounded-md border border-transparent bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {func.uploadIcon && <func.uploadIcon className="size-5 mr-2" />}
-                    Upload File
+                    {isUploadingProjectCostFile ? 'Uploading...' : 'Upload File'}
                   </button>
                   <button
                     type="button"
                     onClick={func.runAction}
-                    disabled={!projectCostFileUploaded || func.disabled}
+                    disabled={!projectCostFileUploaded || func.disabled || isUploadingProjectCostFile}
                     className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {func.runIcon && <func.runIcon className="size-5 mr-2" />}
-                    Run
+                    {projectCostRunButtonText} {/* Use dynamic button text */}
                   </button>
                 </div>
               ) : (
