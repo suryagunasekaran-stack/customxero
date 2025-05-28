@@ -18,31 +18,61 @@ export interface XeroTokenData {
 
 export async function saveToken(tokenData: XeroTokenData): Promise<void> {
   try {
-    // Store the token in Redis, setting an expiry that matches the token's actual expiry
-    // This helps Redis automatically clean up expired tokens.
-    // expires_at is a timestamp, so calculate seconds from now.
-    const secondsUntilExpiry = Math.max(0, Math.floor((tokenData.expires_at - Date.now()) / 1000));
-    await redis.set(XERO_TOKEN_KEY, JSON.stringify(tokenData), 'EX', secondsUntilExpiry);
-    console.log('Token saved to Redis');
+    // Ensure all fields are present, especially for logging
+    const dataToSave: XeroTokenData = {
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      expires_at: tokenData.expires_at,
+      tenant_id: tokenData.tenant_id,
+      scope: tokenData.scope || '', // Provide default if undefined
+      token_type: tokenData.token_type || '' // Provide default if undefined
+    };
+
+    const secondsUntilExpiry = Math.max(0, Math.floor((dataToSave.expires_at - Date.now()) / 1000));
+    
+    console.log('[saveToken] Attempting to save token to Redis.');
+    console.log('[saveToken] Key:', XERO_TOKEN_KEY);
+    console.log('[saveToken] Expires in seconds (calculated):', secondsUntilExpiry);
+    console.log('[saveToken] Token data being saved (JSON):', JSON.stringify(dataToSave));
+
+    if (secondsUntilExpiry <= 0) {
+        console.warn('[saveToken] Calculated expiry is zero or negative. Token might expire immediately or not be set with TTL if Redis does not support 0 for indefinite.');
+    }
+    if (!dataToSave.access_token || !dataToSave.refresh_token || !dataToSave.tenant_id) {
+        console.error('[saveToken] Critical token data missing before save:', { hasAccessToken: !!dataToSave.access_token, hasRefreshToken: !!dataToSave.refresh_token, hasTenantId: !!dataToSave.tenant_id });
+        throw new Error('Critical token data missing before save');
+    }
+
+    await redis.set(XERO_TOKEN_KEY, JSON.stringify(dataToSave), 'EX', secondsUntilExpiry);
+    console.log('[saveToken] Token successfully saved to Redis.');
   } catch (error) {
-    console.error('Failed to save token to Redis:', error);
-    throw new Error('Failed to save token');
+    console.error('[saveToken] Failed to save token to Redis:', error);
+    throw new Error('Failed to save token to Redis'); // Re-throw to indicate failure
   }
 }
 
 export async function loadToken(): Promise<XeroTokenData | null> {
+  console.log('[loadToken] Attempting to load token from Redis. Key:', XERO_TOKEN_KEY);
   try {
     const tokenString = await redis.get(XERO_TOKEN_KEY);
     if (tokenString) {
+      console.log('[loadToken] Token string found in Redis:', tokenString);
       const token: XeroTokenData = JSON.parse(tokenString);
-      console.log('Token loaded from Redis');
+      // Validate essential fields after loading
+      if (!token.access_token || !token.refresh_token || !token.tenant_id) {
+        console.error('[loadToken] Loaded token is missing critical data:', token);
+        // Optionally, delete the corrupted token from Redis
+        // await redis.del(XERO_TOKEN_KEY);
+        // console.log('[loadToken] Deleted corrupted token from Redis.');
+        return null; 
+      }
+      console.log('[loadToken] Token successfully loaded and parsed from Redis:', token);
       return token;
     }
-    console.log('No token found in Redis');
+    console.log('[loadToken] No token string found in Redis for key:', XERO_TOKEN_KEY);
     return null;
   } catch (error) {
-    console.error('Failed to load token from Redis:', error);
-    // For other errors, you might want to throw or handle differently
+    console.error('[loadToken] Failed to load or parse token from Redis:', error);
     return null;
   }
 }

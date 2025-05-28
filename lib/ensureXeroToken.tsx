@@ -3,22 +3,37 @@ import { loadToken, saveToken, XeroTokenData } from '@/lib/xeroToken';
 import qs from 'qs';
 
 export async function ensureValidToken(): Promise<XeroTokenData> {
+    console.log('[ensureValidToken] Attempting to ensure a valid token.');
     const token = await loadToken();
-    if (!token) throw new Error('No token found');
+    if (!token) {
+        console.error('[ensureValidToken] No token found by loadToken. Throwing error.');
+        throw new Error('No token found in storage. Please authenticate.'); // More descriptive error
+    }
+    console.log('[ensureValidToken] Token loaded from storage:', token);
 
     const now = Date.now();
     const buffer = 60 * 1000; // 60 seconds buffer
+    console.log(`[ensureValidToken] Current time: ${now}, Token expires_at: ${token.expires_at}, Buffer: ${buffer}`);
 
-    if (token.expires_at > now + buffer) { // Added buffer here
-        // ✅ Still valid
+    if (token.expires_at > now + buffer) {
+        console.log('[ensureValidToken] Token is still valid (expires_at > now + buffer). Returning current token.');
         return token;
     }
 
-    // 🔄 Refresh
+    console.log('[ensureValidToken] Token has expired or is within buffer. Attempting to refresh.');
+    if (!token.refresh_token) {
+        console.error('[ensureValidToken] No refresh_token available. Cannot refresh. Throwing error.');
+        // Optionally, delete the stale token from Redis here if it has no refresh token
+        // await deleteToken(); 
+        throw new Error('Token expired and no refresh_token available. Please re-authenticate.');
+    }
+
     const body = qs.stringify({
         grant_type: 'refresh_token',
         refresh_token: token.refresh_token,
     });
+    console.log('[ensureValidToken] Refreshing token. Request body:', body);
+    console.log('[ensureValidToken] Client ID for refresh:', process.env.CLIENT_ID ? 'Set' : 'NOT SET');
 
     const res = await fetch('https://identity.xero.com/connect/token', {
         method: 'POST',
@@ -31,19 +46,37 @@ export async function ensureValidToken(): Promise<XeroTokenData> {
         body,
     });
 
-    const newToken = await res.json();
+    const refreshedTokenData = await res.json();
+    console.log('[ensureValidToken] Response from token refresh:', refreshedTokenData);
 
-    const expiresAt = Date.now() + newToken.expires_in * 1000;
+    if (!res.ok || !refreshedTokenData.access_token) {
+        console.error('[ensureValidToken] Failed to refresh token. Status:', res.status, 'Response:', refreshedTokenData);
+        // Optionally, delete the old token from Redis if refresh fails
+        // await deleteToken();
+        throw new Error(`Failed to refresh token: ${res.status} - ${refreshedTokenData.error || 'Unknown error'}. Please re-authenticate.`);
+    }
 
-    const updated: XeroTokenData = {
-        access_token: newToken.access_token,
-        refresh_token: newToken.refresh_token,
-        expires_at: expiresAt,
-        tenant_id: token.tenant_id,
-        scope: '',
-        token_type: ''
+    const newExpiresAt = Date.now() + refreshedTokenData.expires_in * 1000;
+    console.log(`[ensureValidToken] New token expires_in: ${refreshedTokenData.expires_in}s, New expires_at: ${newExpiresAt}`);
+
+    const updatedToken: XeroTokenData = {
+        access_token: refreshedTokenData.access_token,
+        // Xero might return a new refresh token, or the old one might persist.
+        // It's safer to use the one from the refresh response if provided.
+        refresh_token: refreshedTokenData.refresh_token || token.refresh_token, 
+        expires_at: newExpiresAt,
+        tenant_id: token.tenant_id, // Tenant ID does not change on refresh
+        scope: refreshedTokenData.scope || token.scope, // Persist or update scope
+        token_type: refreshedTokenData.token_type || token.token_type, // Persist or update token_type
     };
+    console.log('[ensureValidToken] New token data constructed after refresh:', updatedToken);
 
-    await saveToken(updated);
-    return updated;
+    try {
+        await saveToken(updatedToken);
+        console.log('[ensureValidToken] Successfully saved refreshed token.');
+        return updatedToken;
+    } catch (saveError) {
+        console.error('[ensureValidToken] Error saving refreshed token:', saveError);
+        throw new Error('Failed to save refreshed token after successful refresh. Please try again.');
+    }
 }
