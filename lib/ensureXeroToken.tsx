@@ -7,8 +7,9 @@ export async function ensureValidToken(): Promise<XeroTokenData> {
     if (!token) throw new Error('No token found');
 
     const now = Date.now();
+    const buffer = 60 * 1000; // 60 seconds buffer
 
-    if (token.expires_at > now) {
+    if (token.expires_at > now + buffer) { // Added buffer here
         // ✅ Still valid
         return token;
     }
@@ -38,7 +39,9 @@ export async function ensureValidToken(): Promise<XeroTokenData> {
         access_token: newToken.access_token,
         refresh_token: newToken.refresh_token,
         expires_at: expiresAt,
-        tenant_id: token.tenant_id, // tenant stays same
+        tenant_id: token.tenant_id,
+        scope: '',
+        token_type: ''
     };
 
     await saveToken(updated);
