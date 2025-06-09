@@ -1,8 +1,8 @@
 // lib/ensureXeroToken.ts
-import { loadToken, saveToken, XeroTokenData } from '@/lib/xeroToken';
+import { loadToken, saveToken, getEffectiveTenantId, XeroTokenData } from '@/lib/xeroToken';
 import qs from 'qs';
 
-export async function ensureValidToken(): Promise<XeroTokenData> {
+export async function ensureValidToken(): Promise<XeroTokenData & { effective_tenant_id: string }> {
     console.log('[ensureValidToken] Attempting to ensure a valid token.');
     const token = await loadToken();
     if (!token) {
@@ -11,13 +11,21 @@ export async function ensureValidToken(): Promise<XeroTokenData> {
     }
     console.log('[ensureValidToken] Token loaded from storage:', token);
 
+    // Get the effective tenant ID (selected tenant or fallback)
+    const effectiveTenantId = await getEffectiveTenantId();
+    if (!effectiveTenantId) {
+        console.error('[ensureValidToken] No tenant ID available. Throwing error.');
+        throw new Error('No tenant ID available. Please select a tenant.');
+    }
+    console.log('[ensureValidToken] Using effective tenant ID:', effectiveTenantId);
+
     const now = Date.now();
     const buffer = 60 * 1000; // 60 seconds buffer
     console.log(`[ensureValidToken] Current time: ${now}, Token expires_at: ${token.expires_at}, Buffer: ${buffer}`);
 
     if (token.expires_at > now + buffer) {
         console.log('[ensureValidToken] Token is still valid (expires_at > now + buffer). Returning current token.');
-        return token;
+        return { ...token, effective_tenant_id: effectiveTenantId };
     }
 
     console.log('[ensureValidToken] Token has expired or is within buffer. Attempting to refresh.');
@@ -68,13 +76,14 @@ export async function ensureValidToken(): Promise<XeroTokenData> {
         tenant_id: token.tenant_id, // Tenant ID does not change on refresh
         scope: refreshedTokenData.scope || token.scope, // Persist or update scope
         token_type: refreshedTokenData.token_type || token.token_type, // Persist or update token_type
+        available_tenants: token.available_tenants // Preserve available tenants
     };
     console.log('[ensureValidToken] New token data constructed after refresh:', updatedToken);
 
     try {
         await saveToken(updatedToken);
         console.log('[ensureValidToken] Successfully saved refreshed token.');
-        return updatedToken;
+        return { ...updatedToken, effective_tenant_id: effectiveTenantId };
     } catch (saveError) {
         console.error('[ensureValidToken] Error saving refreshed token:', saveError);
         throw new Error('Failed to save refreshed token after successful refresh. Please try again.');

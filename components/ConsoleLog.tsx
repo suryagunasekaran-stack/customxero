@@ -13,6 +13,18 @@ const ConsoleLog = () => {
     }
   }, [logs]);
 
+  const renderMessage = (message: string) => {
+    // Split by \n and render each line separately
+    const lines = message.split('\\n');
+    
+    return lines.map((line, index) => (
+      <React.Fragment key={index}>
+        {index > 0 && <br />}
+        {line}
+      </React.Fragment>
+    ));
+  };
+
   return (
     <div className="h-full flex flex-col">
       <h3 className="text-lg font-medium text-gray-900 mb-2">Console</h3>
@@ -24,14 +36,20 @@ const ConsoleLog = () => {
           <p className="text-gray-400">No logs yet...</p>
         ) : (
           logs.map((log, index) => (
-            <div key={index} className="mb-1">
-              <span className="text-green-400">
-                [{log.timestamp.toLocaleTimeString()}]
-              </span>
-              {log.source && (
-                <span className="text-blue-400 ml-1">[{log.source}]</span>
-              )}
-              <span className="ml-2">{log.message}</span>
+            <div key={index} className="mb-3">
+              {/* Header line with timestamp and source */}
+              <div className="flex items-center mb-1">
+                <span className="text-green-400">
+                  [{log.timestamp.toLocaleTimeString()}]
+                </span>
+                {log.source && (
+                  <span className="text-blue-400 ml-1">[{log.source}]</span>
+                )}
+              </div>
+              {/* Message content on full width */}
+              <div className="text-gray-100 leading-relaxed whitespace-pre-wrap pl-1">
+                {renderMessage(log.message)}
+              </div>
             </div>
           ))
         )}

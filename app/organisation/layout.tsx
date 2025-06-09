@@ -12,6 +12,7 @@ import { Bars3Icon, BellIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { MagnifyingGlassIcon } from '@heroicons/react/20/solid'
 import { LogProvider } from '../../contexts/LogContext';
 import ConsoleLog from '../../components/ConsoleLog';
+import TenantSwitcher from '../../components/TenantSwitcher';
 
 const user = {
     name: 'Tom Cook',
@@ -123,7 +124,7 @@ export default function Example({ children }: { children: React.ReactNode }) {
                             <div className="hidden border-t border-white/20 py-5 lg:block">
                                 <div className="grid grid-cols-3 items-center gap-8">
                                     <div className="col-span-2">
-                                        <nav className="flex space-x-4">
+                                        <nav className="flex space-x-4 items-center">
                                             {navigation.map((item) => (
                                                 <a
                                                     key={item.name}
@@ -137,6 +138,9 @@ export default function Example({ children }: { children: React.ReactNode }) {
                                                     {item.name}
                                                 </a>
                                             ))}
+                                            <div className="ml-4">
+                                                <TenantSwitcher />
+                                            </div>
                                         </nav>
                                     </div>
                                     <div className="mx-auto grid w-full max-w-md grid-cols-1">

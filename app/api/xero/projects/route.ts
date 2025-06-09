@@ -5,7 +5,7 @@ export async function GET() {
   console.log('[Xero API Route] Received GET request for projects.');
 
   try {
-    const { access_token, tenant_id } = await ensureValidToken();
+    const { access_token, effective_tenant_id } = await ensureValidToken();
     console.log('[Xero API Route] Successfully obtained Xero token and tenant ID.');
 
     const projectStates = 'INPROGRESS,CLOSED'; // Fetch both in-progress and closed projects
@@ -22,7 +22,7 @@ export async function GET() {
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${access_token}`,
-          'Xero-Tenant-Id': tenant_id, // Corrected header name
+          'Xero-Tenant-Id': effective_tenant_id, // Corrected header name
           'Accept': 'application/json',
         },
       });

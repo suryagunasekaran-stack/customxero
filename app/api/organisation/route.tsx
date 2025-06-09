@@ -3,12 +3,12 @@ import { ensureValidToken } from '@/lib/ensureXeroToken';
 
 export async function GET() {
     try {
-        const { access_token, tenant_id } = await ensureValidToken();
+        const { access_token, effective_tenant_id } = await ensureValidToken();
 
         const res = await fetch('https://api.xero.com/api.xro/2.0/Organisation', {
             headers: {
                 Authorization: `Bearer ${access_token}`,
-                'Xero-tenant-id': tenant_id,
+                'Xero-tenant-id': effective_tenant_id,
                 Accept: 'application/json',
             },
         });

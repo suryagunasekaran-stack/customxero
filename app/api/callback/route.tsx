@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { saveToken, XeroTokenData } from '@/lib/xeroToken'; // Import XeroTokenData
+import { saveToken, saveTenants, XeroTokenData, XeroTenant } from '@/lib/xeroToken'; // Import XeroTokenData
 import qs from 'qs';
 
 // Extend globalThis to include xeroToken and tenantId
@@ -65,11 +65,29 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'Failed to fetch tenants or no tenants found', details: tenants }, { status: tenantRes.status });
     }
 
-    const activeTenant = tenants.find(t => t.tenantType === 'ORGANISATION') || tenants[0]; // Prefer ORGANISATION type
-    console.log('[Callback Route] Selected active tenant:', activeTenant);
+    // Transform tenants to our expected format
+    const availableTenants: XeroTenant[] = tenants.map(tenant => ({
+        tenantId: tenant.tenantId,
+        tenantName: tenant.tenantName || 'Unknown Organisation',
+        tenantType: tenant.tenantType || 'ORGANISATION',
+        createdDateUtc: tenant.createdDateUtc || '',
+        updatedDateUtc: tenant.updatedDateUtc || ''
+    }));
 
-    // globalThis.xeroToken = token; // Avoid using globalThis for storing tokens
-    // globalThis.tenantId = activeTenant.tenantId;
+    console.log('[Callback Route] Available tenants:', availableTenants);
+
+    // Save all available tenants
+    try {
+        await saveTenants(availableTenants);
+        console.log('[Callback Route] Available tenants saved successfully.');
+    } catch (saveError) {
+        console.error('[Callback Route] Error saving tenants:', saveError);
+        return NextResponse.json({ error: 'Failed to save tenants', details: (saveError as Error).message }, { status: 500 });
+    }
+
+    // Select default tenant (prefer ORGANISATION type, or first available)
+    const activeTenant = tenants.find(t => t.tenantType === 'ORGANISATION') || tenants[0];
+    console.log('[Callback Route] Selected active tenant:', activeTenant);
 
     const now = Date.now();
     const expiresInMs = token.expires_in * 1000;
@@ -83,6 +101,7 @@ export async function GET(req: NextRequest) {
         tenant_id: activeTenant.tenantId,
         scope: token.scope, // Make sure scope is included
         token_type: token.token_type, // Make sure token_type is included
+        available_tenants: availableTenants
     };
 
     console.log('[Callback Route] Preparing to save token data:', tokenDataToSave);
@@ -96,6 +115,13 @@ export async function GET(req: NextRequest) {
     }
 
     const baseUrl = req.nextUrl.origin;
-    console.log('[Callback Route] Redirecting to organisation page:', `${baseUrl}/organisation`);
-    return NextResponse.redirect(`${baseUrl}/organisation`);
+    
+    // If multiple tenants are available, redirect to tenant selection page
+    if (availableTenants.length > 1) {
+        console.log('[Callback Route] Multiple tenants available, redirecting to tenant selection page');
+        return NextResponse.redirect(`${baseUrl}/tenant-selection`);
+    } else {
+        console.log('[Callback Route] Single tenant available, redirecting to organisation page');
+        return NextResponse.redirect(`${baseUrl}/organisation`);
+    }
 }
