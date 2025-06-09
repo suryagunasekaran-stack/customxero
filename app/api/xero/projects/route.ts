@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken'; // Ensure this path is correct
+import { trackXeroApiCall } from '@/lib/xeroApiTracker';
 
 export async function GET() {
   console.log('[Xero API Route] Received GET request for projects.');
@@ -26,6 +27,9 @@ export async function GET() {
           'Accept': 'application/json',
         },
       });
+
+      // Track API call with actual rate limit data from Xero response headers
+      await trackXeroApiCall(response.headers, effective_tenant_id);
 
       if (!response.ok) {
         let errorBody = '';

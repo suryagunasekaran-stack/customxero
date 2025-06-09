@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
+import { trackXeroApiCall } from '@/lib/xeroApiTracker';
 
 const REQUIRED_TASKS = ['Manhour', 'Overtime', 'Supply Labour', 'Transport'];
 
@@ -135,6 +136,9 @@ async function createMissingTasks(
         },
         body: JSON.stringify(taskPayload)
       });
+
+      // Track API call with actual rate limit data from Xero response headers
+      await trackXeroApiCall(response.headers, effective_tenant_id);
       
       if (response.ok) {
         const createdTask = await response.json();
@@ -296,6 +300,9 @@ export async function GET() {
         },
       });
 
+      // Track API call with actual rate limit data from Xero response headers
+      await trackXeroApiCall(response.headers, effective_tenant_id);
+
       if (!response.ok) {
         let errorBody = '';
         try {
@@ -357,6 +364,9 @@ export async function GET() {
               'Accept': 'application/json',
             },
           });
+
+          // Track API call with actual rate limit data from Xero response headers
+          await trackXeroApiCall(tasksResponse.headers, effective_tenant_id);
 
           if (!tasksResponse.ok) {
             if (tasksResponse.status === 429) {

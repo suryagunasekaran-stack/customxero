@@ -11,7 +11,10 @@ import {
 import { Bars3Icon, BellIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { MagnifyingGlassIcon } from '@heroicons/react/20/solid'
 import { LogProvider } from '../../contexts/LogContext';
+import { XeroApiUsageProvider } from '../../contexts/XeroApiUsageContext';
 import ConsoleLog from '../../components/ConsoleLog';
+import XeroApiUsageBar from '../../components/XeroApiUsageBar';
+import TestApiCallButton from '../../components/xero/TestApiCallButton';
 import TenantSwitcher from '../../components/TenantSwitcher';
 
 const user = {
@@ -38,6 +41,7 @@ function classNames(...classes: string[]) {
 export default function Example({ children }: { children: React.ReactNode }) {
     return (
         <LogProvider>
+            <XeroApiUsageProvider>
             <>
                 <div className="min-h-screen flex flex-col bg-white-100">
                     <Popover as="header" className="bg-indigo-600 pb-24 ">
@@ -275,6 +279,23 @@ export default function Example({ children }: { children: React.ReactNode }) {
 
                                 {/* Right column */}
                                 <div className="grid grid-cols-1 gap-4">
+                                    {/* Test API Call Button */}
+                                    <section aria-labelledby="test-api-title">
+                                        <h2 id="test-api-title" className="sr-only">
+                                            Test API Call
+                                        </h2>
+                                        <TestApiCallButton />
+                                    </section>
+                                    
+                                    {/* Xero API Usage */}
+                                    <section aria-labelledby="api-usage-title">
+                                        <h2 id="api-usage-title" className="sr-only">
+                                            API Usage
+                                        </h2>
+                                        <XeroApiUsageBar />
+                                    </section>
+                                    
+                                    {/* Console */}
                                     <section aria-labelledby="section-2-title">
                                         <h2 id="section-2-title" className="sr-only">
                                             Console
@@ -299,6 +320,7 @@ export default function Example({ children }: { children: React.ReactNode }) {
                     </footer>
                 </div>
             </>
+            </XeroApiUsageProvider>
         </LogProvider>
     )
 }
