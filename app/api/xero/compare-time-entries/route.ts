@@ -168,12 +168,33 @@ export async function POST(request: NextRequest) {
     console.log(`[Update Plan API] Available Xero projects: ${availableProjectCodes.length} [${availableProjectCodes.join(', ')}]`);
     console.log(`[Update Plan API] Consolidated payload projects: ${consolidatedProjectCodes.length} [${consolidatedProjectCodes.join(', ')}]`);
     
-    // Find matches
+    // Find matches and detailed debugging
     const matchingCodes = consolidatedProjectCodes.filter(code => availableProjectCodes.includes(code));
     const nonMatchingCodes = consolidatedProjectCodes.filter(code => !availableProjectCodes.includes(code));
+    const xeroOnlyProjects = availableProjectCodes.filter(code => !consolidatedProjectCodes.includes(code));
     
     console.log(`[Update Plan API] 🎯 Matching projects: ${matchingCodes.length} [${matchingCodes.join(', ')}]`);
-    console.log(`[Update Plan API] ❌ Non-matching projects: ${nonMatchingCodes.length} [${nonMatchingCodes.slice(0, 5).join(', ')}${nonMatchingCodes.length > 5 ? '...' : ''}]`);
+    console.log(`[Update Plan API] ❌ In Consolidated but NOT in Xero: ${nonMatchingCodes.length} [${nonMatchingCodes.slice(0, 10).join(', ')}${nonMatchingCodes.length > 10 ? '...' : ''}]`);
+    console.log(`[Update Plan API] 🔍 In Xero but NOT in Consolidated: ${xeroOnlyProjects.length} [${xeroOnlyProjects.slice(0, 10).join(', ')}${xeroOnlyProjects.length > 10 ? '...' : ''}]`);
+    
+    // Detailed analysis
+    console.log(`[Update Plan API] 📊 DETAILED PROJECT ANALYSIS:`);
+    console.log(`   • Total Xero INPROGRESS projects: ${availableProjectCodes.length}`);
+    console.log(`   • Total Consolidated payload projects: ${consolidatedProjectCodes.length}`);
+    console.log(`   • Projects that match: ${matchingCodes.length}`);
+    console.log(`   • Projects in consolidated but missing from Xero: ${nonMatchingCodes.length} (likely CLOSED/COMPLETED)`);
+    console.log(`   • Projects in Xero but missing from consolidated: ${xeroOnlyProjects.length} (likely new/recent projects)`);
+    
+    // Show first 20 missing projects from each side for debugging
+    if (nonMatchingCodes.length > 0) {
+      console.log(`[Update Plan API] 🚨 First 20 projects in consolidated but NOT in Xero INPROGRESS:`);
+      console.log(`   ${nonMatchingCodes.slice(0, 20).join(', ')}`);
+    }
+    
+    if (xeroOnlyProjects.length > 0) {
+      console.log(`[Update Plan API] 🆕 First 20 projects in Xero INPROGRESS but NOT in consolidated:`);
+      console.log(`   ${xeroOnlyProjects.slice(0, 20).join(', ')}`);
+    }
 
     const projectActions: ProjectUpdateAction[] = [];
     const statistics = {

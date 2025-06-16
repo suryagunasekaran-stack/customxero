@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { trackXeroApiCall } from '@/lib/xeroApiTracker';
+import { ensureValidToken } from '@/lib/ensureXeroToken';
 
 interface ConsolidatedTask {
   name: string;
@@ -109,17 +111,20 @@ interface ExecutionStatistics {
   duration: string;
 }
 
-async function fetchProjectTasks(projectId: string, tenantId: string): Promise<XeroTask[]> {
+async function fetchProjectTasks(projectId: string, accessToken: string, tenantId: string): Promise<XeroTask[]> {
   const url = `https://api.xero.com/projects.xro/2.0/Projects/${projectId}/Tasks`;
   
   const response = await fetch(url, {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${process.env.XERO_ACCESS_TOKEN}`,
+      'Authorization': `Bearer ${accessToken}`,
       'xero-tenant-id': tenantId,
       'Accept': 'application/json'
     }
   });
+
+  // Track API usage
+  await trackXeroApiCall(response.headers, tenantId);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch tasks for project ${projectId}: ${response.status} ${response.statusText}`);
@@ -129,19 +134,22 @@ async function fetchProjectTasks(projectId: string, tenantId: string): Promise<X
   return data.items || [];
 }
 
-async function updateTask(projectId: string, taskId: string, updateData: any, tenantId: string): Promise<void> {
+async function updateTask(projectId: string, taskId: string, updateData: any, accessToken: string, tenantId: string): Promise<void> {
   const url = `https://api.xero.com/projects.xro/2.0/projects/${projectId}/tasks/${taskId}`;
   
   const response = await fetch(url, {
     method: 'PUT',
     headers: {
-      'Authorization': `Bearer ${process.env.XERO_ACCESS_TOKEN}`,
+      'Authorization': `Bearer ${accessToken}`,
       'xero-tenant-id': tenantId,
       'Accept': 'application/json',
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(updateData)
   });
+
+  // Track API usage
+  await trackXeroApiCall(response.headers, tenantId);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -204,6 +212,10 @@ export async function POST(request: NextRequest) {
   console.log('[Execute Update Plan API] Starting execution at', startTime.toISOString());
 
   try {
+    // Get valid token from Redis
+    const { access_token } = await ensureValidToken();
+    console.log('[Execute Update Plan API] Successfully obtained Xero token.');
+
     const body: ExecutionRequest = await request.json();
     const { updatePlan, tenantId } = body;
 
@@ -239,6 +251,19 @@ export async function POST(request: NextRequest) {
     // Process only projects that need updates (skip no_match and skip actions)
     const projectsToUpdate = updatePlan.projectActions.filter(project => project.action === 'update');
     
+    // Safety check: Limit batch size to prevent timeouts (max 150 projects per execution)
+    if (projectsToUpdate.length > 150) {
+      return NextResponse.json({ 
+        error: `Batch too large: ${projectsToUpdate.length} projects. Maximum 150 projects per execution to prevent timeouts. Please split the update plan.` 
+      }, { status: 400 });
+    }
+
+    // Log execution estimate for large batches
+    if (projectsToUpdate.length > 100) {
+      const estimatedMinutes = Math.ceil((projectsToUpdate.length * 1.5) / 60); // Rough estimate
+      console.log(`[Execute Update Plan API] Large batch detected: ${projectsToUpdate.length} projects. Estimated execution time: ${estimatedMinutes} minutes`);
+    }
+    
     for (const project of projectsToUpdate) {
       statistics.totalProjectsProcessed++;
       
@@ -256,8 +281,14 @@ export async function POST(request: NextRequest) {
       try {
         console.log(`[Execute Update Plan API] Processing project ${project.projectCode} (${project.projectId})`);
         
+        // Add delay to respect rate limits (800ms between project API calls for batches > 50)
+        if (statistics.totalProjectsProcessed > 1) {
+          const delay = projectsToUpdate.length > 50 ? 800 : 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        
         // Fetch current tasks for this project
-        const currentTasks = await fetchProjectTasks(project.projectId!, tenantId);
+        const currentTasks = await fetchProjectTasks(project.projectId!, access_token, tenantId);
         console.log(`[Execute Update Plan API] Found ${currentTasks.length} tasks for project ${project.projectCode}`);
 
         // Process each task that needs updating
@@ -282,21 +313,47 @@ export async function POST(request: NextRequest) {
           }
 
           try {
-            // Prepare update payload
+            // Use the existing task's currency to avoid validation errors
+            // Demo company uses USD, but other tenants might use SGD
+            let expectedCurrency = currentTask.rate?.currency;
+            
+            // Fallback if existing task has no currency set
+            if (!expectedCurrency) {
+              // Try to use consolidated payload currency as fallback
+              expectedCurrency = taskUpdate.consolidatedTask.rate.currency;
+              console.log(`[Execute Update Plan API] WARNING: Existing task has no currency, using consolidated currency: ${expectedCurrency}`);
+            }
+            
+            // Final fallback to SGD for production (most common case)
+            if (!expectedCurrency) {
+              expectedCurrency = 'SGD';
+              console.log(`[Execute Update Plan API] WARNING: No currency available, defaulting to SGD`);
+            }
+            
+            // Log currency detection
+            console.log(`[Execute Update Plan API] Currency detection: Consolidated=${taskUpdate.consolidatedTask.rate.currency}, Xero=${currentTask.rate?.currency || 'none'}, Using=${expectedCurrency}`);
+            
+            // Prepare update payload using the existing task's currency
             const updatePayload = {
               name: taskUpdate.taskName,
               rate: {
-                currency: taskUpdate.consolidatedTask.rate.currency,
+                currency: expectedCurrency, // Use Xero's expected currency
                 value: taskUpdate.consolidatedTask.rate.value / 100 // Convert from cents to dollars
               },
               chargeType: taskUpdate.consolidatedTask.chargeType,
               estimateMinutes: taskUpdate.consolidatedTask.estimateMinutes
             };
 
-            console.log(`[Execute Update Plan API] Updating task ${taskUpdate.taskName} (${currentTask.taskId})`);
+            console.log(`[Execute Update Plan API] Updating task ${taskUpdate.taskName} (${currentTask.taskId}) with currency ${expectedCurrency}`);
+            
+            // Add delay between task updates to respect rate limits (300ms for large batches)
+            if (statistics.totalTasksProcessed > 1) {
+              const taskDelay = projectsToUpdate.length > 50 ? 300 : 500;
+              await new Promise(resolve => setTimeout(resolve, taskDelay));
+            }
             
             // Execute the update
-            await updateTask(project.projectId!, currentTask.taskId, updatePayload, tenantId);
+            await updateTask(project.projectId!, currentTask.taskId, updatePayload, access_token, tenantId);
             
             result.taskResults.push({
               taskName: taskUpdate.taskName,

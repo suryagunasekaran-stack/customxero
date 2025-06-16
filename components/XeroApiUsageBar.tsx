@@ -9,6 +9,7 @@ const XeroApiUsageBar = () => {
   const { usage, refreshUsage, checkTenantChange } = useXeroApiUsage();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [timeUntilReset, setTimeUntilReset] = useState('');
+  const [lastUpdatedTime, setLastUpdatedTime] = useState('');
 
   // Calculate percentages
   const dailyUsagePercentage = (usage.usedToday / usage.dailyLimit) * 100;
@@ -39,7 +40,7 @@ const XeroApiUsageBar = () => {
     return 'text-green-600';
   };
 
-  // Update countdown timer
+  // Update countdown timer and format last updated time
   useEffect(() => {
     const updateTimer = () => {
       const now = new Date();
@@ -55,11 +56,16 @@ const XeroApiUsageBar = () => {
       }
     };
 
+    // Format last updated time client-side only
+    if (typeof window !== 'undefined') {
+      setLastUpdatedTime(usage.lastUpdated.toLocaleTimeString());
+    }
+
     updateTimer();
     const interval = setInterval(updateTimer, 60000); // Update every minute
 
     return () => clearInterval(interval);
-  }, [usage.resetTime]);
+  }, [usage.resetTime, usage.lastUpdated]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -160,7 +166,7 @@ const XeroApiUsageBar = () => {
             {usage.usedThisMinute} used ({minuteUsagePercentage.toFixed(1)}%)
           </span>
           <span className="text-xs text-gray-400">
-            Last updated: {usage.lastUpdated.toLocaleTimeString()}
+            Last updated: {lastUpdatedTime || 'Loading...'}
           </span>
         </div>
       </div>

@@ -66,10 +66,9 @@ export async function GET() {
 
     console.log(`[Extract Project Codes API] Successfully fetched ${allProjects.length} INPROGRESS projects.`);
 
-    // FOR TESTING: Limit to first 3 projects to avoid rate limits
-    const testingLimit = 3;
-    const projectsToProcess = allProjects.slice(0, testingLimit);
-    console.log(`[Extract Project Codes API] FOR TESTING: Processing only first ${projectsToProcess.length} projects (limited from ${allProjects.length})`);
+    // Process all projects for production
+    const projectsToProcess = allProjects;
+    console.log(`[Extract Project Codes API] Processing all ${projectsToProcess.length} projects for production.`);
 
     // Extract project codes and create mapping
     const projectCodeMapping: { [code: string]: any[] } = {};

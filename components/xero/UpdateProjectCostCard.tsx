@@ -558,6 +558,23 @@ export default function UpdateProjectCostCard({ disabled = false }: UpdateProjec
         throw new Error('Tenant ID not available. Please extract project codes first.');
       }
 
+      // Validate update plan has projects that need updating
+      const projectsToUpdate = updatePlanData.updatePlan.projectActions.filter((p: any) => p.action === 'update');
+      if (projectsToUpdate.length === 0) {
+        throw new Error('No projects require updates. All projects are already up to date.');
+      }
+
+      // Log estimated execution time for large batches
+      if (projectsToUpdate.length > 50) {
+        const estimatedMinutes = Math.ceil((projectsToUpdate.length * 1.2) / 60);
+        addLog({ 
+          message: `\n⏱️ Large batch execution: ${projectsToUpdate.length} projects. Estimated time: ${estimatedMinutes} minutes`, 
+          source: 'UpdateProjectCostCard',
+          idToUpdate: logId,
+          mode: 'append'
+        });
+      }
+
       const response = await fetch('/api/xero/execute-update-plan', {
         method: 'POST',
         headers: {
@@ -759,21 +776,21 @@ export default function UpdateProjectCostCard({ disabled = false }: UpdateProjec
                                 <div className="text-gray-900">{(tasks.reduce((sum, task) => sum + task.estimateMinutes, 0) / 60).toFixed(1)}h</div>
                                 <div className="text-gray-600">${(tasks.reduce((sum, task) => sum + task.rate.value, 0) / 100).toFixed(2)}</div>
                               </div>
-                            </div>
+                                        </div>
                             <div className="mt-2 space-y-1">
                               {tasks.map((task, taskIndex) => (
                                 <div key={taskIndex} className="text-xs p-2 bg-gray-50 rounded flex justify-between items-center">
-                                  <div className="flex items-center space-x-4">
+                                              <div className="flex items-center space-x-4">
                                     <span className="text-gray-600">{task.name}</span>
                                     <span className="text-gray-600">{task.chargeType}</span>
-                                  </div>
-                                  <div className="text-right">
+                                              </div>
+                                              <div className="text-right">
                                     <div className="text-gray-700">{(task.estimateMinutes / 60).toFixed(1)}h</div>
                                     <div className="text-gray-500">${(task.rate.value / 100).toFixed(2)}</div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
                           </div>
                         ))}
                       </div>
