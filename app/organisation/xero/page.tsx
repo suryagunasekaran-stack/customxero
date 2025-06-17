@@ -21,10 +21,10 @@ export default function XeroPage() {
       </p>
 
       <div className="flex flex-col gap-6">
-        {/* <SyncProjectCard disabled={false} /> */}
+        <SyncProjectCard disabled={false} />
         <UpdateProjectCostCard disabled={isSyncing} />
         <CheckProjectTasksCard disabled={isSyncing} />
-        {/* <ManhourBillingCard disabled={isSyncing} /> */}
+        <ManhourBillingCard disabled={isSyncing} />
       </div>
     </div>
   );
