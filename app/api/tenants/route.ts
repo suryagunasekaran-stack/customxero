@@ -1,22 +1,49 @@
 import { NextResponse } from 'next/server';
-import { loadTenants, saveSelectedTenant, loadSelectedTenant } from '@/lib/xeroToken';
+import { auth } from '@/lib/auth';
+import { xeroTokenManager } from '@/lib/xeroTokenManager';
 
 // GET - Return available tenants and current selection
 export async function GET() {
   try {
-    const availableTenants = await loadTenants();
-    const selectedTenant = await loadSelectedTenant();
-
-    if (!availableTenants || availableTenants.length === 0) {
+    const session = await auth();
+    
+    if (!session) {
       return NextResponse.json({ 
-        error: 'No tenants available. Please authenticate with Xero first.' 
+        error: 'Not authenticated' 
+      }, { status: 401 });
+    }
+
+    const userId = session.user?.email || 'unknown';
+    
+    // First check if tenants are in the session
+    let tenants = session.tenants;
+    let selectedTenant = session.tenantId;
+    
+    // If not in session, try to get from storage
+    if (!tenants) {
+      const storedTenants = await xeroTokenManager.getUserTenants(userId);
+      if (storedTenants) {
+        tenants = storedTenants;
+      }
+    }
+    
+    if (!selectedTenant) {
+      const storedSelectedTenant = await xeroTokenManager.getSelectedTenant(userId);
+      if (storedSelectedTenant) {
+        selectedTenant = storedSelectedTenant;
+      }
+    }
+
+    if (!tenants || tenants.length === 0) {
+      return NextResponse.json({ 
+        error: 'No tenants available. Please re-authenticate with Xero.' 
       }, { status: 404 });
     }
 
     return NextResponse.json({
-      availableTenants,
+      availableTenants: tenants,
       selectedTenant,
-      hasMultipleTenants: availableTenants.length > 1
+      hasMultipleTenants: tenants.length > 1
     });
   } catch (error) {
     console.error('[Tenants API] Error fetching tenants:', error);
@@ -29,6 +56,15 @@ export async function GET() {
 // POST - Set selected tenant
 export async function POST(request: Request) {
   try {
+    const session = await auth();
+    
+    if (!session) {
+      return NextResponse.json({ 
+        error: 'Not authenticated' 
+      }, { status: 401 });
+    }
+
+    const userId = session.user?.email || 'unknown';
     const { tenantId } = await request.json();
 
     if (!tenantId) {
@@ -38,14 +74,14 @@ export async function POST(request: Request) {
     }
 
     // Verify the tenant exists in available tenants
-    const availableTenants = await loadTenants();
-    if (!availableTenants || !availableTenants.find(t => t.tenantId === tenantId)) {
+    const availableTenants = session.tenants || await xeroTokenManager.getUserTenants(userId) || [];
+    if (!availableTenants.find((t: any) => t.tenantId === tenantId)) {
       return NextResponse.json({ 
         error: 'Invalid tenant ID' 
       }, { status: 400 });
     }
 
-    await saveSelectedTenant(tenantId);
+    await xeroTokenManager.saveSelectedTenant(userId, tenantId);
 
     return NextResponse.json({ 
       success: true, 

@@ -3,16 +3,12 @@ import { ensureValidToken } from '@/lib/ensureXeroToken';
 
 export async function GET() {
     try {
-        const { access_token, effective_tenant_id } = await ensureValidToken();
-
-        if (!access_token || !effective_tenant_id) {
-            return NextResponse.json({ error: 'Not authenticated or tenant ID missing' }, { status: 401 });
-        }
+        const tokenData = await ensureValidToken();
 
         const res = await fetch('https://api.xero.com/projects.xro/2.0/Projects', {
             headers: {
-                Authorization: `Bearer ${access_token}`,
-                'Xero-tenant-id': effective_tenant_id,
+                Authorization: `Bearer ${tokenData.access_token}`,
+                'Xero-tenant-id': tokenData.effective_tenant_id,
                 Accept: 'application/json',
             },
         });
@@ -30,7 +26,7 @@ export async function GET() {
 
         return NextResponse.json(inProgress ?? []);
     } catch (err: any) {
-        if (err.message.includes('No token found') || err.message.includes('Token refresh logic not yet implemented')) {
+        if (err.message.includes('No authenticated session') || err.message.includes('Please login') || err.message.includes('re-authenticate')) {
             return NextResponse.json({ error: err.message }, { status: 401 });
         }
         return NextResponse.json({ error: `Internal Server Error: ${err.message}` }, { status: 500 });
