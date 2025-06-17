@@ -6,6 +6,7 @@ export interface ValidTokenData {
     access_token: string;
     effective_tenant_id: string;
     user_id: string;
+    available_tenants: any[];
 }
 
 export async function ensureValidToken(): Promise<ValidTokenData> {
@@ -38,35 +39,46 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
     
     const userId = session.user?.email || 'unknown';
     
-    // First check if there's a tenant in the session
-    if (session.tenantId) {
-        console.log('[ensureValidToken] Using tenant ID from session:', session.tenantId);
-        return {
-            access_token: session.accessToken,
-            effective_tenant_id: session.tenantId,
-            user_id: userId
-        };
+    // Get available tenants from session or storage
+    let availableTenants = session.tenants || [];
+    if (!availableTenants || availableTenants.length === 0) {
+        availableTenants = await xeroTokenManager.getUserTenants(userId) || [];
     }
     
-    // Otherwise try to get from our storage
+    // ALWAYS check Redis first for the selected tenant to get the latest value
     const effectiveTenantId = await xeroTokenManager.getSelectedTenant(userId);
     if (effectiveTenantId) {
-        console.log('[ensureValidToken] Using tenant ID from storage:', effectiveTenantId);
+        console.log('[ensureValidToken] Using tenant ID from Redis storage:', effectiveTenantId);
         return {
             access_token: session.accessToken,
             effective_tenant_id: effectiveTenantId,
-            user_id: userId
+            user_id: userId,
+            available_tenants: availableTenants
         };
     }
     
-    // If we have tenants in session, use the first one
-    if (session.tenants && session.tenants.length > 0) {
-        const defaultTenant = session.tenants.find((t: any) => t.tenantType === 'ORGANISATION') || session.tenants[0];
+    // Fall back to session if no Redis value
+    if (session.tenantId) {
+        console.log('[ensureValidToken] No Redis tenant, using session tenant:', session.tenantId);
+        // Save it to Redis for consistency
+        await xeroTokenManager.saveSelectedTenant(userId, session.tenantId);
+        return {
+            access_token: session.accessToken,
+            effective_tenant_id: session.tenantId,
+            user_id: userId,
+            available_tenants: availableTenants
+        };
+    }
+    
+    // If we have tenants but no selection, use the first one
+    if (availableTenants && availableTenants.length > 0) {
+        const defaultTenant = availableTenants.find((t: any) => t.tenantType === 'ORGANISATION') || availableTenants[0];
         await xeroTokenManager.saveSelectedTenant(userId, defaultTenant.tenantId);
         return {
             access_token: session.accessToken,
             effective_tenant_id: defaultTenant.tenantId,
-            user_id: userId
+            user_id: userId,
+            available_tenants: availableTenants
         };
     }
     

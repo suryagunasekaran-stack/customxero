@@ -26,7 +26,6 @@ export default function OrganisationHeader() {
     
     const navigation = [
         { name: 'Home', href: '/organisation', current: pathname === '/organisation' },
-        { name: 'Pipedrive', href: '/organisation/pipedrive', current: pathname === '/organisation/pipedrive' },
         { name: 'Xero', href: '/organisation/xero', current: pathname === '/organisation/xero' },
     ]
     

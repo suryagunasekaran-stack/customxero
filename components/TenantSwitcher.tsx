@@ -63,17 +63,28 @@ export default function TenantSwitcher() {
       });
 
       if (response.ok) {
-        // Update local state
+        // Update local state immediately
         setTenantsData(prev => prev ? {
           ...prev,
           selectedTenant: tenantId
         } : null);
         
-        // Refresh the page to reload data with new tenant
-        window.location.reload();
+        // Use router.refresh() to force NextAuth to recalculate session
+        router.refresh();
+        
+        // Also refetch tenants to ensure we have latest data
+        setTimeout(() => {
+          fetchTenants();
+        }, 100);
+      } else {
+        console.error('Failed to switch tenant - response not ok');
+        // Revert local state on error
+        fetchTenants();
       }
     } catch (error) {
       console.error('Failed to switch tenant:', error);
+      // Revert local state on error
+      fetchTenants();
     } finally {
       setSwitching(null);
     }

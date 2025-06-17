@@ -1,6 +1,12 @@
 import NextAuth from "next-auth"
 import type { NextAuthConfig } from "next-auth"
 
+// Import xeroTokenManager only for session callback (not JWT callback to avoid edge runtime issues)
+const getXeroTokenManager = async () => {
+  const { xeroTokenManager } = await import('./xeroTokenManager');
+  return xeroTokenManager;
+};
+
 export const authConfig: NextAuthConfig = {
   providers: [
     {
@@ -18,8 +24,37 @@ export const authConfig: NextAuthConfig = {
       },
       userinfo: {
         request: async (context: any) => {
-          // Return the ID token claims instead of calling userinfo
-          return context.tokens.id_token ? JSON.parse(Buffer.from(context.tokens.id_token.split('.')[1], 'base64').toString()) : {};
+          // Return the ID token claims instead of calling userinfo with proper error handling
+          try {
+            if (!context?.tokens?.id_token) {
+              console.warn('[Auth] No ID token available');
+              return {};
+            }
+            
+            const idToken = context.tokens.id_token;
+            if (typeof idToken !== 'string') {
+              console.warn('[Auth] ID token is not a string');
+              return {};
+            }
+            
+            const tokenParts = idToken.split('.');
+            if (tokenParts.length !== 3) {
+              console.warn('[Auth] Invalid ID token format - expected 3 parts, got:', tokenParts.length);
+              return {};
+            }
+            
+            const payload = tokenParts[1];
+            if (!payload) {
+              console.warn('[Auth] No payload in ID token');
+              return {};
+            }
+            
+            const decoded = Buffer.from(payload, 'base64').toString();
+            return JSON.parse(decoded);
+          } catch (error) {
+            console.error('[Auth] Error parsing ID token:', error);
+            return {};
+          }
         }
       },
       profile(profile) {
@@ -49,7 +84,7 @@ export const authConfig: NextAuthConfig = {
           if (res.ok) {
             const connections = await res.json()
             token.tenants = connections
-            // Set default tenant to first one (user can change later)
+            // Set default tenant to first one
             token.tenantId = connections[0]?.tenantId
           }
         } catch (error) {
@@ -58,7 +93,7 @@ export const authConfig: NextAuthConfig = {
       }
       
       // Return previous token if the access token has not expired yet
-      if (Date.now() < (token.expiresAt as number) * 1000) {
+      if (token.expiresAt && Date.now() < (token.expiresAt as number) * 1000) {
         return token
       }
       
@@ -69,9 +104,26 @@ export const authConfig: NextAuthConfig = {
       session.accessToken = token.accessToken as string
       session.refreshToken = token.refreshToken as string
       session.expiresAt = token.expiresAt as number
-      session.tenantId = token.tenantId as string
-      session.tenants = token.tenants as any[]
       session.error = token.error as string | undefined
+      
+      // Get tenant data from token
+      session.tenants = token.tenants as any[] || [];
+      session.tenantId = token.tenantId as string;
+      
+      // Try to get selected tenant from Redis (with error handling)
+      try {
+        if (session.user?.email) {
+          const xeroTokenManager = await getXeroTokenManager();
+          const selectedTenant = await xeroTokenManager.getSelectedTenant(session.user.email);
+          if (selectedTenant) {
+            session.tenantId = selectedTenant;
+          }
+        }
+      } catch (error) {
+        console.error("Error reading selected tenant from Redis:", error);
+        // Continue with token tenant if Redis fails
+      }
+      
       return session
     },
   },
@@ -83,7 +135,6 @@ export const authConfig: NextAuthConfig = {
     strategy: "jwt",
   },
   jwt: {
-    // Disable issuer validation to fix Xero OAuth
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
 }

@@ -41,9 +41,9 @@ export default function TenantSelectionPage() {
       setTenants(data.availableTenants);
       setSelectedTenant(data.selectedTenant);
       
-      // If only one tenant, redirect automatically
-      if (!data.hasMultipleTenants) {
-        router.push('/organisation');
+      // If only one tenant, select it automatically
+      if (!data.hasMultipleTenants && data.availableTenants.length > 0) {
+        await handleTenantSelection(data.availableTenants[0].tenantId);
         return;
       }
       
@@ -71,8 +71,16 @@ export default function TenantSelectionPage() {
         throw new Error('Failed to set selected tenant');
       }
 
-      // Redirect to organisation page
-      router.push('/organisation');
+      // Update local state
+      setSelectedTenant(tenantId);
+      
+      // Force NextAuth to refresh the session
+      router.refresh();
+      
+      // Small delay to ensure session is updated
+      setTimeout(() => {
+        router.push('/organisation');
+      }, 100);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to select tenant');
       setSubmitting(false);

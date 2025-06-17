@@ -20,19 +20,20 @@ export async function GET() {
     let selectedTenant = session.tenantId;
     
     // If not in session, try to get from storage
-    if (!tenants) {
+    if (!tenants || tenants.length === 0) {
       const storedTenants = await xeroTokenManager.getUserTenants(userId);
       if (storedTenants) {
         tenants = storedTenants;
       }
     }
     
-    if (!selectedTenant) {
-      const storedSelectedTenant = await xeroTokenManager.getSelectedTenant(userId);
-      if (storedSelectedTenant) {
-        selectedTenant = storedSelectedTenant;
-      }
+    // Always get selected tenant from Redis to ensure latest value
+    const storedSelectedTenant = await xeroTokenManager.getSelectedTenant(userId);
+    if (storedSelectedTenant) {
+      selectedTenant = storedSelectedTenant;
     }
+    
+    console.log('[Tenants GET] User:', userId, 'Selected tenant from Redis:', storedSelectedTenant, 'Session tenant:', session.tenantId);
 
     if (!tenants || tenants.length === 0) {
       return NextResponse.json({ 
@@ -67,6 +68,8 @@ export async function POST(request: Request) {
     const userId = session.user?.email || 'unknown';
     const { tenantId } = await request.json();
 
+    console.log('[Tenants POST] User:', userId, 'Switching to tenant:', tenantId);
+
     if (!tenantId) {
       return NextResponse.json({ 
         error: 'Tenant ID is required' 
@@ -76,12 +79,18 @@ export async function POST(request: Request) {
     // Verify the tenant exists in available tenants
     const availableTenants = session.tenants || await xeroTokenManager.getUserTenants(userId) || [];
     if (!availableTenants.find((t: any) => t.tenantId === tenantId)) {
+      console.error('[Tenants POST] Invalid tenant ID:', tenantId, 'Available:', availableTenants.map((t: any) => t.tenantId));
       return NextResponse.json({ 
         error: 'Invalid tenant ID' 
       }, { status: 400 });
     }
 
     await xeroTokenManager.saveSelectedTenant(userId, tenantId);
+    console.log('[Tenants POST] Successfully saved tenant:', tenantId, 'for user:', userId);
+
+    // Verify it was saved
+    const verifyTenant = await xeroTokenManager.getSelectedTenant(userId);
+    console.log('[Tenants POST] Verification - saved tenant:', verifyTenant);
 
     return NextResponse.json({ 
       success: true, 
