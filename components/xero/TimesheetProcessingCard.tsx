@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CloudArrowUpIcon, DocumentArrowDownIcon, CheckCircleIcon, XCircleIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { CloudArrowUpIcon, DocumentArrowDownIcon, CheckCircleIcon, XCircleIcon, DocumentTextIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import ProgressBar from '../ProgressBar';
 import ConfirmationDialog from '../ConfirmationDialog';
 import CachedProjectsViewer from './CachedProjectsViewer';
@@ -106,12 +106,26 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
   const filterPayloadByMatches = (payload: any, cachedProjectsList: any[]) => {
     if (!payload?.consolidated_payload) return payload;
     
+    console.log('[Filter] Starting payload filtering');
+    console.log('[Filter] Original payload project codes:', Object.keys(payload.consolidated_payload));
+    
+    // Log all tasks in the original payload
+    Object.entries(payload.consolidated_payload).forEach(([projectCode, tasks]: [string, any]) => {
+      console.log(`[Filter] Project ${projectCode} has tasks:`, (tasks as any[]).map(t => t.name));
+      const hasSupplyLabour = (tasks as any[]).some(t => t.name === 'Supply Labour');
+      if (!hasSupplyLabour) {
+        console.warn(`[Filter] WARNING: 'Supply Labour' missing in original payload for project ${projectCode}`);
+      }
+    });
+    
     // Create a map of cached project codes for quick lookup
     const cachedProjectCodes = new Set(
       cachedProjectsList
         .filter(project => project.projectCode)
         .map(project => project.projectCode)
     );
+    
+    console.log('[Filter] Cached project codes:', Array.from(cachedProjectCodes));
     
     // Filter the consolidated payload to only include matching projects
     const filteredConsolidatedPayload: any = {};
@@ -123,8 +137,16 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
       if (cachedProjectCodes.has(projectCode)) {
         filteredConsolidatedPayload[projectCode] = tasks;
         matchedProjects++;
+        console.log(`[Filter] ✅ Including project ${projectCode} with ${(tasks as any[]).length} tasks`);
+      } else {
+        console.log(`[Filter] ❌ Excluding project ${projectCode} - not in cached projects`);
       }
     });
+    
+    // Log filtered results
+    console.log('[Filter] Filtering complete');
+    console.log('[Filter] Matched projects:', matchedProjects);
+    console.log('[Filter] Filtered out:', totalProjects - matchedProjects);
     
     // Update metadata to reflect filtered data
     const filteredPayload = {
@@ -204,6 +226,22 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
 
       if (!data.success) {
         throw new Error(data.error || 'Processing failed');
+      }
+
+      // Log the raw data from Python endpoint
+      console.log('[Timesheet Processing] Raw data from Python endpoint:');
+      console.log('[Timesheet Processing] Metadata:', data.metadata);
+      console.log('[Timesheet Processing] Project codes:', Object.keys(data.consolidated_payload || {}));
+      
+      // Check for Supply Labour in each project
+      if (data.consolidated_payload) {
+        Object.entries(data.consolidated_payload).forEach(([projectCode, tasks]: [string, any]) => {
+          const taskNames = (tasks as any[]).map(t => t.name);
+          console.log(`[Timesheet Processing] Project ${projectCode} tasks:`, taskNames);
+          if (!taskNames.includes('Supply Labour')) {
+            console.warn(`[Timesheet Processing] WARNING: 'Supply Labour' not found in project ${projectCode}`);
+          }
+        });
       }
 
       updateStep(0, 'complete', 
@@ -289,14 +327,29 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
       const data: UnifiedProcessingResult = await response.json();
 
       if (!data.success) {
-        throw new Error('Processing failed');
+        // Check if it's a partial success (some tasks created, some failed)
+        if (data.projectStandardization.tasksCreated > 0 && data.taskUpdates.tasksFailed > 0) {
+          // Partial success - some tasks were created
+          updateStep(0, 'error', 
+            `Created ${data.projectStandardization.tasksCreated} tasks, but ${data.taskUpdates.tasksFailed} failed`,
+            data.projectStandardization
+          );
+        } else if (data.taskUpdates.tasksFailed > 0) {
+          // Complete failure - no tasks created
+          updateStep(0, 'error', 
+            `Failed to create ${data.taskUpdates.tasksFailed} tasks`,
+            data.projectStandardization
+          );
+        } else {
+          throw new Error('Processing failed');
+        }
+      } else {
+        // Complete success
+        updateStep(0, 'complete', 
+          `Created/updated ${data.projectStandardization.tasksCreated} tasks`,
+          data.projectStandardization
+        );
       }
-
-      // Update step statuses based on results
-      updateStep(0, 'complete', 
-        `Created/updated ${data.projectStandardization.tasksCreated} tasks`,
-        data.projectStandardization
-      );
       setCurrentProgress(1);
 
       updateStep(1, 'complete', 
@@ -369,8 +422,16 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
                 Upload timesheet to update project costs and generate reports
               </p>
             </div>
-            {currentStep === 'complete' && (
-              <CheckCircleIcon className="h-8 w-8 text-green-500" />
+            {currentStep === 'complete' && results && (
+              <>
+                {results.success && <CheckCircleIcon className="h-8 w-8 text-green-500" />}
+                {!results.success && results.projectStandardization.tasksCreated > 0 && (
+                  <ExclamationTriangleIcon className="h-8 w-8 text-amber-500" />
+                )}
+                {!results.success && results.projectStandardization.tasksCreated === 0 && (
+                  <XCircleIcon className="h-8 w-8 text-red-500" />
+                )}
+              </>
             )}
           </div>
 
@@ -522,8 +583,27 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
           {/* Complete State */}
           {currentStep === 'complete' && results && (
             <div className="mt-6 space-y-4">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-green-800 mb-3">Processing Complete</h3>
+              <div className={`border rounded-lg p-4 ${
+                results.success 
+                  ? 'bg-green-50 border-green-200' 
+                  : results.projectStandardization.tasksCreated > 0
+                    ? 'bg-amber-50 border-amber-200'
+                    : 'bg-red-50 border-red-200'
+              }`}>
+                <h3 className={`text-sm font-semibold mb-3 ${
+                  results.success 
+                    ? 'text-green-800' 
+                    : results.projectStandardization.tasksCreated > 0
+                      ? 'text-amber-800'
+                      : 'text-red-800'
+                }`}>
+                  {results.success 
+                    ? 'Processing Complete' 
+                    : results.projectStandardization.tasksCreated > 0
+                      ? 'Processing Completed with Errors'
+                      : 'Processing Failed'
+                  }
+                </h3>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-gray-600">Entries Processed:</span>
@@ -539,17 +619,41 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
                   </div>
                   <div>
                     <span className="text-gray-600">Tasks Created:</span>
-                    <span className="ml-2 font-medium text-gray-900">
+                    <span className={`ml-2 font-medium ${
+                      results.projectStandardization.tasksCreated > 0 ? 'text-green-700' : 'text-gray-900'
+                    }`}>
                       {results.projectStandardization.tasksCreated}
                     </span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Processing Time:</span>
-                    <span className="ml-2 font-medium text-gray-900">
-                      {(results.statistics.processingTimeMs / 1000).toFixed(1)}s
+                    <span className="text-gray-600">Tasks Failed:</span>
+                    <span className={`ml-2 font-medium ${
+                      results.taskUpdates.tasksFailed > 0 ? 'text-red-700' : 'text-gray-900'
+                    }`}>
+                      {results.taskUpdates.tasksFailed}
                     </span>
                   </div>
                 </div>
+                
+                {/* Show error details if tasks failed */}
+                {results.taskUpdates.tasksFailed > 0 && (results as any).errorSummary && (
+                  <div className="mt-4 space-y-2">
+                    <p className="text-sm font-medium text-gray-700">Error Details:</p>
+                    {Object.entries((results as any).errorSummary).map(([error, tasks]: [string, any]) => (
+                      <div key={error} className="text-xs bg-white bg-opacity-50 rounded p-2">
+                        <p className="font-medium text-gray-700">{error}:</p>
+                        <ul className="mt-1 space-y-0.5 text-gray-600">
+                          {(tasks as string[]).slice(0, 3).map((task, idx) => (
+                            <li key={idx}>• {task}</li>
+                          ))}
+                          {(tasks as string[]).length > 3 && (
+                            <li className="text-gray-500">... and {(tasks as string[]).length - 3} more</li>
+                          )}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               
               <div className="flex gap-3">

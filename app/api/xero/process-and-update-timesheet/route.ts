@@ -149,8 +149,6 @@ function convertRateToCents(rateValue: number): number {
   return cents;
 }
 
-
-
 async function createAndUpdateTasks(
   consolidatedPayload: ConsolidatedPayload,
   projectData: any,
@@ -162,14 +160,31 @@ async function createAndUpdateTasks(
   const projectCodesToProcess = Object.keys(consolidatedPayload);
   const baseTaskConfig = getTaskConfigForTenant(tenantId, tenantName);
   
+  // Log the entire consolidated payload for debugging
+  console.log('[Task Sync] Starting task creation/update process');
+  console.log('[Task Sync] Project codes to process:', projectCodesToProcess);
+  console.log('[Task Sync] Full consolidated payload:', JSON.stringify(consolidatedPayload, null, 2));
+  
   for (const projectCode of projectCodesToProcess) {
     const codeData = projectData.projectCodes[projectCode];
-    if (!codeData || !Array.isArray(codeData)) continue;
+    if (!codeData || !Array.isArray(codeData)) {
+      console.warn(`[Task Sync] No project data found for code: ${projectCode}`);
+      continue;
+    }
     
     const timesheetTasks = consolidatedPayload[projectCode];
+    console.log(`[Task Sync] Processing ${timesheetTasks.length} tasks for project code: ${projectCode}`);
+    console.log(`[Task Sync] Tasks for ${projectCode}:`, timesheetTasks.map(t => t.name));
+    
+    // Log if Supply Labour is missing
+    const hasSupplyLabour = timesheetTasks.some(t => t.name === 'Supply Labour');
+    if (!hasSupplyLabour) {
+      console.warn(`[Task Sync] WARNING: 'Supply Labour' task is missing for project code ${projectCode}`);
+    }
     
     // Process each project that has this code
     for (const project of codeData) {
+      console.log(`[Task Sync] Processing project: ${project.name} (${project.projectId})`);
       
       try {
         // Step 1: Fetch existing tasks for this project
@@ -210,18 +225,57 @@ async function createAndUpdateTasks(
           existingTasks.map((task: any) => [task.name.toLowerCase(), task as XeroTask])
         );
         
+        // Log existing tasks for debugging
+        console.log(`[Task Sync] Existing tasks in project ${project.name}:`, existingTasks.map((t: any) => t.name));
+        
+        // Check specifically for Supply Labour variations
+        const supplyLabourVariations = ['Supply Labour', 'supply labour', 'SUPPLY LABOUR', 'Supply Labor'];
+        const existingSupplyLabour = existingTasks.find((task: any) => 
+          supplyLabourVariations.some(variation => task.name.toLowerCase() === variation.toLowerCase())
+        );
+        if (existingSupplyLabour) {
+          console.log(`[Task Sync] Found existing Supply Labour task: "${existingSupplyLabour.name}"`);
+        }
+        
                  // Step 2: Process each task from the timesheet
          for (const timesheetTask of timesheetTasks) {
+           console.log(`[Task Sync] Processing task: "${timesheetTask.name}" for project ${project.name}`);
+           
            try {
              // Validate idempotency key
-             if (!timesheetTask.idempotencyKey) {
-               console.error(`[Task Sync] Missing idempotency key for task "${timesheetTask.name}" in project ${project.name}`);
+             if (!timesheetTask.idempotencyKey || timesheetTask.idempotencyKey.trim() === '') {
+               console.error(`[Task Sync] Missing or empty idempotency key for task "${timesheetTask.name}" in project ${project.name}`);
                results.push({
                  projectId: project.projectId,
                  projectName: project.name,
                  taskName: timesheetTask.name,
                  success: false,
-                 error: 'Missing idempotency key'
+                 error: 'Missing or empty idempotency key - cannot create task without unique identifier'
+               });
+               continue;
+             }
+             
+             // Validate task data
+             if (!timesheetTask.name || timesheetTask.name.trim() === '') {
+               console.error(`[Task Sync] Invalid task name for project ${project.name}`);
+               results.push({
+                 projectId: project.projectId,
+                 projectName: project.name,
+                 taskName: timesheetTask.name || 'Unnamed Task',
+                 success: false,
+                 error: 'Invalid task name'
+               });
+               continue;
+             }
+             
+             if (!timesheetTask.rate || typeof timesheetTask.rate.value !== 'number') {
+               console.error(`[Task Sync] Invalid rate for task "${timesheetTask.name}" in project ${project.name}`);
+               results.push({
+                 projectId: project.projectId,
+                 projectName: project.name,
+                 taskName: timesheetTask.name,
+                 success: false,
+                 error: 'Invalid rate value'
                });
                continue;
              }
@@ -323,6 +377,36 @@ async function createAndUpdateTasks(
                 });
                              } else {
                  const createErrorText = await createResponse.text();
+                 let errorMessage = `HTTP ${createResponse.status}`;
+                 
+                 // Try to parse error details from Xero response
+                 try {
+                   const errorData = JSON.parse(createErrorText);
+                   if (errorData.Message) {
+                     errorMessage = errorData.Message;
+                   } else if (errorData.error) {
+                     errorMessage = errorData.error;
+                   } else if (errorData.ErrorNumber) {
+                     errorMessage = `Xero Error ${errorData.ErrorNumber}: ${errorData.Type || 'Unknown'}`;
+                   }
+                   
+                   // Check for idempotency key conflict
+                   if (createResponse.status === 409 || errorMessage.toLowerCase().includes('idempotency')) {
+                     errorMessage = `Idempotency key conflict - this task may have been created in a previous attempt`;
+                     console.warn(`[Task Sync] Idempotency key conflict for task "${timesheetTask.name}" - key: ${timesheetTask.idempotencyKey}`);
+                   }
+                 } catch (e) {
+                   // If not JSON, use the text as-is
+                   if (createErrorText) {
+                     errorMessage = createErrorText.substring(0, 200); // Limit length
+                   }
+                   
+                   // Check for common error patterns in text response
+                   if (createResponse.status === 409) {
+                     errorMessage = `Conflict - task may already exist or idempotency key was used before`;
+                   }
+                 }
+                 
                  console.error(`[Task Sync] Failed to create task "${timesheetTask.name}"`);
                  console.error(`[Task Sync] HTTP ${createResponse.status}: ${createErrorText}`);
                  console.error(`[Task Sync] Used idempotency key: "${timesheetTask.idempotencyKey}"`);
@@ -333,7 +417,7 @@ async function createAndUpdateTasks(
                    projectName: project.name,
                    taskName: timesheetTask.name,
                    success: false,
-                   error: `Create failed: HTTP ${createResponse.status}`,
+                   error: errorMessage,
                    idempotencyKey: timesheetTask.idempotencyKey
                  });
                }
@@ -375,10 +459,27 @@ async function createAndUpdateTasks(
     }
   }
   
+  // Final summary - check Supply Labour status
+  console.log('[Task Sync] === FINAL SUMMARY ===');
+  const supplyLabourResults = results.filter(r => r.taskName === 'Supply Labour');
+  console.log(`[Task Sync] Supply Labour tasks processed: ${supplyLabourResults.length}`);
+  
+  if (supplyLabourResults.length === 0) {
+    console.error('[Task Sync] ERROR: No Supply Labour tasks were processed!');
+    console.error('[Task Sync] This means Supply Labour was not in the consolidated payload');
+  } else {
+    supplyLabourResults.forEach(result => {
+      console.log(`[Task Sync] Supply Labour in ${result.projectName}: ${result.success ? 'SUCCESS' : 'FAILED'} - ${result.error || 'Created successfully'}`);
+    });
+  }
+  
+  const failedSupplyLabour = supplyLabourResults.filter(r => !r.success);
+  if (failedSupplyLabour.length > 0) {
+    console.error(`[Task Sync] ${failedSupplyLabour.length} Supply Labour tasks failed!`);
+  }
+  
   return results;
 }
-
-
 
 function generateComprehensiveReport(
   timesheetData: ProcessingResults,
@@ -388,25 +489,48 @@ function generateComprehensiveReport(
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
   const filename = `unified-processing-report-${timestamp}.csv`;
   
+  const successfulCreations = taskCreationResults.filter(r => r.success).length;
+  const failedCreations = taskCreationResults.filter(r => !r.success).length;
+  const hasFailures = failedCreations > 0;
+  
   const csvLines = [
     'Section,Project Code,Project Name,Task Name,Action,Status,Previous Value,New Value,Details'
   ];
   
-  // Add metadata
+  // Add metadata with warning if there are failures
   csvLines.push(`# Report Generated: ${new Date().toISOString()}`);
   csvLines.push(`# Period: ${timesheetData.metadata.period_range}`);
   csvLines.push(`# Timesheet Entries Processed: ${timesheetData.metadata.entries_processed}`);
   csvLines.push(`# Projects Consolidated: ${timesheetData.metadata.projects_consolidated}`);
-  csvLines.push(`# Tasks Created: ${taskCreationResults.filter(r => r.success).length}`);
+  csvLines.push(`# Tasks Created Successfully: ${successfulCreations}`);
+  csvLines.push(`# Tasks Failed: ${failedCreations}`);
+  if (hasFailures) {
+    csvLines.push(`# WARNING: ${failedCreations} task(s) failed to create. See details below.`);
+  }
   csvLines.push(`# Tasks Updated: ${updateResults.filter(r => r.success && !r.error?.includes('unchanged')).length}`);
   csvLines.push('');
   
-  // Task Creation Section
+  // Task Creation Section - sort failed tasks first for visibility
   if (taskCreationResults.length > 0) {
     csvLines.push('# TASK CREATION');
-    taskCreationResults.forEach(result => {
-      csvLines.push(`"Task Creation","N/A","${result.projectName}","${result.taskName}","Create","${result.success ? 'Success' : 'Failed'}","N/A","Created","${result.error || 'Task created successfully'}"`);
-    });
+    
+    // Failed tasks first
+    const failedTasks = taskCreationResults.filter(r => !r.success);
+    const successfulTasks = taskCreationResults.filter(r => r.success);
+    
+    if (failedTasks.length > 0) {
+      csvLines.push('## FAILED TASKS');
+      failedTasks.forEach(result => {
+        csvLines.push(`"Task Creation","N/A","${result.projectName}","${result.taskName}","Create","FAILED","N/A","N/A","${result.error || 'Unknown error'}"`);
+      });
+    }
+    
+    if (successfulTasks.length > 0) {
+      csvLines.push('## SUCCESSFUL TASKS');
+      successfulTasks.forEach(result => {
+        csvLines.push(`"Task Creation","N/A","${result.projectName}","${result.taskName}","Create","Success","N/A","Created","Task created successfully"`);
+      });
+    }
     csvLines.push('');
   }
   
@@ -437,6 +561,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No filtered payload provided' }, { status: 400 });
     }
     
+    // Validate that required tasks are present in the payload
+    const missingRequiredTasks: { [projectCode: string]: string[] } = {};
+    Object.entries(filteredPayload.consolidated_payload).forEach(([projectCode, tasks]: [string, any]) => {
+      const taskNames = (tasks as ConsolidatedTask[]).map(t => t.name);
+      const missing = REQUIRED_TASKS.filter(reqTask => !taskNames.includes(reqTask));
+      if (missing.length > 0) {
+        missingRequiredTasks[projectCode] = missing;
+        console.warn(`[Xero Update] Project ${projectCode} is missing required tasks: ${missing.join(', ')}`);
+      }
+    });
+    
+    if (Object.keys(missingRequiredTasks).length > 0) {
+      console.error('[Xero Update] WARNING: Some projects are missing required tasks:', missingRequiredTasks);
+    }
+    
     // Get project data for tenant info
     const projectData = await XeroProjectService.getProjectData();
     const currentTenant = projectData.tenantName;
@@ -454,6 +593,11 @@ export async function POST(request: NextRequest) {
     );
     
     const successfulTasks = taskResults.filter((r: any) => r.success).length;
+    const failedTasks = taskResults.filter((r: any) => !r.success);
+    const failedTaskCount = failedTasks.length;
+    
+    // Determine overall success - consider it a failure if ANY task fails
+    const overallSuccess = failedTaskCount === 0;
     
     // Calculate statistics
     const totalApiCalls = apiCallsStart - SmartRateLimit.getRemainingCalls();
@@ -464,7 +608,7 @@ export async function POST(request: NextRequest) {
     
     // Build response
     const result: UnifiedProcessingResult = {
-      success: true,
+      success: overallSuccess,
       timesheetProcessing: filteredPayload,
       projectStandardization: {
         projectsAnalyzed: Object.keys(filteredPayload.consolidated_payload).length,
@@ -475,7 +619,7 @@ export async function POST(request: NextRequest) {
       taskUpdates: {
         projectsProcessed: Object.keys(filteredPayload.consolidated_payload).length,
         tasksUpdated: successfulTasks,
-        tasksFailed: taskResults.filter((r: any) => !r.success).length,
+        tasksFailed: failedTaskCount,
         updateResults: [] // No separate updates since we do it all in one step
       },
       downloadableReport: report,
@@ -485,6 +629,25 @@ export async function POST(request: NextRequest) {
         cacheHits: 0
       }
     };
+    
+    // If there were failures, include detailed error information
+    if (!overallSuccess) {
+      console.error(`[Xero Update] Task creation failed: ${failedTaskCount} tasks failed out of ${taskResults.length} total`);
+      
+      // Group failures by error type for better visibility
+      const errorSummary = failedTasks.reduce((acc: any, task: any) => {
+        const errorKey = task.error || 'Unknown error';
+        if (!acc[errorKey]) {
+          acc[errorKey] = [];
+        }
+        acc[errorKey].push(`${task.projectName} - ${task.taskName}`);
+        return acc;
+      }, {});
+      
+      // Add error details to the result
+      (result as any).errorSummary = errorSummary;
+      (result as any).failedTasks = failedTasks;
+    }
     
     return NextResponse.json(result);
     
