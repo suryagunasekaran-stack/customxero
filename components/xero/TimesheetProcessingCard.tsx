@@ -203,7 +203,8 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
       formData.append('file', uploadedFile);
 
       // Call the processing endpoint to get consolidated data
-      const response = await fetch('http://127.0.0.1:5001/api/process-timesheet', {
+      const flaskUrl = `${process.env.NEXT_PUBLIC_FLASK_SERVER_URL}/api/process-timesheet`;
+      const response = await fetch(flaskUrl, {
         method: 'POST',
         body: formData,
       });
