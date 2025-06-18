@@ -11,12 +11,15 @@
   "dependencies": {
     "@headlessui/react": "^2.2.4",
     "@heroicons/react": "^2.2.0",
+    "@types/file-saver": "^2.0.7",
+    "file-saver": "^2.0.5",
     "ioredis": "^5.6.1",
     "next": "15.3.2",
     "next-auth": "^5.0.0-beta.28",
     "qs": "^6.14.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -1,16 +1,19 @@
 'use client';
 
 import React from 'react';
-import { ArrowsRightLeftIcon, ArrowDownTrayIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { ArrowsRightLeftIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { useSyncProject } from '../../hooks/useSyncProject';
 import { FunctionCardProps } from './types';
+import ReportDownloadOptions from './ReportDownloadOptions';
 
 interface SyncProjectCardProps extends FunctionCardProps {}
 
 export default function SyncProjectCard({ disabled = false }: SyncProjectCardProps) {
   const {
     isSyncing,
-    showDownloadReportButton,
+    showDownloadOptions,
+    comparisonData,
+    reportMetadata,
     handleSyncProject,
     handleDownloadReport,
   } = useSyncProject();
@@ -28,32 +31,10 @@ export default function SyncProjectCard({ disabled = false }: SyncProjectCardPro
               Synchronize projects between Xero and Pipedrive
             </p>
           </div>
-          {showDownloadReportButton && !isSyncing && (
+          {showDownloadOptions && !isSyncing && (
             <CheckCircleIcon className="h-8 w-8 text-green-500" />
           )}
         </div>
-
-        {/* Success Message with Download */}
-        {showDownloadReportButton && !isSyncing && (
-          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-            <div className="flex items-start gap-3">
-              <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-green-800">Sync completed successfully!</p>
-                <p className="text-sm text-green-700 mt-1">
-                  The comparison report is ready for download.
-                </p>
-                <button
-                  onClick={handleDownloadReport}
-                  className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-green-700 bg-green-100 rounded-lg hover:bg-green-200 transition-colors"
-                >
-                  <ArrowDownTrayIcon className="h-4 w-4" />
-                  Download Report
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Description */}
         <div className="mb-6">
@@ -70,11 +51,11 @@ export default function SyncProjectCard({ disabled = false }: SyncProjectCardPro
               </li>
               <li className="flex items-start">
                 <span className="text-gray-400 mr-2">•</span>
-                <span>Generates detailed comparison report</span>
+                <span>Generates professional comparison reports</span>
               </li>
               <li className="flex items-start">
                 <span className="text-gray-400 mr-2">•</span>
-                <span>Ensures data consistency across platforms</span>
+                <span>Exports in Excel, CSV, or text formats</span>
               </li>
             </ul>
           </div>
@@ -99,6 +80,18 @@ export default function SyncProjectCard({ disabled = false }: SyncProjectCardPro
           )}
         </button>
       </div>
+
+      {/* Professional Report Download Options */}
+      {showDownloadOptions && !isSyncing && comparisonData && reportMetadata && (
+        <div className="border-t border-gray-100">
+          <ReportDownloadOptions
+            comparisonData={comparisonData}
+            reportMetadata={reportMetadata}
+            onDownload={handleDownloadReport}
+            className="rounded-none shadow-none border-0"
+          />
+        </div>
+      )}
     </div>
   );
 } 
