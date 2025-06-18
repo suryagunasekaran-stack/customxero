@@ -5,17 +5,11 @@ import { ensureValidToken } from '@/lib/ensureXeroToken';
 export async function GET(request: NextRequest) {
   try {
     const { effective_tenant_id } = await ensureValidToken();
-    console.log('[Cache Status API] Checking cache for tenant:', effective_tenant_id);
-    
-    // Add a small delay to see if timing is the issue
-    await new Promise(resolve => setTimeout(resolve, 50));
     
     // Get cache status without forcing refresh
     const cacheData = await XeroProjectService.getCacheStatus(effective_tenant_id);
-    console.log('[Cache Status API] Cache data exists:', !!cacheData);
     
     if (!cacheData) {
-      console.log('[Cache Status API] No cache found, returning empty state');
       return NextResponse.json({
         projects: [],
         lastUpdated: null,
@@ -27,7 +21,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    console.log('[Cache Status API] Cache found with', cacheData.projects.length, 'projects');
     const isExpired = new Date() > cacheData.expiresAt;
     
     const response = {
@@ -44,7 +37,6 @@ export async function GET(request: NextRequest) {
       isExpired
     };
     
-    console.log('[Cache Status API] Returning response with projectCount:', response.projectCount);
     return NextResponse.json(response);
 
   } catch (error: any) {

@@ -336,13 +336,7 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
             )}
           </div>
 
-          {/* Cache Status */}
-          <div className="mt-6">
-            <CachedProjectsViewer 
-              onRefresh={handleRefreshCache}
-              className="mb-6"
-            />
-          </div>
+
 
           {/* Upload State */}
           {currentStep === 'upload' && (

@@ -13,14 +13,14 @@ export async function GET() {
       totalProjects: projectData.projects.length,
       uniqueProjectCodes: Object.keys(projectData.projectCodes).length,
       averageProjectsPerCode: projectData.projects.length / Math.max(1, Object.keys(projectData.projectCodes).length),
-      duplicateCodesCount: Object.values(projectData.projectCodes).filter(data => data.projects.length > 1).length,
-      totalTasksFetched: Object.values(projectData.projectTasks).reduce((sum, tasks) => sum + tasks.length, 0),
-      successfulTaskFetches: projectData.projects.length,
+      duplicateCodesCount: Object.values(projectData.projectCodes).filter(projects => projects.length > 1).length,
+      totalTasksFetched: 0, // We don't fetch tasks anymore
+      successfulTaskFetches: 0,
       failedTaskFetches: 0,
-      totalTimeEntriesFetched: Object.values(projectData.timeEntries).reduce((sum, entries) => sum + entries.length, 0),
-      successfulTimeEntryFetches: Object.keys(projectData.timeEntries).length,
+      totalTimeEntriesFetched: 0, // We don't fetch time entries anymore
+      successfulTimeEntryFetches: 0,
       failedTimeEntryFetches: 0,
-      totalExistingTimeEntries: Object.values(projectData.timeEntries).reduce((sum, entries) => sum + entries.length, 0),
+      totalExistingTimeEntries: 0,
       testingMode: false,
       processedProjects: projectData.projects.length
     };
@@ -30,28 +30,18 @@ export async function GET() {
     
     // Get duplicate codes
     const duplicateCodes = Object.entries(projectData.projectCodes)
-      .filter(([code, data]) => data.projects.length > 1)
-      .map(([code, data]) => ({
+      .filter(([code, projects]) => projects.length > 1)
+      .map(([code, projects]) => ({
         code,
-        count: data.projects.length,
-        projects: data.projects.map(p => ({ id: p.projectId, name: p.name }))
+        count: projects.length,
+        projects: projects.map(p => ({ id: p.projectId, name: p.name }))
       }));
     
-    // Get all task names
-    const allTaskNames = Array.from(new Set(
-      Object.values(projectData.projectTasks)
-        .flat()
-        .map(task => task.name)
-    ));
+    // Get all task names - empty since we don't fetch tasks anymore
+    const allTaskNames: string[] = [];
     
-    // Build time entry summary
+    // Build time entry summary - empty since we don't fetch time entries anymore
     const timeEntrySummary: { [code: string]: { [taskName: string]: number } } = {};
-    Object.entries(projectData.projectCodes).forEach(([code, codeData]) => {
-      timeEntrySummary[code] = {};
-      Object.entries(codeData.timeEntries).forEach(([taskName, entries]) => {
-        timeEntrySummary[code][taskName] = entries.length;
-      });
-    });
     
     const response = {
       success: true,

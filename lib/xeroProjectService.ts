@@ -4,53 +4,80 @@ import { SmartRateLimit } from './smartRateLimit';
 
 export interface XeroProject {
   projectId: string;
-  name: string;
-  status: string;
   contactId?: string;
-  deadlineUtc?: string;
-  projectCode?: string;
-}
-
-export interface XeroTask {
-  taskId: string;
   name: string;
-  rate: {
+  currencyCode?: string;
+  minutesLogged?: number;
+  totalTaskAmount?: {
     currency: string;
     value: number;
   };
-  chargeType: string;
-  estimateMinutes: number;
+  totalExpenseAmount?: {
+    currency: string;
+    value: number;
+  };
+  minutesToBeInvoiced?: number;
+  taskAmountToBeInvoiced?: {
+    currency: string;
+    value: number;
+  };
+  taskAmountInvoiced?: {
+    currency: string;
+    value: number;
+  };
+  expenseAmountToBeInvoiced?: {
+    currency: string;
+    value: number;
+  };
+  expenseAmountInvoiced?: {
+    currency: string;
+    value: number;
+  };
+  projectAmountInvoiced?: {
+    currency: string;
+    value: number;
+  };
+  deposit?: {
+    currency: string;
+    value: number;
+  };
+  depositApplied?: {
+    currency: string;
+    value: number;
+  };
+  creditNoteAmount?: {
+    currency: string;
+    value: number;
+  };
+  totalInvoiced?: {
+    currency: string;
+    value: number;
+  };
+  totalToBeInvoiced?: {
+    currency: string;
+    value: number;
+  };
+  estimate?: {
+    currency: string;
+    value: number;
+  };
   status: string;
-  projectId: string;
-  totalMinutes?: number;
-  totalAmount?: {
-    currency: string;
-    value: number;
+  projectCode?: string; // Extracted from name
+}
+
+export interface XeroProjectsResponse {
+  pagination: {
+    page: number;
+    pageSize: number;
+    pageCount: number;
+    itemCount: number;
   };
-}
-
-export interface XeroTimeEntry {
-  timeEntryId: string;
-  date: string;
-  duration: number;
-  description: string;
-  userId: string;
-  taskId: string;
-  taskName?: string;
-  projectId: string;
-}
-
-export interface ProjectCodeData {
-  projects: XeroProject[];
-  tasks: { [taskName: string]: { taskId: string; projectId: string; projectName: string } };
-  timeEntries: { [taskName: string]: XeroTimeEntry[] };
+  items: XeroProject[];
 }
 
 export interface ProjectDataCache {
   projects: XeroProject[];
-  projectTasks: { [projectId: string]: XeroTask[] };
-  projectCodes: { [code: string]: ProjectCodeData };
-  timeEntries: { [projectId: string]: XeroTimeEntry[] };
+  projectCodes: { [code: string]: XeroProject[] }; // Projects grouped by extracted code
   lastUpdated: Date;
   expiresAt: Date;
   tenantId: string;
@@ -67,7 +94,6 @@ export interface ProjectSummary {
 export class XeroProjectService {
   private static cache: Map<string, ProjectDataCache> = new Map();
   private static readonly CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
-  private static readonly BATCH_SIZE = 5; // Xero's concurrent limit
 
   static async getProjectData(forceRefresh = false): Promise<ProjectDataCache> {
     const { effective_tenant_id, available_tenants } = await ensureValidToken();
@@ -97,36 +123,23 @@ export class XeroProjectService {
     console.log('[XeroProjectService] Caching', cacheEntry.projects.length, 'projects for tenant:', effective_tenant_id);
     this.cache.set(effective_tenant_id, cacheEntry);
     console.log('[XeroProjectService] Cache set. New cache size:', this.cache.size);
-    console.log('[XeroProjectService] Cache keys after set:', Array.from(this.cache.keys()));
-    
-    // Verify the cache was set correctly
-    const verification = this.cache.get(effective_tenant_id);
-    console.log('[XeroProjectService] Cache verification - exists:', !!verification, 'projects:', verification?.projects.length);
     
     return cacheEntry;
   }
 
   static clearCache(tenantId?: string) {
     if (tenantId) {
+      console.log('[XeroProjectService] Clearing cache for tenant:', tenantId);
       this.cache.delete(tenantId);
     } else {
+      console.log('[XeroProjectService] Clearing all cache');
       this.cache.clear();
     }
+    console.log('[XeroProjectService] Cache size after clear:', this.cache.size);
   }
 
   static getCacheStatus(tenantId: string): ProjectDataCache | null {
-    console.log('[XeroProjectService] getCacheStatus for tenant:', tenantId);
-    console.log('[XeroProjectService] Cache keys:', Array.from(this.cache.keys()));
-    console.log('[XeroProjectService] Cache size:', this.cache.size);
-    
-    const result = this.cache.get(tenantId) || null;
-    console.log('[XeroProjectService] Cache hit:', !!result);
-    
-    if (result) {
-      console.log('[XeroProjectService] Cached projects count:', result.projects.length);
-    }
-    
-    return result;
+    return this.cache.get(tenantId) || null;
   }
 
   static async getProjectSummaries(tenantId: string, forceRefresh: boolean = false): Promise<ProjectSummary[]> {
@@ -162,42 +175,41 @@ export class XeroProjectService {
   ): Promise<Omit<ProjectDataCache, 'lastUpdated' | 'expiresAt' | 'tenantId' | 'tenantName'>> {
     const { access_token } = await ensureValidToken();
     
-    // Fetch all INPROGRESS projects
+    // Fetch all projects using the proper Xero Projects API
     const projects = await this.fetchAllProjects(access_token, tenantId);
-    console.log(`[XeroProjectService] Fetched ${projects.length} INPROGRESS projects`);
+    console.log(`[XeroProjectService] Fetched ${projects.length} projects`);
     
-    // Extract project codes
+    // Extract project codes from names (e.g., "ED25002 - Titanic" -> "ED25002")
     projects.forEach(project => {
       project.projectCode = this.extractProjectCode(project.name);
     });
     
-    // Batch fetch tasks for all projects
-    const projectTasks = await this.batchFetchProjectTasks(projects, access_token, tenantId);
+    // Build project code mapping (group projects by their extracted codes)
+    const projectCodes = this.buildProjectCodeMapping(projects);
     
-    // Batch fetch time entries
-    const timeEntries = await this.batchFetchTimeEntries(projects, access_token, tenantId);
-    
-    // Build project code mapping
-    const projectCodes = this.buildProjectCodeMapping(projects, projectTasks, timeEntries);
-    
-    return { projects, projectTasks, projectCodes, timeEntries };
+    return { projects, projectCodes };
   }
 
   private static extractProjectCode(projectName: string): string {
-    const parts = projectName.split('-');
-    return parts[0].trim();
+    // Extract code from names like "ED25002 - Titanic" -> "ED25002"
+    const match = projectName.match(/^([A-Z0-9]+)\s*-/);
+    return match ? match[1] : projectName.split(' ')[0];
   }
 
   private static async fetchAllProjects(accessToken: string, tenantId: string): Promise<XeroProject[]> {
     const allProjects: XeroProject[] = [];
     let page = 1;
-    const pageSize = 50;
     let hasMorePages = true;
+
+    console.log('[XeroProjectService] Starting to fetch projects with pagination...');
 
     while (hasMorePages) {
       await SmartRateLimit.waitIfNeeded();
       
-      const url = `https://api.xero.com/projects.xro/2.0/projects?states=INPROGRESS&page=${page}&pageSize=${pageSize}`;
+      // Use the proper Xero Projects API endpoint
+      const url = `https://api.xero.com/projects.xro/2.0/Projects?page=${page}`;
+      
+      console.log(`[XeroProjectService] Fetching page ${page}: ${url}`);
       
       const response = await fetch(url, {
         headers: {
@@ -208,221 +220,61 @@ export class XeroProjectService {
       });
 
       await trackXeroApiCall(response.headers, tenantId);
-      SmartRateLimit.updateFromHeaders(response.headers);
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch projects: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`[XeroProjectService] Error fetching projects page ${page}:`, response.status, errorText);
+        throw new Error(`Failed to fetch projects: ${response.status} ${errorText}`);
       }
 
-      const data = await response.json();
-
-      if (data?.items?.length > 0) {
-        allProjects.push(...data.items);
-        if (data.items.length < pageSize) {
-          hasMorePages = false;
-        } else {
-          page++;
-        }
-      } else {
-        hasMorePages = false;
-      }
+      const data: XeroProjectsResponse = await response.json();
+      console.log(`[XeroProjectService] Page ${page}: Got ${data.items.length} projects (${data.pagination.itemCount} total)`);
+      
+      allProjects.push(...data.items);
+      
+      // Check if we have more pages
+      hasMorePages = page < data.pagination.pageCount;
+      page++;
     }
 
+    console.log(`[XeroProjectService] Finished fetching all projects. Total: ${allProjects.length}`);
     return allProjects;
   }
 
-  private static async batchFetchProjectTasks(
-    projects: XeroProject[], 
-    accessToken: string, 
-    tenantId: string
-  ): Promise<{ [projectId: string]: XeroTask[] }> {
-    const projectTasks: { [projectId: string]: XeroTask[] } = {};
+  private static buildProjectCodeMapping(projects: XeroProject[]): { [code: string]: XeroProject[] } {
+    const mapping: { [code: string]: XeroProject[] } = {};
     
-    // Process in batches to respect rate limits
-    for (let i = 0; i < projects.length; i += this.BATCH_SIZE) {
-      const batch = projects.slice(i, i + this.BATCH_SIZE);
-      
-      const batchPromises = batch.map(async (project) => {
-        try {
-          await SmartRateLimit.waitIfNeeded();
-          
-          const url = `https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/Tasks`;
-          const response = await fetch(url, {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Xero-Tenant-Id': tenantId,
-              'Accept': 'application/json',
-            },
-          });
-
-          await trackXeroApiCall(response.headers, tenantId);
-          SmartRateLimit.updateFromHeaders(response.headers);
-
-          if (response.ok) {
-            const data = await response.json();
-            projectTasks[project.projectId] = data.items || [];
-          } else {
-            console.error(`Failed to fetch tasks for project ${project.projectId}`);
-            projectTasks[project.projectId] = [];
-          }
-        } catch (error) {
-          console.error(`Error fetching tasks for project ${project.projectId}:`, error);
-          projectTasks[project.projectId] = [];
-        }
-      });
-
-      await Promise.all(batchPromises);
-      
-      // Brief pause between batches
-      if (i + this.BATCH_SIZE < projects.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
-
-    return projectTasks;
-  }
-
-  private static async batchFetchTimeEntries(
-    projects: XeroProject[], 
-    accessToken: string, 
-    tenantId: string
-  ): Promise<{ [projectId: string]: XeroTimeEntry[] }> {
-    const timeEntries: { [projectId: string]: XeroTimeEntry[] } = {};
-    
-    // Only fetch time entries for a subset to avoid excessive API calls
-    // Focus on recently active projects
-    const recentProjects = projects.slice(0, 20); // Limit to 20 most recent
-    
-    for (let i = 0; i < recentProjects.length; i += this.BATCH_SIZE) {
-      const batch = recentProjects.slice(i, i + this.BATCH_SIZE);
-      
-      const batchPromises = batch.map(async (project) => {
-        try {
-          await SmartRateLimit.waitIfNeeded();
-          
-          const url = `https://api.xero.com/projects.xro/2.0/Projects/${project.projectId}/Time`;
-          const response = await fetch(url, {
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Xero-Tenant-Id': tenantId,
-              'Accept': 'application/json',
-            },
-          });
-
-          await trackXeroApiCall(response.headers, tenantId);
-          SmartRateLimit.updateFromHeaders(response.headers);
-
-          if (response.ok) {
-            const data = await response.json();
-            timeEntries[project.projectId] = data.items || [];
-          } else if (response.status !== 404) {
-            console.error(`Failed to fetch time entries for project ${project.projectId}`);
-          }
-          timeEntries[project.projectId] = timeEntries[project.projectId] || [];
-        } catch (error) {
-          console.error(`Error fetching time entries for project ${project.projectId}:`, error);
-          timeEntries[project.projectId] = [];
-        }
-      });
-
-      await Promise.all(batchPromises);
-      
-      if (i + this.BATCH_SIZE < recentProjects.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
-
-    return timeEntries;
-  }
-
-  private static buildProjectCodeMapping(
-    projects: XeroProject[],
-    projectTasks: { [projectId: string]: XeroTask[] },
-    timeEntries: { [projectId: string]: XeroTimeEntry[] }
-  ): { [code: string]: ProjectCodeData } {
-    const mapping: { [code: string]: ProjectCodeData } = {};
-
     projects.forEach(project => {
-      const code = project.projectCode || this.extractProjectCode(project.name);
-      
+      const code = project.projectCode || 'UNKNOWN';
       if (!mapping[code]) {
-        mapping[code] = {
-          projects: [],
-          tasks: {},
-          timeEntries: {}
-        };
+        mapping[code] = [];
       }
-
-      mapping[code].projects.push(project);
-
-      // Add tasks
-      const tasks = projectTasks[project.projectId] || [];
-      tasks.forEach(task => {
-        if (task.name && task.taskId) {
-          mapping[code].tasks[task.name] = {
-            taskId: task.taskId,
-            projectId: project.projectId,
-            projectName: project.name
-          };
-        }
-      });
-
-      // Add time entries grouped by task
-      const entries = timeEntries[project.projectId] || [];
-      entries.forEach(entry => {
-        const taskName = this.getTaskNameFromEntry(entry, tasks);
-        if (taskName) {
-          if (!mapping[code].timeEntries[taskName]) {
-            mapping[code].timeEntries[taskName] = [];
-          }
-          mapping[code].timeEntries[taskName].push({
-            ...entry,
-            taskName
-          });
-        }
-      });
+      mapping[code].push(project);
     });
-
+    
+    console.log(`[XeroProjectService] Built project code mapping for ${Object.keys(mapping).length} codes`);
     return mapping;
   }
 
-  private static getTaskNameFromEntry(entry: XeroTimeEntry, tasks: XeroTask[]): string | null {
-    const task = tasks.find(t => t.taskId === entry.taskId);
-    return task ? task.name : null;
-  }
-
-  // Helper method to get project by code
-  static async getProjectByCode(projectCode: string): Promise<ProjectCodeData | null> {
+  static async getProjectByCode(projectCode: string): Promise<XeroProject[] | null> {
     const data = await this.getProjectData();
     return data.projectCodes[projectCode] || null;
   }
 
-  // Helper method to check if projects have required tasks
   static async getProjectsNeedingTasks(requiredTasks: string[]): Promise<{
     projectId: string;
     projectName: string;
     projectCode: string;
     missingTasks: string[];
   }[]> {
+    // Since we're not fetching tasks anymore, we'll assume all projects need all tasks
     const data = await this.getProjectData();
-    const projectsNeedingTasks: any[] = [];
-
-    Object.entries(data.projectCodes).forEach(([code, codeData]) => {
-      codeData.projects.forEach(project => {
-        const projectTaskNames = (data.projectTasks[project.projectId] || []).map(t => t.name);
-        const missingTasks = requiredTasks.filter(task => !projectTaskNames.includes(task));
-        
-        if (missingTasks.length > 0) {
-          projectsNeedingTasks.push({
-            projectId: project.projectId,
-            projectName: project.name,
-            projectCode: code,
-            missingTasks
-          });
-        }
-      });
-    });
-
-    return projectsNeedingTasks;
+    
+    return data.projects.map(project => ({
+      projectId: project.projectId,
+      projectName: project.name,
+      projectCode: project.projectCode || 'UNKNOWN',
+      missingTasks: [...requiredTasks] // All tasks are "missing" since we don't fetch existing ones
+    }));
   }
 } 

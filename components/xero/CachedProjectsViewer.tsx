@@ -84,6 +84,44 @@ export default function CachedProjectsViewer({ onRefresh, className = '' }: Cach
     fetchCacheStatus();
   }, []);
 
+  // Listen for tenant changes
+  useEffect(() => {
+    const handleTenantChange = async (event: any) => {
+      console.log('[CachedProjectsViewer] Tenant changed, clearing cache and refreshing');
+      
+      // Clear cache for the previous tenant (optional - could clear all)
+      try {
+        await fetch('/api/xero/clear-cache', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}) // Clear all cache
+        });
+      } catch (error) {
+        console.error('[CachedProjectsViewer] Failed to clear cache:', error);
+      }
+      
+      // Reset component state
+      setCachedData(null);
+      setLoading(true);
+      
+      // Fetch new cache status after a brief delay
+      setTimeout(() => {
+        fetchCacheStatus();
+      }, 200);
+    };
+
+    // Listen for storage events (tenant changes)
+    window.addEventListener('storage', handleTenantChange);
+    
+    // Also listen for custom tenant change events
+    window.addEventListener('tenantChanged', handleTenantChange);
+
+    return () => {
+      window.removeEventListener('storage', handleTenantChange);
+      window.removeEventListener('tenantChanged', handleTenantChange);
+    };
+  }, []);
+
 
 
   if (loading) {

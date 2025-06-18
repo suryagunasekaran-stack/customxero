@@ -142,40 +142,27 @@ export async function POST(request: NextRequest) {
     let totalActualCost = 0;
     
     for (const project of projectData.projects) {
-      const tasks = projectData.projectTasks[project.projectId] || [];
-      const timeEntries = projectData.timeEntries[project.projectId] || [];
+      // Since we don't fetch tasks or time entries anymore, we'll use project-level data
+      // from the Xero Projects API response for WIP calculations
+      const taskSnapshots: any[] = []; // No task-level data available
       
-      const taskSnapshots = tasks.map(task => {
-        // Calculate actual minutes from time entries
-        const taskTimeEntries = timeEntries.filter(entry => entry.taskId === task.taskId);
-        const actualMinutes = taskTimeEntries.reduce((sum, entry) => sum + (entry.duration || 0), 0);
-        
-        const estimateMinutes = task.estimateMinutes || 0;
-        const rate = task.rate?.value || 0;
-        const estimatedCost = (estimateMinutes * rate) / 60; // Convert to hourly rate
-        const actualCost = (actualMinutes * rate) / 60;
-        
-        return {
-          taskId: task.taskId,
-          taskName: task.name,
-          estimateMinutes,
-          actualMinutes,
-          rate,
-          estimatedCost,
-          actualCost
-        };
-      });
+      // Use project-level financial data from Xero API for WIP calculation
+      const totalTaskAmount = project.totalTaskAmount?.value || 0;
+      const totalExpenseAmount = project.totalExpenseAmount?.value || 0;
+      const totalInvoiced = project.totalInvoiced?.value || 0;
+      const totalToBeInvoiced = project.totalToBeInvoiced?.value || 0;
       
-      // Calculate project totals
+      // Calculate project totals using project-level Xero data
       const totals = {
-        totalEstimateMinutes: taskSnapshots.reduce((sum, task) => sum + task.estimateMinutes, 0),
-        totalActualMinutes: taskSnapshots.reduce((sum, task) => sum + task.actualMinutes, 0),
-        totalEstimatedCost: taskSnapshots.reduce((sum, task) => sum + task.estimatedCost, 0),
-        totalActualCost: taskSnapshots.reduce((sum, task) => sum + task.actualCost, 0),
+        totalEstimateMinutes: 0, // Not available at project level
+        totalActualMinutes: project.minutesLogged || 0,
+        totalEstimatedCost: project.estimate?.value || 0,
+        totalActualCost: totalTaskAmount + totalExpenseAmount,
         wipValue: 0
       };
       
-      totals.wipValue = calculateWipValue(totals.totalEstimatedCost, totals.totalActualCost);
+      // WIP = Work completed but not yet invoiced
+      totals.wipValue = totalToBeInvoiced;
       
       totalWipValue += totals.wipValue;
       totalEstimatedCost += totals.totalEstimatedCost;

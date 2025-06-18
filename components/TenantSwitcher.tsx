@@ -69,6 +69,12 @@ export default function TenantSwitcher() {
           selectedTenant: tenantId
         } : null);
         
+        // Dispatch tenant change event for cache refresh
+        const tenantChangeEvent = new CustomEvent('tenantChanged', {
+          detail: { tenantId, tenantName: tenantsData?.availableTenants.find(t => t.tenantId === tenantId)?.tenantName }
+        });
+        window.dispatchEvent(tenantChangeEvent);
+        
         // Use router.refresh() to force NextAuth to recalculate session
         router.refresh();
         

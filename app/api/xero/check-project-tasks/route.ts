@@ -73,12 +73,11 @@ export async function GET() {
     });
     
     // Analyze each project
+    // Since we no longer fetch existing tasks, we assume all projects need all required tasks
     for (const project of projectData.projects) {
-      const projectTasks = projectData.projectTasks[project.projectId] || [];
-      const taskNames = projectTasks.map(t => t.name);
-      
-      const existingRequiredTasks = REQUIRED_TASKS.filter(task => taskNames.includes(task));
-      const missingRequiredTasks = REQUIRED_TASKS.filter(task => !taskNames.includes(task));
+      // We'll assume all tasks are missing since we don't fetch existing tasks anymore
+      const existingRequiredTasks: string[] = []; // No existing tasks since we don't fetch them
+      const missingRequiredTasks = [...REQUIRED_TASKS]; // All tasks are considered missing
       
       // Update task frequency
       existingRequiredTasks.forEach(task => {
@@ -214,21 +213,21 @@ export async function GET() {
       projectsWithAllTasks: projectsWithAllTasks.map(r => ({
         projectId: r.projectId,
         projectName: r.projectName,
-        totalTasks: (projectData.projectTasks[r.projectId] || []).length,
+        totalTasks: 0, // We don't fetch existing tasks anymore
         existingTasks: r.existingTasks
       })),
       projectsWithMissingTasks: projectsWithMissingTasks.map(r => ({
         projectId: r.projectId,
         projectName: r.projectName,
         status: 'INPROGRESS',
-        totalTasks: (projectData.projectTasks[r.projectId] || []).length,
+        totalTasks: 0, // We don't fetch existing tasks anymore
         existingTasks: r.existingTasks,
         missingTasks: r.missingTasks
       })),
       downloadableReport: downloadableReport.content,
       successfulProjectFetches: projectData.projects.length,
       failedProjectFetches: 0,
-      totalTasks: Object.values(projectData.projectTasks).reduce((sum, tasks) => sum + tasks.length, 0)
+      totalTasks: 0 // We don't fetch existing tasks anymore
     };
     
     return NextResponse.json(response);
