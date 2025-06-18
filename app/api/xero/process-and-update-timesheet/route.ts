@@ -45,6 +45,17 @@ interface TaskCreationResult {
   idempotencyKey?: string;
 }
 
+interface XeroTask {
+  taskId: string;
+  name: string;
+  rate: {
+    currency: string;
+    value: number;
+  };
+  chargeType: string;
+  estimateMinutes: number;
+}
+
 interface TaskUpdateResult {
   projectCode: string;
   projectId: string;
@@ -114,275 +125,260 @@ function getTaskConfigForTenant(tenantId: string, tenantName: string) {
   };
 }
 
-async function processTimesheetFile(file: File): Promise<ProcessingResults> {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await fetch('http://127.0.0.1:5001/api/process-timesheet', {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-    throw new Error(errorData.error || `Server responded with ${response.status}`);
+// Convert rate value to cents, handling various input formats and floating point errors
+function convertRateToCents(rateValue: number): number {
+  // Handle different possible formats:
+  // 1. Already in cents (e.g., 8789 for $87.89)
+  // 2. In dollars (e.g., 87.89 for $87.89)
+  // 3. Floating point errors (e.g., 878911 instead of 8789)
+  
+  let cents: number;
+  
+  if (rateValue >= 100000) {
+    // Very large number, likely floating point error in cents
+    // Try to detect if it's 100x too large (common floating point issue)
+    cents = Math.round(rateValue / 100);
+  } else if (rateValue >= 1000) {
+    // Likely already in cents
+    cents = Math.round(rateValue);
+  } else {
+    // Likely in dollars, convert to cents
+    cents = Math.round(rateValue * 100);
   }
-
-  const data = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.error || 'Processing failed');
-  }
-
-  return data;
+  
+  return cents;
 }
 
-async function ensureRequiredTasks(
-  projectData: any,
+
+
+async function createAndUpdateTasks(
   consolidatedPayload: ConsolidatedPayload,
+  projectData: any,
   tenantId: string,
   tenantName: string,
   accessToken: string
 ): Promise<TaskCreationResult[]> {
   const results: TaskCreationResult[] = [];
   const projectCodesToProcess = Object.keys(consolidatedPayload);
-  
-  // Check which projects need tasks
-  const projectsNeedingTasks: any[] = [];
+  const baseTaskConfig = getTaskConfigForTenant(tenantId, tenantName);
   
   for (const projectCode of projectCodesToProcess) {
     const codeData = projectData.projectCodes[projectCode];
-    if (!codeData) continue;
+    if (!codeData || !Array.isArray(codeData)) continue;
     
-    for (const project of codeData.projects) {
-      const projectTasks = projectData.projectTasks[project.projectId] || [];
-      const taskNames = projectTasks.map((t: any) => t.name);
-      const missingTasks = REQUIRED_TASKS.filter(task => !taskNames.includes(task));
+    const timesheetTasks = consolidatedPayload[projectCode];
+    
+    // Process each project that has this code
+    for (const project of codeData) {
       
-      if (missingTasks.length > 0) {
-        projectsNeedingTasks.push({
-          projectId: project.projectId,
-          projectName: project.name,
-          projectCode,
-          missingTasks
-        });
-      }
-    }
-  }
-  
-  // Batch create missing tasks
-  const taskConfig = getTaskConfigForTenant(tenantId, tenantName);
-  const timestamp = new Date().toISOString().split('T')[0];
-  
-  for (const project of projectsNeedingTasks) {
-    for (const taskName of project.missingTasks) {
       try {
+        // Step 1: Fetch existing tasks for this project
         await SmartRateLimit.waitIfNeeded();
+        const tasksResponse = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/tasks`, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Xero-Tenant-Id': tenantId,
+            'Accept': 'application/json'
+          }
+        });
         
-        const runTimestamp = Date.now();
-        const idempotencyKey = `standardize-${project.projectId}-${taskName.replace(/\s+/g, '-').toLowerCase()}-${timestamp}-${runTimestamp}`;
+        await trackXeroApiCall(tasksResponse.headers, tenantId);
+        SmartRateLimit.updateFromHeaders(tasksResponse.headers);
         
-        const taskPayload = {
-          name: taskName,
-          ...taskConfig
-        };
-        
-        // COMMENTED OUT: POST request to Xero for task creation
-        // const response = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/tasks`, {
-        //   method: 'POST',
-        //   headers: {
-        //     'Authorization': `Bearer ${accessToken}`,
-        //     'Xero-Tenant-Id': tenantId,
-        //     'Accept': 'application/json',
-        //     'Content-Type': 'application/json',
-        //     'Idempotency-Key': idempotencyKey
-        //   },
-        //   body: JSON.stringify(taskPayload)
-        // });
-
-        // await trackXeroApiCall(response.headers, tenantId);
-        // SmartRateLimit.updateFromHeaders(response.headers);
-        
-        // Simulated delay for realistic task creation processing time
-        await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 1200)); // 0.8-2 second delay
-        
-        // Simulated success response for testing
-        const response = { ok: true, status: 200 };
-        
-        if (response.ok) {
-          results.push({
-            projectId: project.projectId,
-            projectName: project.projectName,
-            taskName,
-            success: true,
-            idempotencyKey
-          });
-        } else {
-          // const errorText = await response.text();
-          results.push({
-            projectId: project.projectId,
-            projectName: project.projectName,
-            taskName,
-            success: false,
-            error: `HTTP ${response.status}: Simulated error`,
-            idempotencyKey
-          });
+        if (!tasksResponse.ok) {
+          const errorText = await tasksResponse.text();
+          console.error(`[Task Sync] Failed to fetch tasks for project ${project.name}: ${errorText}`);
+          
+          // Record failure for all tasks in this project
+          for (const timesheetTask of timesheetTasks) {
+            results.push({
+              projectId: project.projectId,
+              projectName: project.name,
+              taskName: timesheetTask.name,
+              success: false,
+              error: `Could not fetch existing tasks: HTTP ${tasksResponse.status}`
+            });
+          }
+          continue;
         }
         
-      } catch (error) {
-        results.push({
-          projectId: project.projectId,
-          projectName: project.projectName,
-          taskName,
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
-    }
-  }
-  
-  // Clear cache to ensure fresh data for updates
-  if (results.filter(r => r.success).length > 0) {
-    XeroProjectService.clearCache(tenantId);
-  }
-  
-  return results;
-}
+        const tasksData = await tasksResponse.json();
+        const existingTasks = tasksData.items || [];
+        
+        // Create a map of existing tasks by name for quick lookup
+        const existingTasksMap = new Map<string, XeroTask>(
+          existingTasks.map((task: any) => [task.name.toLowerCase(), task as XeroTask])
+        );
+        
+                 // Step 2: Process each task from the timesheet
+         for (const timesheetTask of timesheetTasks) {
+           try {
+             // Validate idempotency key
+             if (!timesheetTask.idempotencyKey) {
+               console.error(`[Task Sync] Missing idempotency key for task "${timesheetTask.name}" in project ${project.name}`);
+               results.push({
+                 projectId: project.projectId,
+                 projectName: project.name,
+                 taskName: timesheetTask.name,
+                 success: false,
+                 error: 'Missing idempotency key'
+               });
+               continue;
+             }
+             
 
-async function executeTimesheetUpdates(
-  timesheetData: ProcessingResults,
-  projectData: any,
-  tenantId: string,
-  accessToken: string
-): Promise<TaskUpdateResult[]> {
-  const results: TaskUpdateResult[] = [];
-  const consolidatedPayload = timesheetData.consolidated_payload;
-  
-  for (const [projectCode, tasks] of Object.entries(consolidatedPayload)) {
-    const codeData = projectData.projectCodes[projectCode];
-    if (!codeData || codeData.projects.length === 0) {
-      console.log(`[Update] No matching projects for code: ${projectCode}`);
-      continue;
-    }
-    
-    // Use the first project with this code
-    const project = codeData.projects[0];
-    const projectTasks = projectData.projectTasks[project.projectId] || [];
-    
-    for (const consolidatedTask of tasks) {
-      const xeroTask = projectTasks.find((t: any) => t.name === consolidatedTask.name);
-      
-      if (!xeroTask) {
-        results.push({
-          projectCode,
-          projectId: project.projectId,
-          projectName: project.name,
-          taskName: consolidatedTask.name,
-          success: false,
-          newEstimate: consolidatedTask.estimateMinutes,
-          newRate: consolidatedTask.rate.value,
-          error: 'Task not found in project'
-        });
-        continue;
-      }
-      
-      // Check if update is needed
-      const currentEstimate = xeroTask.estimateMinutes || 0;
-      const currentRate = xeroTask.rate?.value || 0;
-      
-      if (currentEstimate === consolidatedTask.estimateMinutes && currentRate === consolidatedTask.rate.value) {
-        results.push({
-          projectCode,
-          projectId: project.projectId,
-          projectName: project.name,
-          taskName: consolidatedTask.name,
-          success: true,
-          previousEstimate: currentEstimate,
-          newEstimate: consolidatedTask.estimateMinutes,
-          previousRate: currentRate,
-          newRate: consolidatedTask.rate.value,
-          error: 'No update needed - values unchanged'
-        });
-        continue;
-      }
-      
-      // Perform update
-      try {
-        await SmartRateLimit.waitIfNeeded();
-        
-        const updatePayload = {
-          name: xeroTask.name,
-          rate: consolidatedTask.rate,
-          chargeType: consolidatedTask.chargeType,
-          estimateMinutes: consolidatedTask.estimateMinutes
-        };
-        
-        // COMMENTED OUT: PUT request to Xero for task updates
-        // const response = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/tasks/${xeroTask.taskId}`, {
-        //   method: 'PUT',
-        //   headers: {
-        //     'Authorization': `Bearer ${accessToken}`,
-        //     'Xero-Tenant-Id': tenantId,
-        //     'Accept': 'application/json',
-        //     'Content-Type': 'application/json'
-        //   },
-        //   body: JSON.stringify(updatePayload)
-        // });
-
-        // await trackXeroApiCall(response.headers, tenantId);
-        // SmartRateLimit.updateFromHeaders(response.headers);
-        
-        // Simulated delay for realistic task update processing time
-        await new Promise(resolve => setTimeout(resolve, 600 + Math.random() * 800)); // 0.6-1.4 second delay
-        
-        // Simulated success response for testing
-        const response = { ok: true, status: 200 };
-        
-        if (response.ok) {
-          results.push({
-            projectCode,
-            projectId: project.projectId,
-            projectName: project.name,
-            taskName: consolidatedTask.name,
-            success: true,
-            previousEstimate: currentEstimate,
-            newEstimate: consolidatedTask.estimateMinutes,
-            previousRate: currentRate,
-            newRate: consolidatedTask.rate.value
-          });
-        } else {
-          // const errorText = await response.text();
-          results.push({
-            projectCode,
-            projectId: project.projectId,
-            projectName: project.name,
-            taskName: consolidatedTask.name,
-            success: false,
-            previousEstimate: currentEstimate,
-            newEstimate: consolidatedTask.estimateMinutes,
-            previousRate: currentRate,
-            newRate: consolidatedTask.rate.value,
-            error: `HTTP ${response.status}: Simulated error`
-          });
+             
+             const existingTask = existingTasksMap.get(timesheetTask.name.toLowerCase());
+            
+                         // Prepare task payload with correct currency and values
+             const rateInCents = convertRateToCents(timesheetTask.rate.value);
+             
+             const taskPayload = {
+               name: timesheetTask.name,
+               rate: {
+                 currency: baseTaskConfig.rate.currency,
+                 value: rateInCents
+               },
+               chargeType: timesheetTask.chargeType,
+               estimateMinutes: timesheetTask.estimateMinutes
+             };
+            
+            if (existingTask) {
+              // Task exists - check if update is needed
+              const needsUpdate = 
+                existingTask.rate.value !== rateInCents ||
+                existingTask.estimateMinutes !== timesheetTask.estimateMinutes ||
+                existingTask.chargeType !== timesheetTask.chargeType;
+              
+              if (needsUpdate) {
+                // Update existing task
+                await SmartRateLimit.waitIfNeeded();
+                const updateResponse = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/tasks/${existingTask.taskId}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Xero-Tenant-Id': tenantId,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify(taskPayload)
+                });
+                
+                await trackXeroApiCall(updateResponse.headers, tenantId);
+                SmartRateLimit.updateFromHeaders(updateResponse.headers);
+                
+                if (updateResponse.ok) {
+                  results.push({
+                    projectId: project.projectId,
+                    projectName: project.name,
+                    taskName: timesheetTask.name,
+                    success: true,
+                    error: 'Updated existing task'
+                  });
+                } else {
+                  const updateErrorText = await updateResponse.text();
+                  console.error(`[Task Sync] Failed to update task: ${updateErrorText}`);
+                  results.push({
+                    projectId: project.projectId,
+                    projectName: project.name,
+                    taskName: timesheetTask.name,
+                    success: false,
+                    error: `Update failed: HTTP ${updateResponse.status}`
+                  });
+                }
+              } else {
+                results.push({
+                  projectId: project.projectId,
+                  projectName: project.name,
+                  taskName: timesheetTask.name,
+                  success: true,
+                  error: 'Task already up to date'
+                });
+              }
+            } else {
+                             // Task doesn't exist - create it
+               await SmartRateLimit.waitIfNeeded();
+               const createResponse = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/tasks`, {
+                 method: 'POST',
+                 headers: {
+                   'Authorization': `Bearer ${accessToken}`,
+                   'Xero-Tenant-Id': tenantId,
+                   'Accept': 'application/json',
+                   'Content-Type': 'application/json',
+                   'Idempotency-Key': timesheetTask.idempotencyKey
+                 },
+                 body: JSON.stringify(taskPayload)
+               });
+              
+              await trackXeroApiCall(createResponse.headers, tenantId);
+              SmartRateLimit.updateFromHeaders(createResponse.headers);
+              
+              if (createResponse.ok) {
+                results.push({
+                  projectId: project.projectId,
+                  projectName: project.name,
+                  taskName: timesheetTask.name,
+                  success: true,
+                  idempotencyKey: timesheetTask.idempotencyKey
+                });
+                             } else {
+                 const createErrorText = await createResponse.text();
+                 console.error(`[Task Sync] Failed to create task "${timesheetTask.name}"`);
+                 console.error(`[Task Sync] HTTP ${createResponse.status}: ${createErrorText}`);
+                 console.error(`[Task Sync] Used idempotency key: "${timesheetTask.idempotencyKey}"`);
+                 console.error(`[Task Sync] Payload was:`, JSON.stringify(taskPayload, null, 2));
+                 
+                 results.push({
+                   projectId: project.projectId,
+                   projectName: project.name,
+                   taskName: timesheetTask.name,
+                   success: false,
+                   error: `Create failed: HTTP ${createResponse.status}`,
+                   idempotencyKey: timesheetTask.idempotencyKey
+                 });
+               }
+            }
+          } catch (taskError) {
+            console.error(`[Task Sync] Error processing task "${timesheetTask.name}":`, taskError);
+            results.push({
+              projectId: project.projectId,
+              projectName: project.name,
+              taskName: timesheetTask.name,
+              success: false,
+              error: taskError instanceof Error ? taskError.message : 'Unknown error'
+            });
+          }
         }
         
-      } catch (error) {
-        results.push({
-          projectCode,
-          projectId: project.projectId,
-          projectName: project.name,
-          taskName: consolidatedTask.name,
-          success: false,
-          newEstimate: consolidatedTask.estimateMinutes,
-          newRate: consolidatedTask.rate.value,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
+        // Optional Step 3: Log tasks that exist in Xero but not in timesheet (potential cleanup candidates)
+        const timesheetTaskNames = new Set(timesheetTasks.map(t => t.name.toLowerCase()));
+        const orphanedTasks = existingTasks.filter((task: any) => !timesheetTaskNames.has(task.name.toLowerCase()));
+        
+        if (orphanedTasks.length > 0) {
+          // Note: We're not deleting these automatically as they might be needed for other purposes
+        }
+        
+      } catch (projectError) {
+        console.error(`[Task Sync] Error processing project ${project.name}:`, projectError);
+        
+        // Record failure for all tasks in this project
+        for (const timesheetTask of timesheetTasks) {
+          results.push({
+            projectId: project.projectId,
+            projectName: project.name,
+            taskName: timesheetTask.name,
+            success: false,
+            error: projectError instanceof Error ? projectError.message : 'Unknown error'
+          });
+        }
       }
     }
   }
   
   return results;
 }
+
+
 
 function generateComprehensiveReport(
   timesheetData: ProcessingResults,
@@ -429,119 +425,71 @@ function generateComprehensiveReport(
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
   let apiCallsStart = 0;
-  let cacheHits = 0;
   
   try {
     const { access_token, effective_tenant_id } = await ensureValidToken();
     
-    // Get form data
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
+    // Get the filtered payload from the frontend (already processed and filtered)
+    const body = await request.json();
+    const { filteredPayload } = body;
     
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    if (!filteredPayload || !filteredPayload.consolidated_payload) {
+      return NextResponse.json({ error: 'No filtered payload provided' }, { status: 400 });
     }
     
-    // Validate file type
-    if (!file.name.toLowerCase().endsWith('.xlsx') && !file.name.toLowerCase().endsWith('.xls')) {
-      return NextResponse.json({ error: 'Invalid file format. Please upload an Excel file (.xlsx or .xls).' }, { status: 400 });
-    }
-    
-    console.log(`[Unified Processing] Starting processing for file: ${file.name}`);
-    
-    // Step 1: Process timesheet through Flask API
-    console.log('[Unified Processing] Step 1: Processing timesheet file...');
-    const timesheetData = await processTimesheetFile(file);
-    console.log(`[Unified Processing] Timesheet processed: ${timesheetData.metadata.entries_processed} entries, ${timesheetData.metadata.projects_consolidated} projects`);
-    
-    // Step 2: Get project data (validate tenant and force fresh data for comparison)
-    console.log('[Unified Processing] Step 2: Fetching project data...');
-    // ALWAYS force fresh data for timesheet processing to ensure we have correct tenant data
-    const projectDataBefore = await XeroProjectService.getProjectData(true);
-    console.log(`[Unified Processing] Project data fetched for tenant: ${projectDataBefore.tenantName} (${projectDataBefore.tenantId})`);
-    
-    // Validate we have the correct tenant data
-    if (projectDataBefore.tenantId !== effective_tenant_id) {
-      console.warn(`[Unified Processing] Tenant mismatch! Expected: ${effective_tenant_id}, Got: ${projectDataBefore.tenantId}`);
-      // Clear cache and fetch again
-      XeroProjectService.clearCache();
-      const projectDataRefresh = await XeroProjectService.getProjectData(true);
-      console.log(`[Unified Processing] Refreshed project data for tenant: ${projectDataRefresh.tenantName}`);
-    }
-    
-    // Get tenant info for task configuration
-    const currentTenant = projectDataBefore.tenantName;
+    // Get project data for tenant info
+    const projectData = await XeroProjectService.getProjectData();
+    const currentTenant = projectData.tenantName;
     
     // Track API calls
     apiCallsStart = SmartRateLimit.getRemainingCalls();
     
-    // Step 3: Ensure all projects have required tasks
-    console.log('[Unified Processing] Step 3: Ensuring required tasks exist...');
-    const taskCreationResults = await ensureRequiredTasks(
-      projectDataBefore,
-      timesheetData.consolidated_payload,
+    // Step 1: Create/update tasks with correct values in one go
+    const taskResults = await createAndUpdateTasks(
+      filteredPayload.consolidated_payload,
+      projectData,
       effective_tenant_id,
       currentTenant,
       access_token
     );
     
-    const tasksCreated = taskCreationResults.filter(r => r.success).length;
-    console.log(`[Unified Processing] Created ${tasksCreated} missing tasks`);
-    
-    // Step 4: Get fresh project data if tasks were created
-    const projectData = tasksCreated > 0 
-      ? await XeroProjectService.getProjectData(true) // Force refresh
-      : projectDataBefore;
-    
-    // Step 5: Execute timesheet updates
-    console.log('[Unified Processing] Step 4: Executing timesheet updates...');
-    const updateResults = await executeTimesheetUpdates(
-      timesheetData,
-      projectData,
-      effective_tenant_id,
-      access_token
-    );
-    
-    const successfulUpdates = updateResults.filter(r => r.success && !r.error?.includes('unchanged')).length;
-    console.log(`[Unified Processing] Successfully updated ${successfulUpdates} tasks`);
+    const successfulTasks = taskResults.filter((r: any) => r.success).length;
     
     // Calculate statistics
     const totalApiCalls = apiCallsStart - SmartRateLimit.getRemainingCalls();
     const processingTimeMs = Date.now() - startTime;
     
     // Generate comprehensive report
-    const report = generateComprehensiveReport(timesheetData, taskCreationResults, updateResults);
+    const report = generateComprehensiveReport(filteredPayload, taskResults, []);
     
     // Build response
     const result: UnifiedProcessingResult = {
       success: true,
-      timesheetProcessing: timesheetData,
+      timesheetProcessing: filteredPayload,
       projectStandardization: {
-        projectsAnalyzed: Object.keys(timesheetData.consolidated_payload).length,
-        projectsNeedingTasks: new Set(taskCreationResults.map(r => r.projectId)).size,
-        tasksCreated: tasksCreated,
-        taskCreationResults
+        projectsAnalyzed: Object.keys(filteredPayload.consolidated_payload).length,
+        projectsNeedingTasks: new Set(taskResults.map((r: any) => r.projectId)).size,
+        tasksCreated: successfulTasks,
+        taskCreationResults: taskResults
       },
       taskUpdates: {
-        projectsProcessed: new Set(updateResults.map(r => r.projectCode)).size,
-        tasksUpdated: successfulUpdates,
-        tasksFailed: updateResults.filter(r => !r.success).length,
-        updateResults
+        projectsProcessed: Object.keys(filteredPayload.consolidated_payload).length,
+        tasksUpdated: successfulTasks,
+        tasksFailed: taskResults.filter((r: any) => !r.success).length,
+        updateResults: [] // No separate updates since we do it all in one step
       },
       downloadableReport: report,
       statistics: {
         totalApiCalls,
         processingTimeMs,
-        cacheHits
+        cacheHits: 0
       }
     };
-    
-    console.log(`[Unified Processing] Complete! Processed in ${processingTimeMs}ms with ${totalApiCalls} API calls`);
     
     return NextResponse.json(result);
     
   } catch (error: any) {
-    console.error('[Unified Processing] Error:', error);
+    console.error('[Xero Update] Error:', error);
     return NextResponse.json({ 
       error: error.message || 'An error occurred during processing',
       details: error.stack

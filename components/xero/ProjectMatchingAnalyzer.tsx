@@ -105,7 +105,7 @@ export default function ProjectMatchingAnalyzer({
       </div>
 
       {/* Project List */}
-      <div className="max-h-96 overflow-y-auto">
+      <div className="max-h-[500px] overflow-y-auto">
         {matches.length === 0 ? (
           <div className="p-4 text-center text-gray-500">
             <ExclamationTriangleIcon className="h-8 w-8 mx-auto mb-2 text-gray-400" />
@@ -114,27 +114,27 @@ export default function ProjectMatchingAnalyzer({
         ) : (
           <div className="divide-y divide-gray-100">
             {matches.map((match, index) => (
-              <div key={index} className="p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center">
+              <div key={index} className="p-4 hover:bg-gray-50 transition-colors">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center min-w-0 flex-1">
                     {match.status === 'matched' ? (
                       <CheckCircleIcon className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
                     ) : (
                       <ExclamationTriangleIcon className="h-4 w-4 text-amber-500 mr-2 flex-shrink-0" />
                     )}
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium text-gray-900">
                         {match.timesheetCode}
                       </div>
                       {match.xeroProject && (
-                        <div className="text-xs text-gray-500 truncate max-w-xs">
+                        <div className="text-xs text-gray-500 truncate">
                           → {match.xeroProject.name}
                         </div>
                       )}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className={`text-xs px-2 py-1 rounded-full ${
+                  <div className="flex-shrink-0 ml-4">
+                    <div className={`text-xs px-2 py-1 rounded-full whitespace-nowrap ${
                       match.status === 'matched' 
                         ? 'bg-green-100 text-green-700' 
                         : 'bg-amber-100 text-amber-700'
@@ -144,28 +144,31 @@ export default function ProjectMatchingAnalyzer({
                   </div>
                 </div>
                 
-                {/* Task Summary */}
-                <div className="ml-6 space-y-1">
-                  {match.tasks.slice(0, 2).map((task, taskIndex) => (
-                    <div key={taskIndex} className="flex items-center justify-between text-xs">
-                      <span className="text-gray-600">{task.name}</span>
-                      <span className="font-medium text-gray-900">
-                        ${(task.rate.value / 100).toFixed(2)} • {Math.round(task.estimateMinutes / 60)}h
-                      </span>
-                    </div>
-                  ))}
-                  {match.tasks.length > 2 && (
-                    <div className="text-xs text-gray-500">
-                      ... and {match.tasks.length - 2} more tasks
-                    </div>
-                  )}
+                {/* Complete Task List */}
+                <div className="ml-6 space-y-2">
+                  <div className="text-xs font-medium text-gray-700 mb-1">
+                    Tasks ({match.tasks.length}):
+                  </div>
+                  <div className="space-y-1 max-h-32 overflow-y-auto bg-gray-50 rounded p-2">
+                    {match.tasks.map((task, taskIndex) => (
+                      <div key={taskIndex} className="flex items-center justify-between text-xs">
+                        <span className="text-gray-700 font-medium">{task.name}</span>
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <span>${(task.rate.value / 100).toFixed(2)}</span>
+                          <span>•</span>
+                          <span>{Math.round(task.estimateMinutes / 60)}h</span>
+                          <span className="text-gray-400">({task.estimateMinutes}min)</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Action Indicator */}
                 {match.status === 'matched' && (
-                  <div className="ml-6 mt-2 flex items-center text-xs text-green-600">
+                  <div className="ml-6 mt-3 flex items-center text-xs text-green-600">
                     <ArrowPathIcon className="h-3 w-3 mr-1" />
-                    Tasks will be created/updated in Xero
+                    <span className="font-medium">Tasks will be created/updated in Xero</span>
                   </div>
                 )}
               </div>

@@ -97,11 +97,9 @@ export class XeroProjectService {
 
   static async getProjectData(forceRefresh = false): Promise<ProjectDataCache> {
     const { effective_tenant_id, available_tenants } = await ensureValidToken();
-    console.log('[XeroProjectService] Getting data for tenant:', effective_tenant_id, 'forceRefresh:', forceRefresh);
     
     const cachedData = this.cache.get(effective_tenant_id);
     if (!forceRefresh && cachedData && new Date() < cachedData.expiresAt) {
-      console.log('[XeroProjectService] Returning cached data with', cachedData.projects.length, 'projects');
       return cachedData;
     }
 
@@ -109,7 +107,6 @@ export class XeroProjectService {
     const currentTenant = available_tenants.find((t: any) => t.tenantId === effective_tenant_id);
     const tenant_name = currentTenant ? currentTenant.tenantName : 'Unknown Tenant';
 
-    console.log('[XeroProjectService] Fetching fresh project data for', tenant_name);
     const data = await this.fetchAllProjectData(effective_tenant_id, tenant_name);
     
     const cacheEntry: ProjectDataCache = {
@@ -120,22 +117,17 @@ export class XeroProjectService {
       tenantName: tenant_name
     };
     
-    console.log('[XeroProjectService] Caching', cacheEntry.projects.length, 'projects for tenant:', effective_tenant_id);
     this.cache.set(effective_tenant_id, cacheEntry);
-    console.log('[XeroProjectService] Cache set. New cache size:', this.cache.size);
     
     return cacheEntry;
   }
 
   static clearCache(tenantId?: string) {
     if (tenantId) {
-      console.log('[XeroProjectService] Clearing cache for tenant:', tenantId);
       this.cache.delete(tenantId);
     } else {
-      console.log('[XeroProjectService] Clearing all cache');
       this.cache.clear();
     }
-    console.log('[XeroProjectService] Cache size after clear:', this.cache.size);
   }
 
   static getCacheStatus(tenantId: string): ProjectDataCache | null {
@@ -149,7 +141,6 @@ export class XeroProjectService {
     if (!forceRefresh && this.cache.has(cacheKey)) {
       const cached = this.cache.get(cacheKey)!;
       if (cached.expiresAt > now) {
-        console.log(`[XeroProjectService] Cache hit for summaries (${cached.projects.length} projects)`);
         return cached.projects.map(p => ({
           projectId: p.projectId,
           name: p.name,
@@ -177,7 +168,6 @@ export class XeroProjectService {
     
     // Fetch all projects using the proper Xero Projects API
     const projects = await this.fetchAllProjects(access_token, tenantId);
-    console.log(`[XeroProjectService] Fetched ${projects.length} projects`);
     
     // Extract project codes from names (e.g., "ED25002 - Titanic" -> "ED25002")
     projects.forEach(project => {
@@ -201,15 +191,11 @@ export class XeroProjectService {
     let page = 1;
     let hasMorePages = true;
 
-    console.log('[XeroProjectService] Starting to fetch projects with pagination...');
-
     while (hasMorePages) {
       await SmartRateLimit.waitIfNeeded();
       
       // Use the proper Xero Projects API endpoint
       const url = `https://api.xero.com/projects.xro/2.0/Projects?page=${page}`;
-      
-      console.log(`[XeroProjectService] Fetching page ${page}: ${url}`);
       
       const response = await fetch(url, {
         headers: {
@@ -228,7 +214,6 @@ export class XeroProjectService {
       }
 
       const data: XeroProjectsResponse = await response.json();
-      console.log(`[XeroProjectService] Page ${page}: Got ${data.items.length} projects (${data.pagination.itemCount} total)`);
       
       allProjects.push(...data.items);
       
@@ -236,8 +221,6 @@ export class XeroProjectService {
       hasMorePages = page < data.pagination.pageCount;
       page++;
     }
-
-    console.log(`[XeroProjectService] Finished fetching all projects. Total: ${allProjects.length}`);
     return allProjects;
   }
 
@@ -252,7 +235,6 @@ export class XeroProjectService {
       mapping[code].push(project);
     });
     
-    console.log(`[XeroProjectService] Built project code mapping for ${Object.keys(mapping).length} codes`);
     return mapping;
   }
 
