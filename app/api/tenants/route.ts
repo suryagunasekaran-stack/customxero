@@ -13,7 +13,15 @@ export async function GET() {
       }, { status: 401 });
     }
 
-    const userId = session.user?.email || 'unknown';
+    const userEmail = session.user?.email;
+    if (!userEmail || typeof userEmail !== 'string' || !userEmail.trim()) {
+      console.error('[Tenants GET] Invalid user email:', userEmail);
+      return NextResponse.json({ 
+        error: 'Invalid user session - no valid email found' 
+      }, { status: 400 });
+    }
+
+    const userId = userEmail.trim();
     
     // First check if tenants are in the session
     let tenants = session.tenants;
@@ -65,28 +73,38 @@ export async function POST(request: Request) {
       }, { status: 401 });
     }
 
-    const userId = session.user?.email || 'unknown';
+    const userEmail = session.user?.email;
+    if (!userEmail || typeof userEmail !== 'string' || !userEmail.trim()) {
+      console.error('[Tenants POST] Invalid user email:', userEmail);
+      return NextResponse.json({ 
+        error: 'Invalid user session - no valid email found' 
+      }, { status: 400 });
+    }
+
+    const userId = userEmail.trim();
     const { tenantId } = await request.json();
 
     console.log('[Tenants POST] User:', userId, 'Switching to tenant:', tenantId);
 
-    if (!tenantId) {
+    if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
       return NextResponse.json({ 
-        error: 'Tenant ID is required' 
+        error: 'Tenant ID is required and must be a valid string' 
       }, { status: 400 });
     }
 
+    const cleanTenantId = tenantId.trim();
+
     // Verify the tenant exists in available tenants
     const availableTenants = session.tenants || await xeroTokenManager.getUserTenants(userId) || [];
-    if (!availableTenants.find((t: any) => t.tenantId === tenantId)) {
-      console.error('[Tenants POST] Invalid tenant ID:', tenantId, 'Available:', availableTenants.map((t: any) => t.tenantId));
+    if (!availableTenants.find((t: any) => t.tenantId === cleanTenantId)) {
+      console.error('[Tenants POST] Invalid tenant ID:', cleanTenantId, 'Available:', availableTenants.map((t: any) => t.tenantId));
       return NextResponse.json({ 
         error: 'Invalid tenant ID' 
       }, { status: 400 });
     }
 
-    await xeroTokenManager.saveSelectedTenant(userId, tenantId);
-    console.log('[Tenants POST] Successfully saved tenant:', tenantId, 'for user:', userId);
+    await xeroTokenManager.saveSelectedTenant(userId, cleanTenantId);
+    console.log('[Tenants POST] Successfully saved tenant:', cleanTenantId, 'for user:', userId);
 
     // Verify it was saved
     const verifyTenant = await xeroTokenManager.getSelectedTenant(userId);
@@ -94,7 +112,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ 
       success: true, 
-      selectedTenant: tenantId 
+      selectedTenant: cleanTenantId 
     });
   } catch (error) {
     console.error('[Tenants API] Error setting selected tenant:', error);

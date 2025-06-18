@@ -37,7 +37,13 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
         throw new Error('Token expired. Please re-authenticate.');
     }
     
-    const userId = session.user?.email || 'unknown';
+    const userEmail = session.user?.email;
+    if (!userEmail || typeof userEmail !== 'string' || !userEmail.trim()) {
+        console.error('[ensureValidToken] Invalid user email:', userEmail);
+        throw new Error('Invalid user session - no valid email found');
+    }
+    
+    const userId = userEmail.trim();
     
     // Get available tenants from session or storage
     let availableTenants = session.tenants || [];

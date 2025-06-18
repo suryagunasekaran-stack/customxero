@@ -8,7 +8,7 @@ const createRedisClient = () => {
     enableOfflineQueue: false,
     connectTimeout: 10000,
     commandTimeout: 5000,
-    lazyConnect: true,
+    lazyConnect: false,
   });
 
   redis.on('error', (err) => {
@@ -25,6 +25,10 @@ const createRedisClient = () => {
 
   redis.on('close', () => {
     console.log('Redis connection closed');
+  });
+
+  redis.on('ready', () => {
+    console.log('Redis is ready to accept commands');
   });
 
   return redis;
@@ -46,6 +50,8 @@ export interface UserXeroData {
 export class XeroTokenManager {
   private static instance: XeroTokenManager;
   private redis: Redis;
+  // In-memory fallback for tenant selection when Redis is down
+  private memoryTenantStore: Map<string, string> = new Map();
 
   private constructor() {
     this.redis = createRedisClient();
@@ -59,12 +65,16 @@ export class XeroTokenManager {
   }
 
   private getUserKey(userId: string, suffix: string): string {
-    return `user:${userId}:xero:${suffix}`;
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      throw new Error('Invalid userId provided to getUserKey');
+    }
+    return `user:${userId.trim()}:xero:${suffix}`;
   }
 
   // Helper method to check if Redis is ready
   private async isRedisReady(): Promise<boolean> {
     try {
+      await this.redis.ping();
       return this.redis.status === 'ready' || this.redis.status === 'connect';
     } catch (error) {
       return false;
@@ -86,6 +96,11 @@ export class XeroTokenManager {
   }
 
   async getUserTenants(userId: string): Promise<XeroTenant[] | null> {
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      console.warn('getUserTenants called with invalid userId:', userId);
+      return null;
+    }
+    
     return await this.safeRedisOperation(async () => {
       const tenantsData = await this.redis.get(this.getUserKey(userId, 'tenants'));
       return tenantsData ? JSON.parse(tenantsData) : null;
@@ -93,6 +108,11 @@ export class XeroTokenManager {
   }
 
   async saveUserTenants(userId: string, tenants: XeroTenant[]): Promise<void> {
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      console.warn('saveUserTenants called with invalid userId:', userId);
+      return;
+    }
+    
     try {
       if (!(await this.isRedisReady())) {
         console.warn('Redis not ready, skipping tenant save');
@@ -112,31 +132,68 @@ export class XeroTokenManager {
   }
 
   async getSelectedTenant(userId: string): Promise<string | null> {
-    return await this.safeRedisOperation(async () => {
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      console.warn('getSelectedTenant called with invalid userId:', userId);
+      return null;
+    }
+    
+    // Try Redis first, then fallback to memory
+    const redisResult = await this.safeRedisOperation(async () => {
       return await this.redis.get(this.getUserKey(userId, 'selected_tenant'));
     }, null);
+    
+    if (redisResult) {
+      return redisResult;
+    }
+    
+    // Fallback to in-memory store
+    const memoryResult = this.memoryTenantStore.get(userId);
+    console.log(`[XeroTokenManager] Using memory fallback for user ${userId}: ${memoryResult}`);
+    return memoryResult || null;
   }
 
   async saveSelectedTenant(userId: string, tenantId: string): Promise<void> {
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      console.warn('saveSelectedTenant called with invalid userId:', userId);
+      return;
+    }
+    
+    if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
+      console.warn('saveSelectedTenant called with invalid tenantId:', tenantId);
+      return;
+    }
+    
+    const cleanTenantId = tenantId.trim();
+    
+    // Always save to memory first (immediate fallback)
+    this.memoryTenantStore.set(userId, cleanTenantId);
+    console.log(`[XeroTokenManager] Saved tenant to memory: ${userId} -> ${cleanTenantId}`);
+    
+    // Try to save to Redis as well
     try {
-      if (!(await this.isRedisReady())) {
-        console.warn('Redis not ready, skipping selected tenant save');
-        return;
+      if (await this.isRedisReady()) {
+        await this.redis.set(
+          this.getUserKey(userId, 'selected_tenant'),
+          cleanTenantId,
+          'EX',
+          7 * 24 * 60 * 60 // 7 days
+        );
+        console.log(`[XeroTokenManager] Saved tenant to Redis: ${userId} -> ${cleanTenantId}`);
+      } else {
+        console.warn(`[XeroTokenManager] Redis not ready, tenant saved to memory only: ${userId} -> ${cleanTenantId}`);
       }
-      
-      await this.redis.set(
-        this.getUserKey(userId, 'selected_tenant'),
-        tenantId,
-        'EX',
-        7 * 24 * 60 * 60 // 7 days
-      );
-          } catch (error) {
-        console.warn('Error saving selected tenant (non-critical):', (error as Error).message);
-        // Don't throw error - this is not critical for app functionality
-      }
+    } catch (error) {
+      console.warn('Error saving selected tenant to Redis (non-critical):', (error as Error).message);
+      console.log(`[XeroTokenManager] Tenant saved to memory fallback: ${userId} -> ${cleanTenantId}`);
+    }
   }
 
   async deleteUserData(userId: string): Promise<void> {
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      console.warn('deleteUserData called with invalid userId:', userId);
+      return;
+    }
+    
     try {
       if (!(await this.isRedisReady())) {
         console.warn('Redis not ready, skipping user data deletion');

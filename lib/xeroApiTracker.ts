@@ -1,15 +1,56 @@
 import Redis from 'ioredis';
 
-// Initialize Redis client for server-side API tracking
-const redis = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
+// Initialize Redis client for server-side API tracking with proper error handling
+const redis = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
+  maxRetriesPerRequest: 3,
+  enableOfflineQueue: false,
+  connectTimeout: 10000,
+  commandTimeout: 5000,
+  lazyConnect: true,
+});
+
+// Add error handling for Redis connection
+redis.on('error', (err) => {
+  console.error('Redis API Tracker connection error:', err.message);
+});
+
+redis.on('connect', () => {
+  console.log('Redis API Tracker connected successfully');
+});
 
 const XERO_API_USAGE_KEY_PREFIX = 'xero_api_usage';
 const XERO_DAILY_LIMIT = 5000;
 const XERO_MINUTE_LIMIT = 60;
 
-// Helper function to generate tenant-specific Redis key
+// Helper function to generate tenant-specific Redis key with validation
 function getUsageKey(tenantId: string): string {
-  return `${XERO_API_USAGE_KEY_PREFIX}:${tenantId}`;
+  if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
+    throw new Error('Invalid tenantId provided to getUsageKey');
+  }
+  return `${XERO_API_USAGE_KEY_PREFIX}:${tenantId.trim()}`;
+}
+
+// Helper function to check if Redis is ready
+async function isRedisReady(): Promise<boolean> {
+  try {
+    return redis.status === 'ready' || redis.status === 'connect';
+  } catch (error) {
+    return false;
+  }
+}
+
+// Helper function to safely execute Redis operations
+async function safeRedisOperation<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
+  try {
+    if (!(await isRedisReady())) {
+      console.warn('Redis API Tracker not ready, using fallback value');
+      return fallback;
+    }
+    return await operation();
+  } catch (error) {
+    console.warn('Redis API Tracker operation failed, using fallback:', (error as Error).message);
+    return fallback;
+  }
 }
 
 export interface XeroApiUsageData {
@@ -27,6 +68,12 @@ export interface XeroApiUsageData {
 // Server-side function to track API usage from actual Xero response headers
 export async function trackXeroApiCallFromHeaders(responseHeaders: Headers, tenantId: string): Promise<void> {
   try {
+    // Validate tenantId
+    if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
+      console.warn('[Xero API Tracker] trackXeroApiCallFromHeaders called with invalid tenantId:', tenantId);
+      return;
+    }
+    
     const now = new Date();
     
     // Parse actual rate limit data from Xero response headers
@@ -68,8 +115,10 @@ export async function trackXeroApiCallFromHeaders(responseHeaders: Headers, tena
       lastMinuteReset: now.toISOString()
     };
     
-    // Save the authoritative usage data from Xero
-    await redis.set(getUsageKey(tenantId), JSON.stringify(usage), 'EX', 25 * 60 * 60);
+    // Save the authoritative usage data from Xero using safe Redis operations
+    await safeRedisOperation(async () => {
+      await redis.set(getUsageKey(tenantId), JSON.stringify(usage), 'EX', 25 * 60 * 60);
+    }, undefined);
     
     console.log(`[Xero API Tracker] API usage from headers - Daily: ${usedToday}/${dailyLimit} (${remainingDaily} remaining), Minute: ${usedThisMinute}/${minuteLimit} (${remainingMinute} remaining)`);
   } catch (error) {
@@ -82,11 +131,19 @@ export async function trackXeroApiCallFromHeaders(responseHeaders: Headers, tena
 // Fallback manual tracking function (for when headers aren't available)
 export async function trackXeroApiCallManual(tenantId: string): Promise<void> {
   try {
+    // Validate tenantId
+    if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
+      console.warn('[Xero API Tracker] trackXeroApiCallManual called with invalid tenantId:', tenantId);
+      return;
+    }
+    
     const now = new Date();
     const currentMinute = Math.floor(now.getTime() / 60000);
     
-    // Get current usage data
-    const existingData = await redis.get(getUsageKey(tenantId));
+    // Get current usage data using safe Redis operations
+    const existingData = await safeRedisOperation(async () => {
+      return await redis.get(getUsageKey(tenantId));
+    }, null);
     let usage: XeroApiUsageData;
     
     if (existingData) {
@@ -158,8 +215,10 @@ export async function trackXeroApiCallManual(tenantId: string): Promise<void> {
       };
     }
     
-    // Save updated usage data with TTL of 25 hours (to ensure cleanup)
-    await redis.set(getUsageKey(tenantId), JSON.stringify(usage), 'EX', 25 * 60 * 60);
+    // Save updated usage data with TTL of 25 hours (to ensure cleanup) using safe Redis operations
+    await safeRedisOperation(async () => {
+      await redis.set(getUsageKey(tenantId), JSON.stringify(usage), 'EX', 25 * 60 * 60);
+    }, undefined);
     
     console.log(`[Xero API Tracker] Manual API call tracked for tenant ${tenantId}. Daily: ${usage.usedToday}/${usage.dailyLimit}, Minute: ${usage.usedThisMinute}/${usage.minuteLimit}`);
   } catch (error) {
@@ -180,7 +239,15 @@ export async function trackXeroApiCall(responseHeaders: Headers | undefined, ten
 // Server-side function to get current usage
 export async function getXeroApiUsage(tenantId: string): Promise<XeroApiUsageData | null> {
   try {
-    const existingData = await redis.get(getUsageKey(tenantId));
+    // Validate tenantId
+    if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
+      console.warn('[Xero API Tracker] getXeroApiUsage called with invalid tenantId:', tenantId);
+      return null;
+    }
+    
+    const existingData = await safeRedisOperation(async () => {
+      return await redis.get(getUsageKey(tenantId));
+    }, null);
     if (existingData) {
       const usage = JSON.parse(existingData);
       
@@ -212,8 +279,10 @@ export async function getXeroApiUsage(tenantId: string): Promise<XeroApiUsageDat
           lastMinuteReset: hasResetMinute ? now.toISOString() : usage.lastMinuteReset
         };
         
-        // Save the reset data
-        await redis.set(getUsageKey(tenantId), JSON.stringify(resetUsage), 'EX', 25 * 60 * 60);
+        // Save the reset data using safe Redis operations
+        await safeRedisOperation(async () => {
+          await redis.set(getUsageKey(tenantId), JSON.stringify(resetUsage), 'EX', 25 * 60 * 60);
+        }, undefined);
         return resetUsage;
       } else if (hasResetMinute) {
         // Reset minute counters
@@ -225,8 +294,10 @@ export async function getXeroApiUsage(tenantId: string): Promise<XeroApiUsageDat
           lastMinuteReset: now.toISOString()
         };
         
-        // Save the reset data
-        await redis.set(getUsageKey(tenantId), JSON.stringify(resetUsage), 'EX', 25 * 60 * 60);
+        // Save the reset data using safe Redis operations
+        await safeRedisOperation(async () => {
+          await redis.set(getUsageKey(tenantId), JSON.stringify(resetUsage), 'EX', 25 * 60 * 60);
+        }, undefined);
         return resetUsage;
       }
       
