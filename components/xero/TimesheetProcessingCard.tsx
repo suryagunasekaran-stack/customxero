@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import { CloudArrowUpIcon, DocumentArrowDownIcon, CheckCircleIcon, XCircleIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
 import ProgressBar from '../ProgressBar';
 import ConfirmationDialog from '../ConfirmationDialog';
+import CachedProjectsViewer from './CachedProjectsViewer';
+import ProjectMatchingAnalyzer from './ProjectMatchingAnalyzer';
 
 interface ProcessingStep {
   name: string;
@@ -39,7 +41,7 @@ interface UnifiedProcessingResult {
 }
 
 export default function TimesheetProcessingCard({ disabled = false }: { disabled?: boolean }) {
-  const [currentStep, setCurrentStep] = useState<'upload' | 'confirm' | 'processing' | 'complete' | 'error'>('upload');
+  const [currentStep, setCurrentStep] = useState<'upload' | 'confirm' | 'review' | 'processing' | 'complete' | 'error'>('upload');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([
     { name: 'Processing Timesheet', status: 'pending' },
@@ -54,7 +56,10 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
   const [currentProgress, setCurrentProgress] = useState(0);
   const [totalProgress, setTotalProgress] = useState(0);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showReviewConfirmation, setShowReviewConfirmation] = useState(false);
   const [timesheetPreview, setTimesheetPreview] = useState<any>(null);
+  const [processedData, setProcessedData] = useState<any>(null);
+  const [cachedProjects, setCachedProjects] = useState<any[]>([]);
 
   const updateStep = (index: number, status: ProcessingStep['status'], message?: string, details?: any) => {
     setProcessingSteps(prev => {
@@ -63,6 +68,55 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
       return newSteps;
     });
   };
+
+  const fetchCachedProjects = async () => {
+    try {
+      console.log('[TimesheetProcessingCard] Fetching cached projects...');
+      const response = await fetch('/api/xero/cache-status');
+      console.log('[TimesheetProcessingCard] Cache status response:', response.status);
+      
+      if (response.ok) {
+        const cacheData = await response.json();
+        console.log('[TimesheetProcessingCard] Cache data received:', {
+          projectCount: cacheData.projects?.length || 0,
+          tenantName: cacheData.tenantName
+        });
+        setCachedProjects(cacheData.projects || []);
+      } else {
+        const errorText = await response.text();
+        console.error('[TimesheetProcessingCard] Cache status error:', response.status, errorText);
+      }
+    } catch (error) {
+      console.error('[TimesheetProcessingCard] Failed to fetch cached projects:', error);
+    }
+  };
+
+  const handleRefreshCache = async () => {
+    try {
+      console.log('[TimesheetProcessingCard] Refreshing cache...');
+      const response = await fetch('/api/xero/projects', {
+        method: 'GET',
+        headers: { 'X-Force-Refresh': 'true' }
+      });
+      console.log('[TimesheetProcessingCard] Refresh response:', response.status);
+      
+      if (response.ok) {
+        // Small delay to ensure cache is updated
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await fetchCachedProjects();
+      } else {
+        const errorText = await response.text();
+        console.error('[TimesheetProcessingCard] Refresh error:', response.status, errorText);
+      }
+    } catch (error) {
+      console.error('[TimesheetProcessingCard] Failed to refresh cache:', error);
+    }
+  };
+
+  // Load cached projects on component mount
+  React.useEffect(() => {
+    fetchCachedProjects();
+  }, []);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -95,11 +149,71 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
     setError(null);
     setStartTime(Date.now());
     setCurrentProgress(0);
-    setTotalProgress(5); // 5 steps
+    setTotalProgress(1); // Only 1 step for initial processing
     
-    // Reset processing steps
+    // Reset processing steps for initial processing
     setProcessingSteps([
-      { name: 'Processing Timesheet', status: 'pending' },
+      { name: 'Processing Timesheet Data', status: 'pending' }
+    ]);
+
+    try {
+      updateStep(0, 'processing', 'Analyzing timesheet data...');
+      setCurrentProgress(0.5);
+      
+      const formData = new FormData();
+      formData.append('file', uploadedFile);
+
+      // Call the processing endpoint to get consolidated data
+      const response = await fetch('http://127.0.0.1:5001/api/process-timesheet', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.error || `Server responded with ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Processing failed');
+      }
+
+      updateStep(0, 'complete', 
+        `Processed ${data.metadata.entries_processed} entries, ${data.metadata.projects_consolidated} projects`,
+        data
+      );
+      setCurrentProgress(1);
+
+      setProcessedData(data);
+      setCurrentStep('review');
+      setShowReviewConfirmation(true);
+
+    } catch (error: any) {
+      setCurrentStep('error');
+      setError(error.message);
+      
+      // Update failed step
+      const failedStepIndex = processingSteps.findIndex(step => step.status === 'processing');
+      if (failedStepIndex >= 0) {
+        updateStep(failedStepIndex, 'error', error.message);
+      }
+    }
+  };
+
+  const handleConfirmXeroUpdate = async () => {
+    if (!uploadedFile || !processedData) return;
+    
+    setCurrentStep('processing');
+    setError(null);
+    setStartTime(Date.now());
+    setCurrentProgress(0);
+    setTotalProgress(5); // 5 steps for Xero updates
+    
+    // Reset processing steps for Xero updates
+    setProcessingSteps([
+      { name: 'Processing Timesheet', status: 'complete', message: `Processed ${processedData.metadata.entries_processed} entries` },
       { name: 'Loading Project Data', status: 'pending' },
       { name: 'Creating Missing Tasks', status: 'pending' },
       { name: 'Updating Project Costs', status: 'pending' },
@@ -107,8 +221,7 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
     ]);
 
     try {
-      updateStep(0, 'processing', 'Analyzing timesheet data...');
-      setCurrentProgress(0.5);
+      setCurrentProgress(1);
       
       const formData = new FormData();
       formData.append('file', uploadedFile);
@@ -130,12 +243,6 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
       }
 
       // Update step statuses based on results
-      updateStep(0, 'complete', 
-        `Processed ${data.timesheetProcessing.metadata.entries_processed} entries`,
-        data.timesheetProcessing
-      );
-      setCurrentProgress(1);
-
       updateStep(1, 'complete', 
         `Loaded data for ${data.timesheetProcessing.metadata.projects_consolidated} projects`,
         { cacheHits: data.statistics.cacheHits }
@@ -201,6 +308,8 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
     setCurrentProgress(0);
     setTotalProgress(0);
     setTimesheetPreview(null);
+    setProcessedData(null);
+    setShowReviewConfirmation(false);
     setProcessingSteps([
       { name: 'Processing Timesheet', status: 'pending' },
       { name: 'Loading Project Data', status: 'pending' },
@@ -225,6 +334,14 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
             {currentStep === 'complete' && (
               <CheckCircleIcon className="h-8 w-8 text-green-500" />
             )}
+          </div>
+
+          {/* Cache Status */}
+          <div className="mt-6">
+            <CachedProjectsViewer 
+              onRefresh={handleRefreshCache}
+              className="mb-6"
+            />
           </div>
 
           {/* Upload State */}
@@ -257,6 +374,65 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
                   <p className="text-sm text-red-600">{error}</p>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Review State */}
+          {currentStep === 'review' && processedData && (
+            <div className="mt-6 space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-blue-800 mb-3">Timesheet Analysis Complete</h3>
+                <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+                  <div>
+                    <span className="text-gray-600">Entries Processed:</span>
+                    <span className="ml-2 font-medium text-gray-900">
+                      {processedData.metadata.entries_processed}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Projects Found:</span>
+                    <span className="ml-2 font-medium text-gray-900">
+                      {processedData.metadata.projects_consolidated}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Period:</span>
+                    <span className="ml-2 font-medium text-gray-900">
+                      {processedData.metadata.period_range}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Cost Verification:</span>
+                    <span className={`ml-2 font-medium ${processedData.cost_verification?.calculations_match ? 'text-green-600' : 'text-red-600'}`}>
+                      {processedData.cost_verification?.calculations_match ? 'Verified ✓' : 'Failed ✗'}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs text-blue-600">
+                  Review the project updates below, then proceed to update Xero.
+                </p>
+              </div>
+
+              {/* Project Matching Analysis */}
+              <ProjectMatchingAnalyzer 
+                timesheetData={processedData}
+                cachedProjects={cachedProjects}
+              />
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={resetProcessor}
+                  className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => setShowReviewConfirmation(true)}
+                  className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Update Xero Projects
+                </button>
+              </div>
             </div>
           )}
 
@@ -378,7 +554,7 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
         </div>
       </div>
 
-      {/* Confirmation Dialog */}
+      {/* First Confirmation Dialog - File Upload */}
       <ConfirmationDialog
         isOpen={showConfirmation}
         onClose={() => setShowConfirmation(false)}
@@ -387,14 +563,38 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
           handleProcessFile();
         }}
         title="Process Timesheet"
-        message="This will analyze the timesheet and update all matching projects in Xero. The process will create any missing required tasks and update project costs."
+        message="This will analyze the timesheet data and prepare it for Xero updates. You'll be able to review the changes before they're applied."
         details={timesheetPreview ? [
           { label: 'File', value: timesheetPreview.fileName },
           { label: 'Size', value: timesheetPreview.fileSize },
           { label: 'Modified', value: timesheetPreview.lastModified }
         ] : undefined}
-        confirmText="Process"
+        confirmText="Analyze Timesheet"
         type="info"
+      />
+
+      {/* Second Confirmation Dialog - Xero Update Review */}
+      <ConfirmationDialog
+        isOpen={showReviewConfirmation}
+        onClose={() => setShowReviewConfirmation(false)}
+        onConfirm={() => {
+          setShowReviewConfirmation(false);
+          handleConfirmXeroUpdate();
+        }}
+        title="Update Xero Projects"
+        message="This will update Xero with the processed timesheet data. Missing tasks will be created and project costs will be updated based on the breakdown you reviewed."
+        details={processedData ? [
+          { label: 'Entries to Process', value: processedData.metadata.entries_processed },
+          { label: 'Projects to Update', value: processedData.metadata.projects_consolidated },
+          { label: 'Period', value: processedData.metadata.period_range },
+          { label: 'Cost Verification', value: processedData.cost_verification?.calculations_match ? 'Verified ✓' : 'Failed ✗' },
+          { 
+            label: 'Total Value', 
+            value: `$${(Object.values(processedData.consolidated_payload || {}).flat().reduce((sum: number, task: any) => sum + (task.rate?.value || 0), 0) / 100).toFixed(2)} ${(Object.values(processedData.consolidated_payload || {}) as any[])[0]?.[0]?.rate?.currency || 'SGD'}`
+          }
+        ] : undefined}
+        confirmText="Update Xero"
+        type="warning"
       />
     </>
   );

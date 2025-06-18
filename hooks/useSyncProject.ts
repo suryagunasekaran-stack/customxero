@@ -7,6 +7,7 @@ import { ProfessionalReportGenerator, ReportMetadata, ProjectComparisonData } fr
 export const useSyncProject = () => {
   const { data: session } = useSession();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [comparisonData, setComparisonData] = useState<ProjectComparisonData | null>(null);
   const [showDownloadOptions, setShowDownloadOptions] = useState(false);
   const [reportMetadata, setReportMetadata] = useState<ReportMetadata | null>(null);
@@ -94,8 +95,8 @@ export const useSyncProject = () => {
     return enhancedResult;
   }, []);
 
-  const handleSyncProject = useCallback(async () => {
-    setIsSyncing(true);
+  const handleAnalyzeProjects = useCallback(async () => {
+    setIsAnalyzing(true);
     setComparisonData(null);
     setShowDownloadOptions(false);
     setReportMetadata(null);
@@ -127,12 +128,19 @@ export const useSyncProject = () => {
       setReportMetadata(metadata);
       setShowDownloadOptions(true);
     } catch (error) {
-      console.error('Sync project failed:', error);
+      console.error('Project analysis failed:', error);
       throw error;
     } finally {
-      setIsSyncing(false);
+      setIsAnalyzing(false);
     }
   }, [fetchPipedriveProjects, fetchXeroProjects, fetchTenantInfo, compareProjects, session]);
+
+  const handleSyncProject = useCallback(async () => {
+    // This is now just for downloading reports - the analysis is separate
+    if (!comparisonData || !reportMetadata) {
+      await handleAnalyzeProjects();
+    }
+  }, [comparisonData, reportMetadata, handleAnalyzeProjects]);
 
   const handleDownloadReport = useCallback(async (format: 'xlsx' | 'csv' | 'txt' = 'xlsx') => {
     if (!comparisonData || !reportMetadata) {
@@ -217,11 +225,13 @@ End of Report
 
   return {
     isSyncing,
+    isAnalyzing,
     comparisonReportContent, // Legacy support
     comparisonData, // New structured data
     reportMetadata, // New metadata
     showDownloadReportButton: showDownloadOptions, // Legacy support
     showDownloadOptions, // New property name
+    handleAnalyzeProjects,
     handleSyncProject,
     handleDownloadReport,
     // Legacy method for backwards compatibility

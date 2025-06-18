@@ -57,6 +57,13 @@ export interface ProjectDataCache {
   tenantName: string;
 }
 
+export interface ProjectSummary {
+  projectId: string;
+  name: string;
+  projectCode?: string;
+  status: string;
+}
+
 export class XeroProjectService {
   private static cache: Map<string, ProjectDataCache> = new Map();
   private static readonly CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
@@ -64,10 +71,11 @@ export class XeroProjectService {
 
   static async getProjectData(forceRefresh = false): Promise<ProjectDataCache> {
     const { effective_tenant_id, available_tenants } = await ensureValidToken();
+    console.log('[XeroProjectService] Getting data for tenant:', effective_tenant_id, 'forceRefresh:', forceRefresh);
     
     const cachedData = this.cache.get(effective_tenant_id);
     if (!forceRefresh && cachedData && new Date() < cachedData.expiresAt) {
-      console.log('[XeroProjectService] Returning cached data');
+      console.log('[XeroProjectService] Returning cached data with', cachedData.projects.length, 'projects');
       return cachedData;
     }
 
@@ -75,7 +83,7 @@ export class XeroProjectService {
     const currentTenant = available_tenants.find((t: any) => t.tenantId === effective_tenant_id);
     const tenant_name = currentTenant ? currentTenant.tenantName : 'Unknown Tenant';
 
-    console.log('[XeroProjectService] Fetching fresh project data');
+    console.log('[XeroProjectService] Fetching fresh project data for', tenant_name);
     const data = await this.fetchAllProjectData(effective_tenant_id, tenant_name);
     
     const cacheEntry: ProjectDataCache = {
@@ -86,7 +94,15 @@ export class XeroProjectService {
       tenantName: tenant_name
     };
     
+    console.log('[XeroProjectService] Caching', cacheEntry.projects.length, 'projects for tenant:', effective_tenant_id);
     this.cache.set(effective_tenant_id, cacheEntry);
+    console.log('[XeroProjectService] Cache set. New cache size:', this.cache.size);
+    console.log('[XeroProjectService] Cache keys after set:', Array.from(this.cache.keys()));
+    
+    // Verify the cache was set correctly
+    const verification = this.cache.get(effective_tenant_id);
+    console.log('[XeroProjectService] Cache verification - exists:', !!verification, 'projects:', verification?.projects.length);
+    
     return cacheEntry;
   }
 
@@ -96,6 +112,48 @@ export class XeroProjectService {
     } else {
       this.cache.clear();
     }
+  }
+
+  static getCacheStatus(tenantId: string): ProjectDataCache | null {
+    console.log('[XeroProjectService] getCacheStatus for tenant:', tenantId);
+    console.log('[XeroProjectService] Cache keys:', Array.from(this.cache.keys()));
+    console.log('[XeroProjectService] Cache size:', this.cache.size);
+    
+    const result = this.cache.get(tenantId) || null;
+    console.log('[XeroProjectService] Cache hit:', !!result);
+    
+    if (result) {
+      console.log('[XeroProjectService] Cached projects count:', result.projects.length);
+    }
+    
+    return result;
+  }
+
+  static async getProjectSummaries(tenantId: string, forceRefresh: boolean = false): Promise<ProjectSummary[]> {
+    const cacheKey = tenantId;
+    const now = new Date();
+
+    if (!forceRefresh && this.cache.has(cacheKey)) {
+      const cached = this.cache.get(cacheKey)!;
+      if (cached.expiresAt > now) {
+        console.log(`[XeroProjectService] Cache hit for summaries (${cached.projects.length} projects)`);
+        return cached.projects.map(p => ({
+          projectId: p.projectId,
+          name: p.name,
+          projectCode: p.projectCode,
+          status: p.status
+        }));
+      }
+    }
+
+    // If we need to refresh or cache is empty, fetch full data and extract summaries
+    const fullData = await this.getProjectData(forceRefresh);
+    return fullData.projects.map(p => ({
+      projectId: p.projectId,
+      name: p.name,
+      projectCode: p.projectCode,
+      status: p.status
+    }));
   }
 
   private static async fetchAllProjectData(

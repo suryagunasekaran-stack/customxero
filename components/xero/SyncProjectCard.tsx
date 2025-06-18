@@ -11,14 +11,16 @@ interface SyncProjectCardProps extends FunctionCardProps {}
 export default function SyncProjectCard({ disabled = false }: SyncProjectCardProps) {
   const {
     isSyncing,
+    isAnalyzing,
     showDownloadOptions,
     comparisonData,
     reportMetadata,
+    handleAnalyzeProjects,
     handleSyncProject,
     handleDownloadReport,
   } = useSyncProject();
 
-  const isDisabled = disabled || isSyncing;
+  const isDisabled = disabled || isSyncing || isAnalyzing;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
@@ -28,10 +30,10 @@ export default function SyncProjectCard({ disabled = false }: SyncProjectCardPro
           <div>
             <h2 className="text-xl font-semibold text-gray-900">Project Sync</h2>
             <p className="text-sm text-gray-500 mt-1">
-              Synchronize projects between Xero and Pipedrive
+              Analyze and compare projects between Xero and Pipedrive
             </p>
           </div>
-          {showDownloadOptions && !isSyncing && (
+          {showDownloadOptions && !isAnalyzing && !isSyncing && (
             <CheckCircleIcon className="h-8 w-8 text-green-500" />
           )}
         </div>
@@ -61,28 +63,54 @@ export default function SyncProjectCard({ disabled = false }: SyncProjectCardPro
           </div>
         </div>
 
+        {/* Analysis Results Summary */}
+        {comparisonData && showDownloadOptions && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h3 className="text-sm font-semibold text-blue-800 mb-3">Analysis Complete!</h3>
+            <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">{comparisonData.matchedCount}</div>
+                <div className="text-xs text-gray-600">Matched</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">{comparisonData.onlyInPipedriveCount}</div>
+                <div className="text-xs text-gray-600">Pipedrive Only</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-orange-600">{comparisonData.onlyInXeroCount}</div>
+                <div className="text-xs text-gray-600">Xero Only</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Action Button */}
         <button
-          onClick={handleSyncProject}
+          onClick={handleAnalyzeProjects}
           disabled={isDisabled}
           className="w-full inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
         >
-          {isSyncing ? (
+          {isAnalyzing ? (
             <>
               <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
-              Syncing Projects...
+              Analyzing Projects...
+            </>
+          ) : showDownloadOptions ? (
+            <>
+              <CheckCircleIcon className="h-4 w-4 mr-2" />
+              Re-analyze Projects
             </>
           ) : (
             <>
               <ArrowsRightLeftIcon className="h-4 w-4 mr-2" />
-              Sync Projects
+              Analyze Projects
             </>
           )}
         </button>
       </div>
 
       {/* Professional Report Download Options */}
-      {showDownloadOptions && !isSyncing && comparisonData && reportMetadata && (
+      {showDownloadOptions && !isAnalyzing && !isSyncing && comparisonData && reportMetadata && (
         <div className="border-t border-gray-100">
           <ReportDownloadOptions
             comparisonData={comparisonData}
