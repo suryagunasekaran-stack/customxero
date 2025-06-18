@@ -160,10 +160,9 @@ async function createAndUpdateTasks(
   const projectCodesToProcess = Object.keys(consolidatedPayload);
   const baseTaskConfig = getTaskConfigForTenant(tenantId, tenantName);
   
-  // Log the entire consolidated payload for debugging
+  // Log the task creation/update process
   console.log('[Task Sync] Starting task creation/update process');
-  console.log('[Task Sync] Project codes to process:', projectCodesToProcess);
-  console.log('[Task Sync] Full consolidated payload:', JSON.stringify(consolidatedPayload, null, 2));
+  console.log('[Task Sync] Project codes to process:', projectCodesToProcess.length, 'projects');
   
   for (const projectCode of projectCodesToProcess) {
     const codeData = projectData.projectCodes[projectCode];
@@ -187,22 +186,41 @@ async function createAndUpdateTasks(
       console.log(`[Task Sync] Processing project: ${project.name} (${project.projectId})`);
       
       try {
-        // Step 1: Fetch existing tasks for this project
-        await SmartRateLimit.waitIfNeeded();
-        const tasksResponse = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/tasks`, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Xero-Tenant-Id': tenantId,
-            'Accept': 'application/json'
+        // Step 1: Fetch existing tasks for this project (with retry for 429)
+        let tasksResponse: Response | null = null;
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount <= maxRetries) {
+          await SmartRateLimit.waitIfNeeded();
+          tasksResponse = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/tasks`, {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Xero-Tenant-Id': tenantId,
+              'Accept': 'application/json'
+            }
+          });
+        
+          await trackXeroApiCall(tasksResponse.headers, tenantId);
+          SmartRateLimit.updateFromHeaders(tasksResponse.headers);
+          
+          // If we get rate limited, wait and retry
+          if (tasksResponse.status === 429) {
+            const retryAfter = tasksResponse.headers.get('retry-after');
+            const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : (retryCount + 1) * 2000; // Exponential backoff
+            console.warn(`[Task Sync] Rate limited (429) for project ${project.name}, waiting ${waitTime}ms before retry ${retryCount + 1}/${maxRetries}`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            retryCount++;
+            continue;
           }
-        });
+          
+          // If it's not a rate limit error, break out of retry loop
+          break;
+        }
         
-        await trackXeroApiCall(tasksResponse.headers, tenantId);
-        SmartRateLimit.updateFromHeaders(tasksResponse.headers);
-        
-        if (!tasksResponse.ok) {
-          const errorText = await tasksResponse.text();
-          console.error(`[Task Sync] Failed to fetch tasks for project ${project.name}: ${errorText}`);
+        if (!tasksResponse || !tasksResponse.ok) {
+          const errorText = tasksResponse ? await tasksResponse.text() : 'No response received';
+          console.error(`[Task Sync] Failed to fetch tasks for project ${project.name} after ${retryCount} retries: ${errorText}`);
           
           // Record failure for all tasks in this project
           for (const timesheetTask of timesheetTasks) {
@@ -211,7 +229,7 @@ async function createAndUpdateTasks(
               projectName: project.name,
               taskName: timesheetTask.name,
               success: false,
-              error: `Could not fetch existing tasks: HTTP ${tasksResponse.status}`
+              error: `Could not fetch existing tasks: HTTP ${tasksResponse?.status || 'unknown'}${retryCount > 0 ? ` (after ${retryCount} retries)` : ''}`
             });
           }
           continue;
@@ -350,24 +368,43 @@ async function createAndUpdateTasks(
                 });
               }
             } else {
-                             // Task doesn't exist - create it
-               await SmartRateLimit.waitIfNeeded();
-               const createResponse = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/tasks`, {
-                 method: 'POST',
-                 headers: {
-                   'Authorization': `Bearer ${accessToken}`,
-                   'Xero-Tenant-Id': tenantId,
-                   'Accept': 'application/json',
-                   'Content-Type': 'application/json',
-                   'Idempotency-Key': timesheetTask.idempotencyKey
-                 },
-                 body: JSON.stringify(taskPayload)
-               });
+                             // Task doesn't exist - create it (with retry for 429)
+               let createResponse: Response | null = null;
+               let createRetryCount = 0;
+               const createMaxRetries = 3;
+               
+               while (createRetryCount <= createMaxRetries) {
+                 await SmartRateLimit.waitIfNeeded();
+                 createResponse = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/tasks`, {
+                   method: 'POST',
+                   headers: {
+                     'Authorization': `Bearer ${accessToken}`,
+                     'Xero-Tenant-Id': tenantId,
+                     'Accept': 'application/json',
+                     'Content-Type': 'application/json',
+                     'Idempotency-Key': timesheetTask.idempotencyKey
+                   },
+                   body: JSON.stringify(taskPayload)
+                 });
+                
+                await trackXeroApiCall(createResponse.headers, tenantId);
+                SmartRateLimit.updateFromHeaders(createResponse.headers);
+                
+                // If we get rate limited, wait and retry
+                if (createResponse.status === 429) {
+                  const retryAfter = createResponse.headers.get('retry-after');
+                  const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : (createRetryCount + 1) * 2000;
+                  console.warn(`[Task Sync] Rate limited (429) creating task "${timesheetTask.name}", waiting ${waitTime}ms before retry ${createRetryCount + 1}/${createMaxRetries}`);
+                  await new Promise(resolve => setTimeout(resolve, waitTime));
+                  createRetryCount++;
+                  continue;
+                }
+                
+                // If it's not a rate limit error, break out of retry loop
+                break;
+               }
               
-              await trackXeroApiCall(createResponse.headers, tenantId);
-              SmartRateLimit.updateFromHeaders(createResponse.headers);
-              
-              if (createResponse.ok) {
+                             if (createResponse && createResponse.ok) {
                 results.push({
                   projectId: project.projectId,
                   projectName: project.name,
@@ -376,8 +413,8 @@ async function createAndUpdateTasks(
                   idempotencyKey: timesheetTask.idempotencyKey
                 });
                              } else {
-                 const createErrorText = await createResponse.text();
-                 let errorMessage = `HTTP ${createResponse.status}`;
+                 const createErrorText = createResponse ? await createResponse.text() : 'No response received';
+                 let errorMessage = `HTTP ${createResponse?.status || 'unknown'}`;
                  
                  // Try to parse error details from Xero response
                  try {
@@ -391,7 +428,7 @@ async function createAndUpdateTasks(
                    }
                    
                    // Check for idempotency key conflict
-                   if (createResponse.status === 409 || errorMessage.toLowerCase().includes('idempotency')) {
+                   if ((createResponse?.status === 409) || errorMessage.toLowerCase().includes('idempotency')) {
                      errorMessage = `Idempotency key conflict - this task may have been created in a previous attempt`;
                      console.warn(`[Task Sync] Idempotency key conflict for task "${timesheetTask.name}" - key: ${timesheetTask.idempotencyKey}`);
                    }
@@ -402,13 +439,13 @@ async function createAndUpdateTasks(
                    }
                    
                    // Check for common error patterns in text response
-                   if (createResponse.status === 409) {
+                   if (createResponse?.status === 409) {
                      errorMessage = `Conflict - task may already exist or idempotency key was used before`;
                    }
                  }
                  
                  console.error(`[Task Sync] Failed to create task "${timesheetTask.name}"`);
-                 console.error(`[Task Sync] HTTP ${createResponse.status}: ${createErrorText}`);
+                 console.error(`[Task Sync] HTTP ${createResponse?.status || 'unknown'}: ${createErrorText}`);
                  console.error(`[Task Sync] Used idempotency key: "${timesheetTask.idempotencyKey}"`);
                  console.error(`[Task Sync] Payload was:`, JSON.stringify(taskPayload, null, 2));
                  
@@ -417,7 +454,7 @@ async function createAndUpdateTasks(
                    projectName: project.name,
                    taskName: timesheetTask.name,
                    success: false,
-                   error: errorMessage,
+                   error: errorMessage + (createRetryCount > 0 ? ` (after ${createRetryCount} retries)` : ''),
                    idempotencyKey: timesheetTask.idempotencyKey
                  });
                }

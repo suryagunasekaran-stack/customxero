@@ -107,16 +107,7 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
     if (!payload?.consolidated_payload) return payload;
     
     console.log('[Filter] Starting payload filtering');
-    console.log('[Filter] Original payload project codes:', Object.keys(payload.consolidated_payload));
-    
-    // Log all tasks in the original payload
-    Object.entries(payload.consolidated_payload).forEach(([projectCode, tasks]: [string, any]) => {
-      console.log(`[Filter] Project ${projectCode} has tasks:`, (tasks as any[]).map(t => t.name));
-      const hasSupplyLabour = (tasks as any[]).some(t => t.name === 'Supply Labour');
-      if (!hasSupplyLabour) {
-        console.warn(`[Filter] WARNING: 'Supply Labour' missing in original payload for project ${projectCode}`);
-      }
-    });
+    console.log('[Filter] Original payload has', Object.keys(payload.consolidated_payload).length, 'projects');
     
     // Create a map of cached project codes for quick lookup
     const cachedProjectCodes = new Set(
