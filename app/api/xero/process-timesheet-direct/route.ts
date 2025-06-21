@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall } from '@/lib/xeroApiTracker';
 import { SmartRateLimit } from '@/lib/smartRateLimit';
+import { AuditLogger } from '@/lib/auditLogger';
+import { auth } from '@/lib/auth';
 
 interface ConsolidatedTask {
   name: string;
@@ -383,23 +385,50 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
   console.log('[Direct Processing API] Starting timesheet processing');
 
+  // Initialize audit logger
+  const session = await auth();
+  const { access_token, effective_tenant_id, available_tenants } = await ensureValidToken();
+  const selectedTenant = available_tenants?.find(t => t.tenantId === effective_tenant_id);
+  const auditLogger = new AuditLogger(session, effective_tenant_id, selectedTenant?.tenantName);
+
+  let processingLogId: string | null = null;
+
   try {
-    // Get Xero token
-    const { access_token, effective_tenant_id } = await ensureValidToken();
-    
     // Get uploaded file
     const formData = await request.formData();
     const file = formData.get('file') as File;
     
     if (!file) {
+      await auditLogger.logFailure('TIMESHEET_UPLOAD', 'No file uploaded', { step: 'file_validation' }, request);
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
     console.log('[Direct Processing API] Processing file:', file.name);
 
+    // Log file upload
+    await auditLogger.logSuccess('TIMESHEET_UPLOAD', {
+      filename: file.name,
+      fileSize: file.size,
+      fileType: file.type
+    }, request);
+
     // Step 1: Process timesheet with Python backend
+    processingLogId = await auditLogger.startAction('TIMESHEET_PROCESS', {
+      filename: file.name,
+      step: 'python_processing'
+    }, request);
+
     const timesheetData = await processTimesheetWithPython(file);
     console.log(`[Direct Processing API] Timesheet processed: ${timesheetData.metadata.entries_processed} entries, ${timesheetData.metadata.projects_consolidated} projects`);
+
+    // Update log with processing results
+    if (processingLogId) {
+      await auditLogger.completeAction(processingLogId, 'SUCCESS', {
+        entriesProcessed: timesheetData.metadata.entries_processed,
+        projectsConsolidated: timesheetData.metadata.projects_consolidated,
+        periodRange: timesheetData.metadata.period_range
+      });
+    }
 
     // Step 2: Get active Xero projects
     const { projects, tenantName } = await getActiveXeroProjects(access_token, effective_tenant_id);
@@ -409,6 +438,11 @@ export async function POST(request: NextRequest) {
     const config = getTaskConfigForTenant(effective_tenant_id, tenantName);
 
     // Step 4: Batch update Xero tasks
+    const updateLogId = await auditLogger.startAction('PROJECT_UPDATE', {
+      projectCount: Object.keys(timesheetData.consolidated_payload).length,
+      xeroProjectsAvailable: projects.length
+    }, request);
+
     const results = await batchUpdateXeroTasks(
       timesheetData.consolidated_payload,
       projects,
@@ -433,6 +467,25 @@ export async function POST(request: NextRequest) {
       processingTimeMs: Date.now() - startTime
     };
 
+    // Complete update log
+    if (updateLogId) {
+      await auditLogger.completeAction(
+        updateLogId, 
+        summary.tasksFailed === 0 ? 'SUCCESS' : 'FAILURE',
+        {
+          summary,
+          tasksProcessed: results.length,
+          failedTasks: results.filter(r => !r.success).map(r => ({
+            project: r.projectCode,
+            task: r.taskName,
+            error: r.error
+          }))
+        },
+        summary.tasksFailed > 0 ? `${summary.tasksFailed} tasks failed` : undefined,
+        Date.now() - startTime
+      );
+    }
+
     // Generate report
     const report = generateProcessingReport(timesheetData, results, summary);
 
@@ -449,6 +502,29 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error('[Direct Processing API] Error:', error);
+    
+    // Log the failure
+    await auditLogger.logFailure(
+      'TIMESHEET_PROCESS',
+      error,
+      {
+        step: 'processing_error',
+        executionTimeMs: Date.now() - startTime
+      },
+      request
+    );
+
+    // If we have a processing log ID that wasn't completed, complete it as failure
+    if (processingLogId) {
+      await auditLogger.completeAction(
+        processingLogId,
+        'FAILURE',
+        { error: error.message },
+        error.message || 'Processing failed',
+        Date.now() - startTime
+      );
+    }
+
     return NextResponse.json({
       success: false,
       error: error.message || 'Processing failed',

@@ -1,4 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
+import { AuditLogger } from '@/lib/auditLogger';
+import { auth } from '@/lib/auth';
+import { ensureValidToken } from '@/lib/ensureXeroToken';
 
 /**
  * Extracts comparison key from project name for matching logic
@@ -19,20 +22,37 @@ const getComparisonKey = (name: string | undefined | null): string => {
 /**
  * POST /api/compare/projects - Compares projects between Pipedrive and Xero systems
  * Uses intelligent matching logic based on project name patterns
- * @param {Request} request - HTTP request with pipedriveProjects and xeroProjects arrays
+ * @param {NextRequest} request - HTTP request with pipedriveProjects and xeroProjects arrays
  * @returns {Promise<NextResponse>} JSON response with detailed comparison results
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   console.log('[Compare API Route] Received POST request for project comparison.');
+  
+  // Initialize audit logger
+  const session = await auth();
+  const { effective_tenant_id, available_tenants } = await ensureValidToken();
+  const selectedTenant = available_tenants?.find(t => t.tenantId === effective_tenant_id);
+  const auditLogger = new AuditLogger(session, effective_tenant_id, selectedTenant?.tenantName);
+  
+  let syncLogId: string | null = null;
+  
   try {
     const { pipedriveProjects, xeroProjects } = await request.json();
 
     if (!Array.isArray(pipedriveProjects) || !Array.isArray(xeroProjects)) {
       console.error('[Compare API Route] Invalid or missing Pipedrive or Xero projects data in the request.');
+      await auditLogger.logFailure('PROJECT_SYNC', 'Invalid project data', { error: 'Expected arrays' }, request);
       return NextResponse.json({ message: 'Invalid or missing project data. Expected arrays.' }, { status: 400 });
     }
 
     console.log(`[Compare API Route] Comparing ${pipedriveProjects.length} Pipedrive projects with ${xeroProjects.length} Xero projects.`);
+    
+    // Start sync logging
+    syncLogId = await auditLogger.startAction('PROJECT_SYNC', {
+      pipedriveProjectCount: pipedriveProjects.length,
+      xeroProjectCount: xeroProjects.length,
+      action: 'comparison'
+    }, request);
 
     const pipedriveProjectMap = new Map(
       pipedriveProjects.map((p: any) => [getComparisonKey(p.name || p.title), p]) // p.title for Pipedrive deals
@@ -73,17 +93,42 @@ export async function POST(request: Request) {
     };
 
     console.log('[Compare API Route] Comparison complete. Result:', comparisonResult.summary);
-    // console.log('[Compare API Route] Only in Pipedrive:', JSON.stringify(comparisonResult.projectsOnlyInPipedrive, null, 2));
-    // console.log('[Compare API Route] Only in Xero:', JSON.stringify(comparisonResult.projectsOnlyInXero, null, 2));
+    
+    // Complete sync log
+    if (syncLogId) {
+      await auditLogger.completeAction(syncLogId, 'SUCCESS', {
+        comparisonResult,
+        matchedProjects: matchedProjects.length,
+        unmatchedPipedrive: onlyInPipedrive.length,
+        unmatchedXero: onlyInXero.length,
+        syncPercentage: pipedriveProjects.length > 0 ? 
+          ((matchedProjects.length / pipedriveProjects.length) * 100).toFixed(1) : 0
+      });
+    }
 
-
-    // Simulate a delay
-    // await new Promise(resolve => setTimeout(resolve, 100)); // Reduced delay
+    // Also log as PROJECT_SYNC_COMPLETE for reporting
+    await auditLogger.logSuccess('PROJECT_SYNC_COMPLETE', {
+      ...comparisonResult,
+      totalProjectsAnalyzed: pipedriveProjects.length + xeroProjects.length
+    }, request);
 
     return NextResponse.json({ comparisonResult });
 
   } catch (error) {
     console.error('[Compare API Route] Error during project comparison:', error);
+    
+    // Log the failure
+    await auditLogger.logFailure('PROJECT_SYNC', error as Error, {
+      step: 'comparison_error'
+    }, request);
+    
+    // Complete any in-progress log
+    if (syncLogId) {
+      await auditLogger.completeAction(syncLogId, 'FAILURE', {
+        error: (error as Error).message
+      }, (error as Error).message);
+    }
+    
     return NextResponse.json({ message: 'Error comparing projects', error: (error as Error).message }, { status: 500 });
   }
 }

@@ -39,6 +39,7 @@ export default function OrganisationHeader() {
     const navigation = [
         { name: 'Home', href: '/organisation', current: pathname === '/organisation' },
         { name: 'Xero', href: '/organisation/xero', current: pathname === '/organisation/xero' },
+        { name: 'Audit Logs', href: '/organisation/logs', current: pathname === '/organisation/logs' },
     ]
     
     const userNavigation = [
