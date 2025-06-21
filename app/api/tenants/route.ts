@@ -2,7 +2,11 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { xeroTokenManager } from '@/lib/xeroTokenManager';
 
-// GET - Return available tenants and current selection
+/**
+ * GET /api/tenants - Returns available Xero tenants and current selection
+ * Retrieves tenant data from session and Redis storage with fallback handling
+ * @returns {Promise<Response>} JSON response with tenant data or error
+ */
 export async function GET() {
   try {
     const session = await auth();
@@ -62,7 +66,12 @@ export async function GET() {
   }
 }
 
-// POST - Set selected tenant
+/**
+ * POST /api/tenants - Sets the selected tenant for the current user
+ * Validates tenant ID and saves selection to Redis storage
+ * @param {Request} request - HTTP request with tenantId in JSON body
+ * @returns {Promise<Response>} JSON response with success status or error
+ */
 export async function POST(request: Request) {
   try {
     const session = await auth();

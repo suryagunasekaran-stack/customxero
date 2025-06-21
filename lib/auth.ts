@@ -1,7 +1,11 @@
 import NextAuth from "next-auth"
 import type { NextAuthConfig } from "next-auth"
 
-// Import xeroTokenManager only for session callback (not JWT callback to avoid edge runtime issues)
+/**
+ * Dynamically imports xeroTokenManager to avoid edge runtime issues
+ * Only used in session callback where edge runtime is not a concern
+ * @returns {Promise<XeroTokenManager>} The xeroTokenManager instance
+ */
 const getXeroTokenManager = async () => {
   const { xeroTokenManager } = await import('./xeroTokenManager');
   return xeroTokenManager;
@@ -141,6 +145,11 @@ export const authConfig: NextAuthConfig = {
   },
 }
 
+/**
+ * Refreshes an expired Xero access token using the refresh token
+ * @param {any} token - The current token object containing refresh token
+ * @returns {Promise<any>} Updated token object with new access token or error state
+ */
 async function refreshAccessToken(token: any) {
   try {
     const response = await fetch("https://identity.xero.com/connect/token", {

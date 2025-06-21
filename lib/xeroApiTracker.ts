@@ -22,7 +22,12 @@ const XERO_API_USAGE_KEY_PREFIX = 'xero_api_usage';
 const XERO_DAILY_LIMIT = 5000;
 const XERO_MINUTE_LIMIT = 60;
 
-// Helper function to generate tenant-specific Redis key with validation
+/**
+ * Generates tenant-specific Redis key for API usage tracking
+ * @param {string} tenantId - Xero tenant ID
+ * @returns {string} Formatted Redis key for storing usage data
+ * @throws {Error} When tenantId is invalid or empty
+ */
 function getUsageKey(tenantId: string): string {
   if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
     throw new Error('Invalid tenantId provided to getUsageKey');
@@ -30,7 +35,10 @@ function getUsageKey(tenantId: string): string {
   return `${XERO_API_USAGE_KEY_PREFIX}:${tenantId.trim()}`;
 }
 
-// Helper function to check if Redis is ready
+/**
+ * Checks if Redis connection is ready for operations
+ * @returns {Promise<boolean>} True if Redis is ready, false otherwise
+ */
 async function isRedisReady(): Promise<boolean> {
   try {
     return redis.status === 'ready' || redis.status === 'connect';
@@ -39,7 +47,13 @@ async function isRedisReady(): Promise<boolean> {
   }
 }
 
-// Helper function to safely execute Redis operations
+/**
+ * Safely executes Redis operations with fallback handling for API usage tracking
+ * @template T
+ * @param {() => Promise<T>} operation - The Redis operation to execute
+ * @param {T} fallback - Fallback value if Redis operation fails
+ * @returns {Promise<T>} Operation result or fallback value
+ */
 async function safeRedisOperation<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
   try {
     if (!(await isRedisReady())) {
@@ -65,7 +79,13 @@ export interface XeroApiUsageData {
   lastMinuteReset: string; // ISO string for minute tracking
 }
 
-// Server-side function to track API usage from actual Xero response headers
+/**
+ * Tracks Xero API usage from actual response headers (preferred method)
+ * Uses authoritative rate limit data from Xero's X-DayLimit-Remaining and X-MinLimit-Remaining headers
+ * @param {Headers} responseHeaders - HTTP response headers from Xero API call
+ * @param {string} tenantId - Xero tenant ID to track usage for
+ * @returns {Promise<void>} Promise that resolves when tracking is complete
+ */
 export async function trackXeroApiCallFromHeaders(responseHeaders: Headers, tenantId: string): Promise<void> {
   try {
     // Validate tenantId
@@ -128,7 +148,12 @@ export async function trackXeroApiCallFromHeaders(responseHeaders: Headers, tena
   }
 }
 
-// Fallback manual tracking function (for when headers aren't available)
+/**
+ * Manual API usage tracking when response headers are not available
+ * Implements time-based counter management with automatic resets
+ * @param {string} tenantId - Xero tenant ID to track usage for
+ * @returns {Promise<void>} Promise that resolves when tracking is complete
+ */
 export async function trackXeroApiCallManual(tenantId: string): Promise<void> {
   try {
     // Validate tenantId
@@ -227,7 +252,13 @@ export async function trackXeroApiCallManual(tenantId: string): Promise<void> {
   }
 }
 
-// Convenience function that tries headers first, falls back to manual
+/**
+ * Convenience function for tracking API calls with automatic fallback strategy
+ * Attempts header-based tracking first, falls back to manual tracking
+ * @param {Headers | undefined} responseHeaders - Optional HTTP response headers from Xero API
+ * @param {string} tenantId - Xero tenant ID to track usage for
+ * @returns {Promise<void>} Promise that resolves when tracking is complete
+ */
 export async function trackXeroApiCall(responseHeaders: Headers | undefined, tenantId: string): Promise<void> {
   if (responseHeaders) {
     await trackXeroApiCallFromHeaders(responseHeaders, tenantId);
@@ -236,7 +267,12 @@ export async function trackXeroApiCall(responseHeaders: Headers | undefined, ten
   }
 }
 
-// Server-side function to get current usage
+/**
+ * Retrieves current API usage statistics for a tenant with automatic reset handling
+ * Automatically resets counters when daily or minute windows have expired
+ * @param {string} tenantId - Xero tenant ID to get usage statistics for
+ * @returns {Promise<XeroApiUsageData | null>} Usage data object or null if not found
+ */
 export async function getXeroApiUsage(tenantId: string): Promise<XeroApiUsageData | null> {
   try {
     // Validate tenantId

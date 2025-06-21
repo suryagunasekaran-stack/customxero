@@ -105,6 +105,11 @@ export const XeroApiUsageProvider = ({ children }: { children: ReactNode }) => {
     localStorage.setItem('xero-api-usage', JSON.stringify(usage));
   }, [usage]);
 
+  /**
+   * Manually increments API usage counters with automatic reset handling
+   * Handles both daily and minute-based counter resets based on time windows
+   * @returns {void}
+   */
   const incrementUsage = useCallback(() => {
     setUsage(prevUsage => {
       const now = new Date();
@@ -151,6 +156,11 @@ export const XeroApiUsageProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
+  /**
+   * Refreshes API usage data from server with local fallback handling
+   * Synchronizes client-side usage tracking with authoritative server data
+   * @returns {Promise<void>} Promise that resolves when refresh is complete
+   */
   const refreshUsage = useCallback(async () => {
     try {
       const response = await fetch('/api/xero/api-usage');
@@ -206,7 +216,11 @@ export const XeroApiUsageProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  // Check for tenant changes only when explicitly triggered (not automatically polling)
+  /**
+   * Checks for tenant changes and refreshes usage data when detected
+   * Only triggers refresh when tenant actually changes, not on every call
+   * @returns {Promise<void>} Promise that resolves when check is complete
+   */
   const checkTenantChange = useCallback(async () => {
     try {
       const response = await fetch('/api/organisation');

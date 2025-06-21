@@ -6,6 +6,12 @@ export class SmartRateLimit {
   private static readonly MIN_DELAY_MS = 100; // Increased minimum delay
   private static readonly SAFETY_BUFFER = 10; // More conservative safety buffer
   
+  /**
+   * Implements intelligent rate limiting with adaptive delays and automatic window resets
+   * Call this method before making any Xero API request to ensure rate limits are respected
+   * Features progressive backoff and safety buffers to prevent API limit violations
+   * @returns {Promise<void>} Promise that resolves when it's safe to make the API call
+   */
   static async waitIfNeeded() {
     const now = Date.now();
     
@@ -55,6 +61,11 @@ export class SmartRateLimit {
     console.log(`[SmartRateLimit] API call made. Remaining: Minute ${this.remainingMinuteCalls}/60, Day ${this.remainingDayCalls}`);
   }
   
+  /**
+   * Updates rate limit counters from API response headers
+   * Prioritizes Xero-specific headers over generic rate limit headers
+   * @param {Headers} headers - HTTP response headers from Xero API call
+   */
   static updateFromHeaders(headers: Headers) {
     // Check Xero-specific headers first
     const xeroMinRemaining = headers.get('x-minlimit-remaining');

@@ -27,6 +27,15 @@ const LogContext = createContext<LogContextType | undefined>(undefined);
 export const LogProvider = ({ children }: { children: ReactNode }) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
+  /**
+   * Adds a new log entry or updates an existing one
+   * @param {AddLogOptions} options - Log options including message, source, and update mode
+   * @param {string} options.message - Log message content
+   * @param {string} [options.source] - Log source identifier (required for new logs)
+   * @param {string} [options.idToUpdate] - ID of existing log to update
+   * @param {'append' | 'replace'} [options.mode='append'] - Update mode for existing logs
+   * @returns {string} ID of the log entry (new or updated)
+   */
   const addLog = useCallback((options: AddLogOptions) => {
     const { message, source, idToUpdate, mode = 'append' } = options;
 
@@ -67,6 +76,10 @@ export const LogProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  /**
+   * Clears all log entries from the log history
+   * @returns {void}
+   */
   const clearLogs = useCallback(() => {
     setLogs([]);
   }, []);

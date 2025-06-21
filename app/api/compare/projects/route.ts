@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 
-// Helper function to extract the comparison key (IPC number)
+/**
+ * Extracts comparison key from project name for matching logic
+ * Matches patterns like "ED25002 - Project Name" and extracts "ed25002"
+ * @param {string | undefined | null} name - Project name to extract key from
+ * @returns {string} Normalized comparison key (lowercase, no spaces)
+ */
 const getComparisonKey = (name: string | undefined | null): string => {
   if (!name) return 'UNKNOWN_PROJECT_NAME';
   const parts = name.split(' - ');
@@ -11,6 +16,12 @@ const getComparisonKey = (name: string | undefined | null): string => {
   return name.replace(/\s+/g, '').toLowerCase(); 
 };
 
+/**
+ * POST /api/compare/projects - Compares projects between Pipedrive and Xero systems
+ * Uses intelligent matching logic based on project name patterns
+ * @param {Request} request - HTTP request with pipedriveProjects and xeroProjects arrays
+ * @returns {Promise<NextResponse>} JSON response with detailed comparison results
+ */
 export async function POST(request: Request) {
   console.log('[Compare API Route] Received POST request for project comparison.');
   try {

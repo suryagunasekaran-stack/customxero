@@ -9,6 +9,12 @@ export interface ValidTokenData {
     available_tenants: any[];
 }
 
+/**
+ * Ensures a valid Xero authentication token and resolves tenant selection
+ * Validates session, checks token expiry, and determines effective tenant ID
+ * @returns {Promise<ValidTokenData>} Object containing access token, tenant ID, and available tenants
+ * @throws {Error} When authentication is invalid, token expired, or no tenant available
+ */
 export async function ensureValidToken(): Promise<ValidTokenData> {
     console.log('[ensureValidToken] Attempting to ensure a valid token.');
     

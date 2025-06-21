@@ -4,6 +4,11 @@ import { useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { ProfessionalReportGenerator, ReportMetadata, ProjectComparisonData } from '@/lib/reportGenerator';
 
+/**
+ * Custom hook for managing project synchronization workflow between Xero and Pipedrive
+ * Provides complete project analysis, comparison, and professional report generation
+ * @returns {Object} Hook state and methods for project synchronization workflow
+ */
 export const useSyncProject = () => {
   const { data: session } = useSession();
   const [isSyncing, setIsSyncing] = useState(false);
@@ -12,6 +17,11 @@ export const useSyncProject = () => {
   const [showDownloadOptions, setShowDownloadOptions] = useState(false);
   const [reportMetadata, setReportMetadata] = useState<ReportMetadata | null>(null);
 
+  /**
+   * Fetches project data from Pipedrive API (won deals)
+   * @returns {Promise<any[]>} Array of Pipedrive project objects
+   * @throws {Error} When API request fails or returns non-ok status
+   */
   const fetchPipedriveProjects = useCallback(async () => {
     const response = await fetch('/api/pipedrive/projects');
     if (!response.ok) {
@@ -22,6 +32,11 @@ export const useSyncProject = () => {
     return data.projects; 
   }, []);
 
+  /**
+   * Fetches project data from Xero API with caching support
+   * @returns {Promise<any[]>} Array of Xero project objects
+   * @throws {Error} When API request fails or returns non-ok status
+   */
   const fetchXeroProjects = useCallback(async () => {
     const response = await fetch('/api/xero/projects');
     if (!response.ok) {
@@ -56,6 +71,13 @@ export const useSyncProject = () => {
     };
   }, []);
 
+  /**
+   * Compares projects between Pipedrive and Xero systems using the comparison API
+   * @param {any[]} pipedriveProjects - Array of Pipedrive project objects
+   * @param {any[]} xeroProjects - Array of Xero project objects
+   * @returns {Promise<ProjectComparisonData>} Enhanced comparison result with metadata
+   * @throws {Error} When comparison API request fails
+   */
   const compareProjects = useCallback(async (pipedriveProjects: any[], xeroProjects: any[]) => {
     const response = await fetch('/api/compare/projects', {
       method: 'POST',
@@ -95,6 +117,12 @@ export const useSyncProject = () => {
     return enhancedResult;
   }, []);
 
+  /**
+   * Main project analysis workflow that fetches, compares, and prepares report data
+   * Orchestrates the complete synchronization analysis process
+   * @returns {Promise<void>} Promise that resolves when analysis is complete
+   * @throws {Error} When any step of the analysis fails
+   */
   const handleAnalyzeProjects = useCallback(async () => {
     setIsAnalyzing(true);
     setComparisonData(null);
@@ -142,6 +170,12 @@ export const useSyncProject = () => {
     }
   }, [comparisonData, reportMetadata, handleAnalyzeProjects]);
 
+  /**
+   * Generates and downloads professional project comparison report in specified format
+   * @param {'xlsx' | 'csv' | 'txt'} format - Report format to generate (defaults to 'xlsx')
+   * @returns {Promise<void>} Promise that resolves when report is generated and downloaded
+   * @throws {Error} When no data is available or report generation fails
+   */
   const handleDownloadReport = useCallback(async (format: 'xlsx' | 'csv' | 'txt' = 'xlsx') => {
     if (!comparisonData || !reportMetadata) {
       console.error('No comparison data or metadata available for download');

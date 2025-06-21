@@ -95,6 +95,12 @@ export class XeroProjectService {
   private static cache: Map<string, ProjectDataCache> = new Map();
   private static readonly CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
 
+  /**
+   * Gets project data from cache or fetches fresh data from Xero API
+   * Implements intelligent caching with 10-minute TTL
+   * @param {boolean} forceRefresh - Whether to bypass cache and force API fetch
+   * @returns {Promise<ProjectDataCache>} Complete project data with metadata and cache info
+   */
   static async getProjectData(forceRefresh = false): Promise<ProjectDataCache> {
     const { effective_tenant_id, available_tenants } = await ensureValidToken();
     
@@ -122,6 +128,10 @@ export class XeroProjectService {
     return cacheEntry;
   }
 
+  /**
+   * Clears cached project data for a specific tenant or all tenants
+   * @param {string} [tenantId] - Optional tenant ID to clear specific cache, omit to clear all
+   */
   static clearCache(tenantId?: string) {
     if (tenantId) {
       this.cache.delete(tenantId);
@@ -130,6 +140,11 @@ export class XeroProjectService {
     }
   }
 
+  /**
+   * Gets the current cache status for a specific tenant
+   * @param {string} tenantId - Tenant ID to check cache status for
+   * @returns {ProjectDataCache | null} Cache data if exists, null otherwise
+   */
   static getCacheStatus(tenantId: string): ProjectDataCache | null {
     return this.cache.get(tenantId) || null;
   }
@@ -180,6 +195,12 @@ export class XeroProjectService {
     return { projects, projectCodes };
   }
 
+  /**
+   * Extracts project code from project name using pattern matching
+   * Matches patterns like "ED25002 - Project Name" and extracts "ED25002"
+   * @param {string} projectName - Full project name from Xero
+   * @returns {string} Extracted project code or first word if pattern doesn't match
+   */
   private static extractProjectCode(projectName: string): string {
     // Extract code from names like "ED25002 - Titanic" -> "ED25002"
     const match = projectName.match(/^([A-Z0-9]+)\s*-/);

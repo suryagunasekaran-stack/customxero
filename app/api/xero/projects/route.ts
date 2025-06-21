@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { XeroProjectService } from '@/lib/xeroProjectService';
 
+/**
+ * GET /api/xero/projects - Fetches Xero project data with intelligent caching
+ * Supports force refresh via X-Force-Refresh header to bypass cache
+ * Uses XeroProjectService for consistent data management and rate limiting
+ * @param {NextRequest} request - HTTP request object, may include X-Force-Refresh header
+ * @returns {Promise<NextResponse>} JSON response with projects and metadata or error
+ */
 export async function GET(request: NextRequest) {
   console.log('[Xero API Route] Received GET request for projects.');
 

@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server';
 
+/**
+ * GET /api/pipedrive/projects - Fetches won deals (projects) from Pipedrive API
+ * Retrieves all won deals with pagination and includes stage mapping for status
+ * @returns {Promise<NextResponse>} JSON response with projects array or error
+ */
 export async function GET() {
   const apiKey = process.env.PIPEDRIVE_KEY;
 

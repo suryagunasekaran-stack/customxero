@@ -57,6 +57,10 @@ export class XeroTokenManager {
     this.redis = createRedisClient();
   }
 
+  /**
+   * Gets the singleton instance of XeroTokenManager
+   * @returns {XeroTokenManager} The singleton instance
+   */
   static getInstance(): XeroTokenManager {
     if (!XeroTokenManager.instance) {
       XeroTokenManager.instance = new XeroTokenManager();
@@ -64,6 +68,13 @@ export class XeroTokenManager {
     return XeroTokenManager.instance;
   }
 
+  /**
+   * Generates Redis key for user-specific Xero data
+   * @param {string} userId - User identifier (typically email)
+   * @param {string} suffix - Data type suffix (e.g., 'tenants', 'selected_tenant')
+   * @returns {string} Formatted Redis key
+   * @throws {Error} When userId is invalid
+   */
   private getUserKey(userId: string, suffix: string): string {
     if (!userId || typeof userId !== 'string' || !userId.trim()) {
       throw new Error('Invalid userId provided to getUserKey');
@@ -71,7 +82,10 @@ export class XeroTokenManager {
     return `user:${userId.trim()}:xero:${suffix}`;
   }
 
-  // Helper method to check if Redis is ready
+  /**
+   * Checks if Redis connection is ready for operations
+   * @returns {Promise<boolean>} True if Redis is ready, false otherwise
+   */
   private async isRedisReady(): Promise<boolean> {
     try {
       await this.redis.ping();
@@ -81,7 +95,13 @@ export class XeroTokenManager {
     }
   }
 
-  // Helper method to safely execute Redis operations
+  /**
+   * Safely executes Redis operations with fallback handling
+   * @template T
+   * @param {() => Promise<T>} operation - The Redis operation to execute
+   * @param {T} fallback - Fallback value if Redis operation fails
+   * @returns {Promise<T>} Operation result or fallback value
+   */
   private async safeRedisOperation<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
     try {
       if (!(await this.isRedisReady())) {
@@ -95,6 +115,11 @@ export class XeroTokenManager {
      }
   }
 
+  /**
+   * Retrieves stored tenant data for a user from Redis
+   * @param {string} userId - User identifier (typically email)
+   * @returns {Promise<XeroTenant[] | null>} Array of user's Xero tenants or null if not found
+   */
   async getUserTenants(userId: string): Promise<XeroTenant[] | null> {
     if (!userId || typeof userId !== 'string' || !userId.trim()) {
       console.warn('getUserTenants called with invalid userId:', userId);
@@ -107,6 +132,12 @@ export class XeroTokenManager {
     }, null);
   }
 
+  /**
+   * Saves tenant data for a user to Redis with 7-day TTL
+   * @param {string} userId - User identifier (typically email)
+   * @param {XeroTenant[]} tenants - Array of Xero tenant objects to save
+   * @returns {Promise<void>} Promise that resolves when save is complete
+   */
   async saveUserTenants(userId: string, tenants: XeroTenant[]): Promise<void> {
     if (!userId || typeof userId !== 'string' || !userId.trim()) {
       console.warn('saveUserTenants called with invalid userId:', userId);
@@ -131,6 +162,11 @@ export class XeroTokenManager {
       }
   }
 
+  /**
+   * Gets the selected tenant ID for a user with Redis-first, memory fallback strategy
+   * @param {string} userId - User identifier (typically email)
+   * @returns {Promise<string | null>} Selected tenant ID or null if not found
+   */
   async getSelectedTenant(userId: string): Promise<string | null> {
     if (!userId || typeof userId !== 'string' || !userId.trim()) {
       console.warn('getSelectedTenant called with invalid userId:', userId);
@@ -152,6 +188,13 @@ export class XeroTokenManager {
     return memoryResult || null;
   }
 
+  /**
+   * Saves the selected tenant ID for a user to both Redis and memory
+   * Uses dual storage strategy for maximum reliability
+   * @param {string} userId - User identifier (typically email)
+   * @param {string} tenantId - Xero tenant ID to set as selected
+   * @returns {Promise<void>} Promise that resolves when save is complete
+   */
   async saveSelectedTenant(userId: string, tenantId: string): Promise<void> {
     if (!userId || typeof userId !== 'string' || !userId.trim()) {
       console.warn('saveSelectedTenant called with invalid userId:', userId);
@@ -209,7 +252,12 @@ export class XeroTokenManager {
       }
   }
 
-  // Helper method to get or fetch tenants for authenticated user
+  /**
+   * Gets tenants from cache or fetches them from Xero API with automatic default selection
+   * Implements cache-first strategy with API fallback and smart default tenant selection
+   * @param {any} session - NextAuth session object containing user email and access token
+   * @returns {Promise<XeroTenant[] | null>} Array of Xero tenants or null if unavailable
+   */
   async getOrFetchTenants(session: any): Promise<XeroTenant[] | null> {
     if (!session?.user?.email || !session?.accessToken) {
       return null;

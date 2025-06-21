@@ -25,6 +25,14 @@ export class ProfessionalReportGenerator {
   private static readonly COMPANY_NAME = "CustomXero";
   private static readonly REPORT_VERSION = "2.0";
 
+  /**
+   * Generates professional project comparison reports in multiple formats
+   * @param {ProjectComparisonData} data - Project comparison data with matched/unmatched projects
+   * @param {ReportMetadata} metadata - Report metadata including user info and timestamps
+   * @param {'csv' | 'xlsx' | 'txt'} format - Output format (defaults to 'xlsx')
+   * @returns {Promise<void>} Promise that resolves when report is generated and downloaded
+   * @throws {Error} When unsupported format is specified
+   */
   static async generateProjectComparisonReport(
     data: ProjectComparisonData,
     metadata: ReportMetadata,
@@ -325,6 +333,11 @@ export class ProfessionalReportGenerator {
     saveAs(blob, `${fileName}.txt`);
   }
 
+  /**
+   * Calculates and returns human-readable synchronization status
+   * @param {ProjectComparisonData} data - Project comparison data
+   * @returns {string} Descriptive sync status with percentage
+   */
   private static getSyncStatus(data: ProjectComparisonData): string {
     const total = data.matchedCount + data.onlyInPipedriveCount + data.onlyInXeroCount;
     if (total === 0) return 'No Data';
