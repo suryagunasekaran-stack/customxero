@@ -47,12 +47,17 @@ CREATE INDEX idx_audit_logs_tenant_action_time ON audit_logs(tenant_id, action_g
 -- Enable Row Level Security
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 
--- Policy to allow users to see their own logs (optional, adjust based on requirements)
-CREATE POLICY "Users can view their own logs" ON audit_logs
+-- Policy to allow authenticated users to view logs (you can make this more restrictive later)
+CREATE POLICY "Authenticated users can view audit logs" ON audit_logs
     FOR SELECT
-    USING (user_id = current_user_id());
+    USING (auth.role() = 'authenticated');
 
--- Policy for service role (full access)
+-- Policy for service role (full access for API operations)
 CREATE POLICY "Service role has full access" ON audit_logs
     FOR ALL
-    USING (current_role = 'service_role'); 
+    USING (auth.role() = 'service_role');
+
+-- Policy to allow service role to insert logs
+CREATE POLICY "Service role can insert logs" ON audit_logs
+    FOR INSERT
+    WITH CHECK (auth.role() = 'service_role'); 
