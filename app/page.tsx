@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import Image from 'next/image';
 
+/**
+ * Main landing page component with Xero authentication
+ * Displays login interface for unauthenticated users
+ * Automatically redirects authenticated users to organisation dashboard
+ * @returns {JSX.Element} The home page with login form or loading state
+ */
 export default function HomePage() {
   const { data: session, status } = useSession();
   const router = useRouter();

@@ -16,10 +16,22 @@ import { signOut, useSession } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
 import TenantSwitcher from './TenantSwitcher'
 
+/**
+ * Utility function to combine CSS class names
+ * Filters out falsy values and joins remaining classes with spaces
+ * @param {...string} classes - Variable number of class name strings
+ * @returns {string} Combined class names string
+ */
 function classNames(...classes: string[]) {
     return classes.filter(Boolean).join(' ')
 }
 
+/**
+ * Organisation header component with navigation and user menu
+ * Provides responsive navigation bar with tenant switching, search, and user profile
+ * Includes both desktop and mobile layouts with popover menu
+ * @returns {JSX.Element} Complete header navigation component
+ */
 export default function OrganisationHeader() {
     const { data: session } = useSession()
     const pathname = usePathname()

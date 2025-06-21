@@ -18,6 +18,12 @@ interface TenantsResponse {
   hasMultipleTenants: boolean;
 }
 
+/**
+ * Tenant selection page component for choosing Xero organisation
+ * Displays available Xero organisations and allows user to select one
+ * Handles automatic selection for single tenants and navigation after selection
+ * @returns {JSX.Element} The tenant selection page with organisation cards
+ */
 export default function TenantSelectionPage() {
   const router = useRouter();
   const [tenants, setTenants] = useState<XeroTenant[]>([]);
@@ -30,6 +36,11 @@ export default function TenantSelectionPage() {
     fetchTenants();
   }, []);
 
+  /**
+   * Fetches available tenants from the API and handles automatic selection
+   * Automatically selects tenant if only one is available
+   * @returns {Promise<void>} Promise that resolves when tenants are loaded
+   */
   const fetchTenants = async () => {
     try {
       const response = await fetch('/api/tenants');
@@ -54,6 +65,12 @@ export default function TenantSelectionPage() {
     }
   };
 
+  /**
+   * Handles tenant selection and navigation to organisation dashboard
+   * Updates backend, refreshes session, and redirects to main app
+   * @param {string} tenantId - The ID of the tenant to select
+   * @returns {Promise<void>} Promise that resolves when selection is complete
+   */
   const handleTenantSelection = async (tenantId: string) => {
     setSubmitting(true);
     setError(null);

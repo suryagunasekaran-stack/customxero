@@ -2,6 +2,12 @@ import React from 'react';
 import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 
+/**
+ * Main organisation dashboard page component
+ * Displays welcome message and navigation guidance for authenticated users
+ * Redirects unauthenticated users to login page
+ * @returns {Promise<JSX.Element>} The organisation dashboard page
+ */
 export default async function OrganisationPage() {
   const session = await auth();
   

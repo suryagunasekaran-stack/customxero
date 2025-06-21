@@ -1,3 +1,9 @@
+/**
+ * Pipedrive integration page component
+ * Displays Pipedrive-specific features and functionality
+ * Currently a placeholder for future Pipedrive integration features
+ * @returns {JSX.Element} The Pipedrive integration page
+ */
 export default function PipedrivePage() {
   return (
     <div>

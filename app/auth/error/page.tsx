@@ -4,6 +4,11 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Suspense } from 'react';
 
+/**
+ * Authentication error content component that displays specific error messages
+ * Maps NextAuth error codes to user-friendly messages
+ * @returns {JSX.Element} Error message display with action buttons
+ */
 function AuthErrorContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
@@ -66,6 +71,12 @@ function AuthErrorContent() {
   );
 }
 
+/**
+ * Authentication error page component with Suspense wrapper
+ * Displays detailed error information for authentication failures
+ * Provides fallback UI while loading error details
+ * @returns {JSX.Element} Full page error display with loading fallback
+ */
 export default function AuthError() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center p-6 bg-gray-50">

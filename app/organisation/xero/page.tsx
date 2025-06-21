@@ -10,10 +10,21 @@ import {
 } from '../../../components/xero';
 import MonthlySnapshotCard from '../../../components/xero/MonthlySnapshotCard';
 
+/**
+ * Main Xero integration page component
+ * Displays comprehensive Xero integration dashboard with project management tools
+ * Includes project synchronization, timesheet processing, billing, and reporting features
+ * @returns {JSX.Element} The complete Xero integration dashboard
+ */
 export default function XeroPage() {
   // Get syncing state to pass to components that need to be disabled during sync
   const { isSyncing } = useSyncProject();
 
+  /**
+   * Forces refresh of cached project data from Xero API
+   * Bypasses cache and fetches fresh data using X-Force-Refresh header
+   * @returns {Promise<void>} Promise that resolves when cache refresh is complete
+   */
   const handleRefreshCache = async () => {
     try {
       const response = await fetch('/api/xero/projects', {

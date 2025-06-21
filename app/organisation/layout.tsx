@@ -4,6 +4,14 @@ import { LogProvider } from '../../contexts/LogContext';
 import { XeroApiUsageProvider } from '../../contexts/XeroApiUsageContext';
 import OrganisationHeader from '../../components/OrganisationHeader';
 
+/**
+ * Organisation layout component that wraps all organisation pages
+ * Provides authentication, tenant validation, and context providers
+ * Includes header navigation and main content area with proper styling
+ * @param {Object} props - Component props
+ * @param {React.ReactNode} props.children - Child components to render
+ * @returns {Promise<JSX.Element>} The organisation layout with providers and header
+ */
 export default async function OrganisationLayout({ children }: { children: React.ReactNode }) {
     try {
         const session = await auth();
