@@ -173,7 +173,7 @@ export async function GET() {
     );
     
     if (totalTasksCreated > 0) {
-      XeroProjectService.clearCache(effective_tenant_id);
+      console.log(`[Check Project Tasks API] ${totalTasksCreated} tasks created, cache would be cleared in old system`);
     }
     
     // Calculate summary statistics

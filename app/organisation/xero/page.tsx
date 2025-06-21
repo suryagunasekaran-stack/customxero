@@ -5,8 +5,7 @@ import { useSyncProject } from '../../../hooks/useSyncProject';
 import {
   SyncProjectCard,
   ManhourBillingCard,
-  TimesheetProcessingCard,
-  CachedProjectsViewer
+  TimesheetProcessingCard
 } from '../../../components/xero';
 import MonthlySnapshotCard from '../../../components/xero/MonthlySnapshotCard';
 
@@ -20,25 +19,6 @@ export default function XeroPage() {
   // Get syncing state to pass to components that need to be disabled during sync
   const { isSyncing } = useSyncProject();
 
-  /**
-   * Forces refresh of cached project data from Xero API
-   * Bypasses cache and fetches fresh data using X-Force-Refresh header
-   * @returns {Promise<void>} Promise that resolves when cache refresh is complete
-   */
-  const handleRefreshCache = async () => {
-    try {
-      const response = await fetch('/api/xero/projects', {
-        method: 'GET',
-        headers: { 'X-Force-Refresh': 'true' }
-      });
-      if (!response.ok) {
-        console.error('Failed to refresh cache:', response.status);
-      }
-    } catch (error) {
-      console.error('Failed to refresh cache:', error);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -48,11 +28,6 @@ export default function XeroPage() {
           <p className="mt-2 text-lg text-gray-600">
             Streamline your project management and financial workflows
           </p>
-        </div>
-
-        {/* Cache Status */}
-        <div className="mb-8">
-          <CachedProjectsViewer onRefresh={handleRefreshCache} />
         </div>
 
         {/* Main Actions */}

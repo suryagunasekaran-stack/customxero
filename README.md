@@ -123,12 +123,16 @@ customxero/
 - `POST /api/tenants` - Switch selected tenant
 
 ### Xero Integration
-- `GET /api/xero/projects` - Fetch Xero projects with caching
-- `GET /api/xero/api-usage` - Get current API usage statistics
-- `POST /api/xero/clear-cache` - Clear cached project data
-- `GET /api/xero/cache-status` - Check cache status
-- `POST /api/xero/process-and-update-timesheet` - Process timesheets
-- `POST /api/xero/create-monthly-snapshot` - Generate monthly reports
+- `GET /api/xero/projects` - Fetch Xero projects directly
+- `POST /api/xero/process-timesheet-direct` - Process timesheets and update Xero projects directly
+- `POST /api/xero/process-and-update-timesheet` - Legacy timesheet processing (with review step)
+- `GET /api/xero/check-project-tasks` - Check project task compliance
+- `POST /api/xero/execute-update-plan` - Execute project update plan
+- `GET /api/xero/compare-time-entries` - Compare time entries
+- `POST /api/xero/create-monthly-snapshot` - Create monthly WIP snapshot
+- `GET /api/xero/download-standardization-report` - Download standardization report
+- `GET /api/xero/api-usage` - Get Xero API usage statistics
+- `GET /api/xero/projects/extract-codes` - Extract project codes
 
 ### Pipedrive Integration
 - `GET /api/pipedrive/projects` - Fetch Pipedrive deals (projects)
@@ -274,24 +278,21 @@ const tenants = await xeroTokenManager.getOrFetchTenants(session);
 
 ### `XeroProjectService` - Project Data Management
 
-Handles Xero project data with intelligent caching:
+The `XeroProjectService` provides direct access to Xero project data without caching:
 
 ```typescript
-// Get cached project data (10-minute cache)
+// Get fresh project data from Xero API
 const projectData = await XeroProjectService.getProjectData();
 
-// Force refresh from API
-const freshData = await XeroProjectService.getProjectData(true);
-
-// Clear cache for tenant
-XeroProjectService.clearCache(tenantId);
+// Get project summaries
+const summaries = await XeroProjectService.getProjectSummaries(tenantId);
 ```
 
 **Features:**
-- 10-minute intelligent caching
-- Automatic pagination handling
-- Project code extraction
-- Rate limiting integration
+- Direct API calls for fresh data
+- Pagination support for large project datasets
+- Project code extraction from project names
+- Rate limiting and error handling
 
 ### `SmartRateLimit` - Intelligent API Throttling
 

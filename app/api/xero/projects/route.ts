@@ -2,33 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import { XeroProjectService } from '@/lib/xeroProjectService';
 
 /**
- * GET /api/xero/projects - Fetches Xero project data with intelligent caching
- * Supports force refresh via X-Force-Refresh header to bypass cache
+ * GET /api/xero/projects - Fetches Xero project data directly from API
  * Uses XeroProjectService for consistent data management and rate limiting
- * @param {NextRequest} request - HTTP request object, may include X-Force-Refresh header
+ * @param {NextRequest} request - HTTP request object
  * @returns {Promise<NextResponse>} JSON response with projects and metadata or error
  */
 export async function GET(request: NextRequest) {
   console.log('[Xero API Route] Received GET request for projects.');
 
   try {
-    // Check if force refresh is requested
-    const forceRefresh = request.headers.get('X-Force-Refresh') === 'true';
-    console.log('[Xero API Route] Force refresh requested:', forceRefresh);
-
-    // Use the XeroProjectService to get cached/fresh data
-    const projectData = await XeroProjectService.getProjectData(forceRefresh);
+    // Use the XeroProjectService to get fresh data (no caching)
+    const projectData = await XeroProjectService.getProjectData();
     
     console.log(`[Xero API Route] Returning ${projectData.projects.length} projects from service`);
     
     return NextResponse.json({ 
       projects: projectData.projects,
       metadata: {
-        lastUpdated: projectData.lastUpdated,
-        expiresAt: projectData.expiresAt,
         tenantId: projectData.tenantId,
         tenantName: projectData.tenantName,
-        cached: !forceRefresh
+        cached: false
       }
     });
 

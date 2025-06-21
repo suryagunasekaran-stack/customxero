@@ -1,210 +1,135 @@
 'use client';
 
 import React, { useState } from 'react';
-import { CloudArrowUpIcon, DocumentArrowDownIcon, CheckCircleIcon, XCircleIcon, DocumentTextIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { CloudArrowUpIcon, DocumentArrowDownIcon, CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import ProgressBar from '../ProgressBar';
 import ConfirmationDialog from '../ConfirmationDialog';
-import CachedProjectsViewer from './CachedProjectsViewer';
-import ProjectMatchingAnalyzer from './ProjectMatchingAnalyzer';
 
-interface ProcessingStep {
-  name: string;
-  status: 'pending' | 'processing' | 'complete' | 'error';
-  message?: string;
-  details?: any;
-}
-
-interface UnifiedProcessingResult {
+interface DirectProcessingResult {
   success: boolean;
-  timesheetProcessing: any;
-  projectStandardization: {
+  summary: {
+    entriesProcessed: number;
     projectsAnalyzed: number;
-    projectsNeedingTasks: number;
+    projectsMatched: number;
     tasksCreated: number;
-    taskCreationResults: any[];
-  };
-  taskUpdates: {
-    projectsProcessed: number;
     tasksUpdated: number;
     tasksFailed: number;
-    updateResults: any[];
+    processingTimeMs: number;
   };
+  results: Array<{
+    projectCode: string;
+    projectName: string;
+    taskName: string;
+    action: 'created' | 'updated' | 'failed';
+    success: boolean;
+    error?: string;
+    details?: string;
+  }>;
   downloadableReport: {
     filename: string;
     content: string;
   };
-  statistics: {
-    totalApiCalls: number;
-    processingTimeMs: number;
-    cacheHits: number;
-  };
+  error?: string;
 }
 
 export default function TimesheetProcessingCard({ disabled = false }: { disabled?: boolean }) {
-  const [currentStep, setCurrentStep] = useState<'upload' | 'confirm' | 'review' | 'processing' | 'complete' | 'error'>('upload');
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([
-    { name: 'Processing Timesheet', status: 'pending' },
-    { name: 'Loading Project Data', status: 'pending' },
-    { name: 'Creating Missing Tasks', status: 'pending' },
-    { name: 'Updating Project Costs', status: 'pending' },
-    { name: 'Generating Report', status: 'pending' }
-  ]);
-  const [results, setResults] = useState<UnifiedProcessingResult | null>(null);
+  const [status, setStatus] = useState<'idle' | 'processing' | 'complete' | 'error'>('idle');
+  const [file, setFile] = useState<File | null>(null);
+  const [results, setResults] = useState<DirectProcessingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
-  const [currentProgress, setCurrentProgress] = useState(0);
-  const [totalProgress, setTotalProgress] = useState(0);
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [timesheetPreview, setTimesheetPreview] = useState<any>(null);
-  const [processedData, setProcessedData] = useState<any>(null);
-  const [cachedProjects, setCachedProjects] = useState<any[]>([]);
-  const [filteredPayload, setFilteredPayload] = useState<any>(null);
+  const [filePreview, setFilePreview] = useState<{
+    fileName: string;
+    fileSize: string;
+    lastModified: string;
+  } | null>(null);
+  const [tenantInfo, setTenantInfo] = useState<{
+    tenantId: string;
+    tenantName: string;
+  } | null>(null);
+  const [loadingTenant, setLoadingTenant] = useState(false);
 
-  const updateStep = (index: number, status: ProcessingStep['status'], message?: string, details?: any) => {
-    setProcessingSteps(prev => {
-      const newSteps = [...prev];
-      newSteps[index] = { ...newSteps[index], status, message, details };
-      return newSteps;
-    });
+  // Auto-download report function
+  const downloadReport = (report: { filename: string; content: string }) => {
+    const blob = new Blob([report.content], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = report.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
-  const fetchCachedProjects = async () => {
+  // Fetch current Xero tenant information
+  const fetchTenantInfo = async () => {
     try {
-      const response = await fetch('/api/xero/cache-status');
+      setLoadingTenant(true);
+      const response = await fetch('/api/xero/projects');
       if (response.ok) {
         const data = await response.json();
-        setCachedProjects(data.projects || []);
-        return data.projects || [];
-      }
-      return [];
-    } catch (error) {
-      console.error('Failed to fetch cached projects:', error);
-      return [];
-    }
-  };
-
-  const handleRefreshCache = async () => {
-    try {
-      // Clear cache first
-      await fetch('/api/xero/clear-cache', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
-      
-      // Fetch fresh data
-      await fetch('/api/xero/projects');
-      
-      // Update cached projects
-      await fetchCachedProjects();
-    } catch (error) {
-      console.error('Failed to refresh cache:', error);
-    }
-  };
-
-  const filterPayloadByMatches = (payload: any, cachedProjectsList: any[]) => {
-    if (!payload?.consolidated_payload) return payload;
-    
-    console.log('[Filter] Starting payload filtering');
-    console.log('[Filter] Original payload has', Object.keys(payload.consolidated_payload).length, 'projects');
-    
-    // Create a map of cached project codes for quick lookup
-    const cachedProjectCodes = new Set(
-      cachedProjectsList
-        .filter(project => project.projectCode)
-        .map(project => project.projectCode)
-    );
-    
-    console.log('[Filter] Cached project codes:', Array.from(cachedProjectCodes));
-    
-    // Filter the consolidated payload to only include matching projects
-    const filteredConsolidatedPayload: any = {};
-    let matchedProjects = 0;
-    let totalProjects = 0;
-    
-    Object.entries(payload.consolidated_payload).forEach(([projectCode, tasks]) => {
-      totalProjects++;
-      if (cachedProjectCodes.has(projectCode)) {
-        filteredConsolidatedPayload[projectCode] = tasks;
-        matchedProjects++;
-        console.log(`[Filter] ✅ Including project ${projectCode} with ${(tasks as any[]).length} tasks`);
+        setTenantInfo({
+          tenantId: data.metadata.tenantId,
+          tenantName: data.metadata.tenantName
+        });
+        return data.metadata;
       } else {
-        console.log(`[Filter] ❌ Excluding project ${projectCode} - not in cached projects`);
+        throw new Error('Failed to fetch tenant info');
       }
-    });
-    
-    // Log filtered results
-    console.log('[Filter] Filtering complete');
-    console.log('[Filter] Matched projects:', matchedProjects);
-    console.log('[Filter] Filtered out:', totalProjects - matchedProjects);
-    
-    // Update metadata to reflect filtered data
-    const filteredPayload = {
-      ...payload,
-      consolidated_payload: filteredConsolidatedPayload,
-      metadata: {
-        ...payload.metadata,
-        projects_consolidated: matchedProjects,
-        original_projects_consolidated: totalProjects,
-        projects_filtered: totalProjects - matchedProjects
-      }
-    };
-    
-    return filteredPayload;
+    } catch (error) {
+      console.error('Failed to fetch tenant information:', error);
+      setError('Unable to verify Xero company. Please check your connection.');
+      return null;
+    } finally {
+      setLoadingTenant(false);
+    }
   };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const selectedFile = event.target.files?.[0];
     
-    if (!file) return;
+    if (!selectedFile) return;
 
     // Validate file type
-    if (!file.name.toLowerCase().endsWith('.xlsx') && !file.name.toLowerCase().endsWith('.xls')) {
+    if (!selectedFile.name.toLowerCase().endsWith('.xlsx') && !selectedFile.name.toLowerCase().endsWith('.xls')) {
       setError('Invalid file format. Please upload an Excel file (.xlsx or .xls).');
       return;
     }
 
-    setUploadedFile(file);
+    setFile(selectedFile);
     setError(null);
     
-    // Preview data (in real app, you might parse a bit of the file)
-    setTimesheetPreview({
-      fileName: file.name,
-      fileSize: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-      lastModified: new Date(file.lastModified).toLocaleString()
+    // Set file preview
+    setFilePreview({
+      fileName: selectedFile.name,
+      fileSize: (selectedFile.size / 1024 / 1024).toFixed(2) + ' MB',
+      lastModified: new Date(selectedFile.lastModified).toLocaleString()
     });
-    
-    setShowConfirmation(true);
+
+    // Fetch tenant info for confirmation
+    const tenant = await fetchTenantInfo();
+    if (tenant) {
+      setShowConfirmation(true);
+    }
   };
 
   const handleProcessFile = async () => {
-    if (!uploadedFile) return;
+    if (!file) return;
     
-    setCurrentStep('processing');
+    setStatus('processing');
     setError(null);
     setStartTime(Date.now());
-    setCurrentProgress(0);
-    setTotalProgress(3); // 3 steps: process timesheet, load projects, analyze matches
-    
-    // Reset processing steps for initial processing
-    setProcessingSteps([
-      { name: 'Processing Timesheet Data', status: 'pending' },
-      { name: 'Loading Project Data', status: 'pending' },
-      { name: 'Analyzing Project Matches', status: 'pending' }
-    ]);
 
     try {
-      // Step 1: Process timesheet
-      updateStep(0, 'processing', 'Analyzing timesheet data...');
-      setCurrentProgress(0.5);
+      console.log('[Streamlined Processing] Starting direct processing for:', file.name);
       
       const formData = new FormData();
-      formData.append('file', uploadedFile);
+      formData.append('file', file);
 
-      // Call the processing endpoint to get consolidated data
-      const flaskUrl = `${process.env.NEXT_PUBLIC_FLASK_SERVER_URL}/api/process-timesheet`;
-      const response = await fetch(flaskUrl, {
+      // Call the new streamlined endpoint
+      const response = await fetch('/api/xero/process-timesheet-direct', {
         method: 'POST',
         body: formData,
       });
@@ -214,192 +139,39 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
         throw new Error(errorData.error || `Server responded with ${response.status}`);
       }
 
-      const data = await response.json();
+      const data: DirectProcessingResult = await response.json();
 
-      if (!data.success) {
+      if (data.success) {
+        setResults(data);
+        setStatus('complete');
+        
+        // Auto-download report
+        downloadReport(data.downloadableReport);
+        
+        console.log('[Streamlined Processing] Success:', data.summary);
+      } else {
         throw new Error(data.error || 'Processing failed');
       }
 
-      // Log the raw data from Python endpoint
-      console.log('[Timesheet Processing] Raw data from Python endpoint:');
-      console.log('[Timesheet Processing] Metadata:', data.metadata);
-      console.log('[Timesheet Processing] Project codes:', Object.keys(data.consolidated_payload || {}));
-      
-      // Check for Supply Labour in each project
-      if (data.consolidated_payload) {
-        Object.entries(data.consolidated_payload).forEach(([projectCode, tasks]: [string, any]) => {
-          const taskNames = (tasks as any[]).map(t => t.name);
-          console.log(`[Timesheet Processing] Project ${projectCode} tasks:`, taskNames);
-          if (!taskNames.includes('Supply Labour')) {
-            console.warn(`[Timesheet Processing] WARNING: 'Supply Labour' not found in project ${projectCode}`);
-          }
-        });
-      }
-
-      updateStep(0, 'complete', 
-        `Processed ${data.metadata.entries_processed} entries, ${data.metadata.projects_consolidated} projects`,
-        data
-      );
-      setCurrentProgress(1);
-
-      // Step 2: Load cached project data
-      updateStep(1, 'processing', 'Loading cached project data...');
-      const cachedProjectsList = await fetchCachedProjects();
-      
-      updateStep(1, 'complete', 
-        `Loaded ${cachedProjectsList.length} cached projects`,
-        { projectCount: cachedProjectsList.length }
-      );
-      setCurrentProgress(2);
-
-      // Step 3: Filter payload and analyze matches
-      updateStep(2, 'processing', 'Analyzing project matches...');
-      const filtered = filterPayloadByMatches(data, cachedProjectsList);
-      
-      const matchedCount = Object.keys(filtered.consolidated_payload).length;
-      const totalCount = data.metadata.projects_consolidated;
-      const filteredCount = totalCount - matchedCount;
-      
-      updateStep(2, 'complete', 
-        `Found ${matchedCount} matching projects, ${filteredCount} filtered out`,
-        { matched: matchedCount, filtered: filteredCount }
-      );
-      setCurrentProgress(3);
-
-      setProcessedData(data);
-      setFilteredPayload(filtered);
-      setCurrentStep('review');
-
     } catch (error: any) {
-      setCurrentStep('error');
+      setStatus('error');
       setError(error.message);
-      
-      // Update failed step
-      const failedStepIndex = processingSteps.findIndex(step => step.status === 'processing');
-      if (failedStepIndex >= 0) {
-        updateStep(failedStepIndex, 'error', error.message);
-      }
-    }
-  };
-
-  const handleConfirmXeroUpdate = async () => {
-    if (!filteredPayload) return;
-    
-    setCurrentStep('processing');
-    setError(null);
-    setStartTime(Date.now());
-    setCurrentProgress(0);
-    setTotalProgress(2); // 2 steps for Xero updates
-    
-    // Reset processing steps for Xero updates
-    setProcessingSteps([
-      { name: 'Creating/Updating Tasks', status: 'pending' },
-      { name: 'Generating Report', status: 'pending' }
-    ]);
-
-    try {
-      updateStep(0, 'processing', 'Creating/updating tasks in Xero...');
-      setCurrentProgress(0.5);
-
-      const response = await fetch('/api/xero/process-and-update-timesheet', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          filteredPayload: filteredPayload
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Server responded with ${response.status}`);
-      }
-
-      const data: UnifiedProcessingResult = await response.json();
-
-      if (!data.success) {
-        // Check if it's a partial success (some tasks created, some failed)
-        if (data.projectStandardization.tasksCreated > 0 && data.taskUpdates.tasksFailed > 0) {
-          // Partial success - some tasks were created
-          updateStep(0, 'error', 
-            `Created ${data.projectStandardization.tasksCreated} tasks, but ${data.taskUpdates.tasksFailed} failed`,
-            data.projectStandardization
-          );
-        } else if (data.taskUpdates.tasksFailed > 0) {
-          // Complete failure - no tasks created
-          updateStep(0, 'error', 
-            `Failed to create ${data.taskUpdates.tasksFailed} tasks`,
-            data.projectStandardization
-          );
-        } else {
-          throw new Error('Processing failed');
-        }
-      } else {
-        // Complete success
-        updateStep(0, 'complete', 
-          `Created/updated ${data.projectStandardization.tasksCreated} tasks`,
-          data.projectStandardization
-        );
-      }
-      setCurrentProgress(1);
-
-      updateStep(1, 'complete', 
-        'Report generated successfully',
-        data.downloadableReport
-      );
-      setCurrentProgress(2);
-
-      setResults(data);
-      setCurrentStep('complete');
-
-      // Auto-download report
-      if (data.downloadableReport) {
-        const blob = new Blob([data.downloadableReport.content], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = data.downloadableReport.filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      }
-
-    } catch (error: any) {
-      setCurrentStep('error');
-      setError(error.message);
-      
-      // Update failed step
-      const failedStepIndex = processingSteps.findIndex(step => step.status === 'processing');
-      if (failedStepIndex >= 0) {
-        updateStep(failedStepIndex, 'error', error.message);
-      }
+      console.error('[Streamlined Processing] Error:', error);
     }
   };
 
   const triggerFileInput = () => {
-    document.getElementById('unifiedTimesheetInput')?.click();
+    document.getElementById('streamlinedTimesheetInput')?.click();
   };
 
   const resetProcessor = () => {
-    setCurrentStep('upload');
-    setUploadedFile(null);
+    setStatus('idle');
+    setFile(null);
     setResults(null);
     setError(null);
     setStartTime(null);
-    setCurrentProgress(0);
-    setTotalProgress(0);
-    setTimesheetPreview(null);
-    setProcessedData(null);
-    setFilteredPayload(null);
-    setProcessingSteps([
-      { name: 'Processing Timesheet', status: 'pending' },
-      { name: 'Loading Project Data', status: 'pending' },
-      { name: 'Creating Missing Tasks', status: 'pending' },
-      { name: 'Updating Project Costs', status: 'pending' },
-      { name: 'Generating Report', status: 'pending' }
-    ]);
+    setFilePreview(null);
+    setTenantInfo(null);
   };
 
   return (
@@ -411,16 +183,16 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
             <div>
               <h2 className="text-xl font-semibold text-gray-900">Timesheet Processing</h2>
               <p className="text-sm text-gray-500 mt-1">
-                Upload timesheet to update project costs and generate reports
+                Upload timesheet to directly update project costs and generate reports
               </p>
             </div>
-            {currentStep === 'complete' && results && (
+            {status === 'complete' && results && (
               <>
                 {results.success && <CheckCircleIcon className="h-8 w-8 text-green-500" />}
-                {!results.success && results.projectStandardization.tasksCreated > 0 && (
+                {!results.success && results.summary.tasksCreated > 0 && (
                   <ExclamationTriangleIcon className="h-8 w-8 text-amber-500" />
                 )}
-                {!results.success && results.projectStandardization.tasksCreated === 0 && (
+                {!results.success && results.summary.tasksCreated === 0 && (
                   <XCircleIcon className="h-8 w-8 text-red-500" />
                 )}
               </>
@@ -428,27 +200,27 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
           </div>
 
           {/* Upload State */}
-          {currentStep === 'upload' && (
+          {status === 'idle' && (
             <div className="mt-6">
               <input
-                id="unifiedTimesheetInput"
+                id="streamlinedTimesheetInput"
                 type="file"
                 accept=".xlsx,.xls"
                 onChange={handleFileSelect}
                 className="hidden"
-                disabled={disabled}
+                disabled={disabled || loadingTenant}
               />
               <button
                 onClick={triggerFileInput}
-                disabled={disabled}
-                className="w-full flex flex-col items-center justify-center px-6 py-8 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 hover:bg-gray-50 transition-all duration-200 group"
+                disabled={disabled || loadingTenant}
+                className="w-full flex flex-col items-center justify-center px-6 py-8 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 hover:bg-gray-50 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <CloudArrowUpIcon className="h-12 w-12 text-gray-400 group-hover:text-gray-500 mb-3" />
                 <span className="text-sm font-medium text-gray-700 group-hover:text-gray-800">
-                  Click to upload timesheet
+                  {loadingTenant ? 'Verifying Xero connection...' : 'Click to upload timesheet'}
                 </span>
                 <span className="text-xs text-gray-500 mt-1">
-                  Excel files only (.xlsx, .xls)
+                  Excel files only (.xlsx, .xls) - Processing starts immediately
                 </span>
               </button>
               
@@ -460,190 +232,130 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
             </div>
           )}
 
-          {/* Review State */}
-          {currentStep === 'review' && filteredPayload && (
+          {/* Processing State */}
+          {status === 'processing' && (
             <div className="mt-6 space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h3 className="text-sm font-semibold text-blue-800 mb-3">Timesheet Analysis Complete</h3>
-                <div className="grid grid-cols-2 gap-3 text-sm mb-4">
-                  <div>
-                    <span className="text-gray-600">Entries Processed:</span>
-                    <span className="ml-2 font-medium text-gray-900">
-                      {filteredPayload.metadata.entries_processed}
-                    </span>
+                <div className="flex items-center gap-3">
+                  <div className="relative w-5 h-5">
+                    <div className="absolute inset-0 rounded-full border-2 border-blue-200"></div>
+                    <div className="absolute inset-0 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"></div>
                   </div>
                   <div>
-                    <span className="text-gray-600">Matching Projects:</span>
-                    <span className="ml-2 font-medium text-gray-900">
-                      {filteredPayload.metadata.projects_consolidated}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Period:</span>
-                    <span className="ml-2 font-medium text-gray-900">
-                      {filteredPayload.metadata.period_range}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Filtered Out:</span>
-                    <span className="ml-2 font-medium text-amber-600">
-                      {filteredPayload.metadata.projects_filtered || 0} projects
-                    </span>
+                    <h3 className="text-sm font-semibold text-blue-800">Processing Timesheet</h3>
+                    <p className="text-xs text-blue-600">
+                      {tenantInfo 
+                        ? `Updating projects in "${tenantInfo.tenantName}"...`
+                        : 'Analyzing data, matching projects, and updating Xero tasks...'
+                      }
+                    </p>
                   </div>
                 </div>
-                <p className="text-xs text-blue-600">
-                  Only projects matching your Xero data will be updated. Review the analysis below.
-                </p>
-              </div>
-
-              {/* Project Matching Analysis */}
-              <ProjectMatchingAnalyzer 
-                timesheetData={filteredPayload}
-                cachedProjects={cachedProjects}
-              />
-              
-              <div className="flex gap-3">
-                <button
-                  onClick={resetProcessor}
-                  className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmXeroUpdate}
-                  disabled={Object.keys(filteredPayload.consolidated_payload).length === 0}
-                  className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                >
-                  {Object.keys(filteredPayload.consolidated_payload).length === 0 
-                    ? 'No Matching Projects' 
-                    : 'Update Xero Projects'
-                  }
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Processing State */}
-          {currentStep === 'processing' && (
-            <div className="mt-6 space-y-6">
-              <ProgressBar 
-                current={currentProgress}
-                total={totalProgress}
-                startTime={startTime || undefined}
-                message="Processing timesheet data"
-              />
-              
-              <div className="space-y-3">
-                {processingSteps.map((step, index) => (
-                  <div key={index} className="flex items-start gap-3">
-                    <div className="flex-shrink-0 mt-0.5">
-                      {step.status === 'pending' && (
-                        <div className="w-5 h-5 rounded-full border-2 border-gray-300" />
-                      )}
-                      {step.status === 'processing' && (
-                        <div className="relative w-5 h-5">
-                          <div className="absolute inset-0 rounded-full border-2 border-blue-200"></div>
-                          <div className="absolute inset-0 rounded-full border-2 border-blue-600 border-t-transparent animate-spin"></div>
-                        </div>
-                      )}
-                      {step.status === 'complete' && (
-                        <CheckCircleIcon className="w-5 h-5 text-green-500" />
-                      )}
-                      {step.status === 'error' && (
-                        <XCircleIcon className="w-5 h-5 text-red-500" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium ${
-                        step.status === 'complete' ? 'text-green-700' : 
-                        step.status === 'error' ? 'text-red-700' : 
-                        step.status === 'processing' ? 'text-blue-700' : 
-                        'text-gray-500'
-                      }`}>
-                        {step.name}
-                      </p>
-                      {step.message && (
-                        <p className="text-xs text-gray-500 mt-0.5">{step.message}</p>
-                      )}
-                    </div>
+                
+                {filePreview && (
+                  <div className="mt-3 text-xs text-blue-700">
+                    Processing: <strong>{filePreview.fileName}</strong> ({filePreview.fileSize})
                   </div>
-                ))}
+                )}
               </div>
+
+              <ProgressBar 
+                current={1}
+                total={1}
+                startTime={startTime || undefined}
+                message="Direct processing in progress..."
+              />
             </div>
           )}
 
           {/* Complete State */}
-          {currentStep === 'complete' && results && (
+          {status === 'complete' && results && (
             <div className="mt-6 space-y-4">
               <div className={`border rounded-lg p-4 ${
                 results.success 
                   ? 'bg-green-50 border-green-200' 
-                  : results.projectStandardization.tasksCreated > 0
+                  : results.summary.tasksCreated > 0
                     ? 'bg-amber-50 border-amber-200'
                     : 'bg-red-50 border-red-200'
               }`}>
                 <h3 className={`text-sm font-semibold mb-3 ${
                   results.success 
                     ? 'text-green-800' 
-                    : results.projectStandardization.tasksCreated > 0
+                    : results.summary.tasksCreated > 0
                       ? 'text-amber-800'
                       : 'text-red-800'
                 }`}>
                   {results.success 
                     ? 'Processing Complete' 
-                    : results.projectStandardization.tasksCreated > 0
+                    : results.summary.tasksCreated > 0
                       ? 'Processing Completed with Errors'
                       : 'Processing Failed'
                   }
                 </h3>
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                   <div>
                     <span className="text-gray-600">Entries Processed:</span>
                     <span className="ml-2 font-medium text-gray-900">
-                      {results.timesheetProcessing.metadata.entries_processed}
+                      {results.summary.entriesProcessed}
                     </span>
                   </div>
                   <div>
-                    <span className="text-gray-600">Projects Updated:</span>
+                    <span className="text-gray-600">Projects Matched:</span>
                     <span className="ml-2 font-medium text-gray-900">
-                      {results.taskUpdates.projectsProcessed}
+                      {results.summary.projectsMatched}
                     </span>
                   </div>
                   <div>
                     <span className="text-gray-600">Tasks Created:</span>
                     <span className={`ml-2 font-medium ${
-                      results.projectStandardization.tasksCreated > 0 ? 'text-green-700' : 'text-gray-900'
+                      results.summary.tasksCreated > 0 ? 'text-green-700' : 'text-gray-900'
                     }`}>
-                      {results.projectStandardization.tasksCreated}
+                      {results.summary.tasksCreated}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Tasks Updated:</span>
+                    <span className={`ml-2 font-medium ${
+                      results.summary.tasksUpdated > 0 ? 'text-blue-700' : 'text-gray-900'
+                    }`}>
+                      {results.summary.tasksUpdated}
                     </span>
                   </div>
                   <div>
                     <span className="text-gray-600">Tasks Failed:</span>
                     <span className={`ml-2 font-medium ${
-                      results.taskUpdates.tasksFailed > 0 ? 'text-red-700' : 'text-gray-900'
+                      results.summary.tasksFailed > 0 ? 'text-red-700' : 'text-gray-900'
                     }`}>
-                      {results.taskUpdates.tasksFailed}
+                      {results.summary.tasksFailed}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Processing Time:</span>
+                    <span className="ml-2 font-medium text-gray-900">
+                      {(results.summary.processingTimeMs / 1000).toFixed(1)}s
                     </span>
                   </div>
                 </div>
-                
-                {/* Show error details if tasks failed */}
-                {results.taskUpdates.tasksFailed > 0 && (results as any).errorSummary && (
-                  <div className="mt-4 space-y-2">
-                    <p className="text-sm font-medium text-gray-700">Error Details:</p>
-                    {Object.entries((results as any).errorSummary).map(([error, tasks]: [string, any]) => (
-                      <div key={error} className="text-xs bg-white bg-opacity-50 rounded p-2">
-                        <p className="font-medium text-gray-700">{error}:</p>
-                        <ul className="mt-1 space-y-0.5 text-gray-600">
-                          {(tasks as string[]).slice(0, 3).map((task, idx) => (
-                            <li key={idx}>• {task}</li>
-                          ))}
-                          {(tasks as string[]).length > 3 && (
-                            <li className="text-gray-500">... and {(tasks as string[]).length - 3} more</li>
-                          )}
-                        </ul>
-                      </div>
-                    ))}
+
+                {/* Show failed tasks if any */}
+                {results.summary.tasksFailed > 0 && (
+                  <div className="mt-3 p-3 bg-white bg-opacity-50 rounded">
+                    <p className="text-xs font-medium text-gray-700 mb-2">Failed Tasks:</p>
+                    <div className="max-h-32 overflow-y-auto">
+                      {results.results
+                        .filter(r => !r.success)
+                        .slice(0, 5)
+                        .map((result, idx) => (
+                          <div key={idx} className="text-xs text-gray-600 mb-1">
+                            • {result.projectCode} - {result.taskName}: {result.error}
+                          </div>
+                        ))}
+                      {results.results.filter(r => !r.success).length > 5 && (
+                        <div className="text-xs text-gray-500">
+                          ... and {results.results.filter(r => !r.success).length - 5} more (see report)
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -656,17 +368,18 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
                   Process Another
                 </button>
                 <button
+                  onClick={() => downloadReport(results.downloadableReport)}
                   className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                 >
                   <DocumentArrowDownIcon className="w-4 h-4" />
-                  View Report
+                  Download Report
                 </button>
               </div>
             </div>
           )}
 
           {/* Error State */}
-          {currentStep === 'error' && (
+          {status === 'error' && (
             <div className="mt-6 space-y-4">
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                 <h3 className="text-sm font-semibold text-red-800 mb-1">Processing Failed</h3>
@@ -684,7 +397,7 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
         </div>
       </div>
 
-      {/* First Confirmation Dialog - File Upload */}
+      {/* Confirmation Dialog - File Upload */}
       <ConfirmationDialog
         isOpen={showConfirmation}
         onClose={() => setShowConfirmation(false)}
@@ -692,15 +405,25 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
           setShowConfirmation(false);
           handleProcessFile();
         }}
-        title="Process Timesheet"
-        message="This will analyze the timesheet data and prepare it for Xero updates. You'll be able to review the changes before they're applied."
-        details={timesheetPreview ? [
-          { label: 'File', value: timesheetPreview.fileName },
-          { label: 'Size', value: timesheetPreview.fileSize },
-          { label: 'Modified', value: timesheetPreview.lastModified }
-        ] : undefined}
-        confirmText="Analyze Timesheet"
-        type="info"
+        title="Confirm Timesheet Processing"
+        message={
+          tenantInfo 
+            ? `This will process the timesheet and update projects in "${tenantInfo.tenantName}". The process typically takes 30-60 seconds and you'll get a detailed report when complete.`
+            : "This will immediately process the timesheet and update your Xero projects. The process typically takes 30-60 seconds and you'll get a detailed report when complete."
+        }
+        details={[
+          ...(filePreview ? [
+            { label: 'File', value: filePreview.fileName },
+            { label: 'Size', value: filePreview.fileSize },
+            { label: 'Modified', value: filePreview.lastModified }
+          ] : []),
+          ...(tenantInfo ? [
+            { label: 'Xero Company', value: tenantInfo.tenantName },
+            { label: 'Tenant ID', value: tenantInfo.tenantId.substring(0, 8) + '...' }
+          ] : [])
+        ]}
+        confirmText="Start Processing"
+        type="warning"
       />
     </>
   );
