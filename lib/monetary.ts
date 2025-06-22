@@ -143,13 +143,13 @@ export class MonetaryUtils {
    * Check if value is positive
    */
   static isPositive(value: string): boolean {
-    return this.toDecimal(value).isPositive();
+    return this.toDecimal(value).greaterThan(0);
   }
 
   /**
    * Check if value is negative
    */
   static isNegative(value: string): boolean {
-    return this.toDecimal(value).isNegative();
+    return this.toDecimal(value).lessThan(0);
   }
 } 

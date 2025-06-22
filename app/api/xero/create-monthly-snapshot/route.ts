@@ -63,9 +63,9 @@ function generateSnapshotReport(snapshot: MonthlySnapshot): { filename: string; 
   lines.push('SUMMARY:');
   lines.push('-'.repeat(40));
   lines.push(`Total Projects: ${snapshot.summary.totalProjects}`);
-  lines.push(`Total WIP Value: $${(snapshot.summary.totalWipValue / 100).toFixed(2)}`);
-  lines.push(`Total Estimated Cost: $${(snapshot.summary.totalEstimatedCost / 100).toFixed(2)}`);
-  lines.push(`Total Actual Cost: $${(snapshot.summary.totalActualCost / 100).toFixed(2)}`);
+  lines.push(`Total WIP Value: $${snapshot.summary.totalWipValue}`);
+  lines.push(`Total Estimated Cost: $${snapshot.summary.totalEstimatedCost}`);
+  lines.push(`Total Actual Cost: $${snapshot.summary.totalActualCost}`);
   lines.push('');
   
   lines.push('PROJECT DETAILS:');
@@ -74,14 +74,14 @@ function generateSnapshotReport(snapshot: MonthlySnapshot): { filename: string; 
   snapshot.projectSnapshots.forEach((project, index) => {
     lines.push(`\n${index + 1}. ${project.projectName} (${project.projectCode})`);
     lines.push(`   Project ID: ${project.projectId}`);
-    lines.push(`   WIP Value: $${(project.totals.wipValue / 100).toFixed(2)}`);
-    lines.push(`   Estimated: ${project.totals.totalEstimateMinutes} min @ $${(project.totals.totalEstimatedCost / 100).toFixed(2)}`);
-    lines.push(`   Actual: ${project.totals.totalActualMinutes} min @ $${(project.totals.totalActualCost / 100).toFixed(2)}`);
+    lines.push(`   WIP Value: $${project.totals.wipValue}`);
+    lines.push(`   Estimated: ${project.totals.totalEstimateMinutes} min @ $${project.totals.totalEstimatedCost}`);
+    lines.push(`   Actual: ${project.totals.totalActualMinutes} min @ $${project.totals.totalActualCost}`);
     
     if (project.tasks.length > 0) {
       lines.push('   Tasks:');
       project.tasks.forEach(task => {
-        lines.push(`     - ${task.taskName}: ${task.actualMinutes}/${task.estimateMinutes} min, $${(task.actualCost / 100).toFixed(2)}/$${(task.estimatedCost / 100).toFixed(2)}`);
+        lines.push(`     - ${task.taskName}: ${task.actualMinutes}/${task.estimateMinutes} min, $${task.actualCost}/$${task.estimatedCost}`);
       });
     }
   });
@@ -100,10 +100,10 @@ function generateSnapshotReport(snapshot: MonthlySnapshot): { filename: string; 
   
   snapshot.projectSnapshots.forEach(project => {
     if (project.tasks.length === 0) {
-      csvLines.push(`"${project.projectCode}","${project.projectName}","N/A",0,0,0,0,${project.totals.wipValue / 100}`);
+      csvLines.push(`"${project.projectCode}","${project.projectName}","N/A",0,0,0,0,${project.totals.wipValue}`);
     } else {
       project.tasks.forEach(task => {
-        csvLines.push(`"${project.projectCode}","${project.projectName}","${task.taskName}",${task.estimateMinutes},${task.actualMinutes},${task.estimatedCost / 100},${task.actualCost / 100},${task.actualCost / 100}`);
+        csvLines.push(`"${project.projectCode}","${project.projectName}","${task.taskName}",${task.estimateMinutes},${task.actualMinutes},${task.estimatedCost},${task.actualCost},${task.actualCost}`);
       });
     }
   });
