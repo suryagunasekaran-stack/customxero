@@ -161,45 +161,110 @@ function generateExecutionReport(results: ExecutionResult[], statistics: Executi
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
   const filename = `xero-update-execution-report-${timestamp}.csv`;
   
+  // Categorize results for better reporting
+  const successfulProjects = results.filter(r => r.action === 'success' && r.tasksFailed === 0);
+  const failedProjects = results.filter(r => r.action === 'failed' || r.tasksFailed > 0);
+  const skippedProjects = results.filter(r => r.action === 'skipped');
+  
   // CSV Headers
   const csvLines = [
-    'Project Code,Project Name,Project Status,Tasks Updated,Tasks Failed,Tasks Skipped,Task Name,Task Action,Task Status,Old Estimate,New Estimate,Old Rate,New Rate,Error Message'
+    'Section,Project Code,Project Name,Project Status,Tasks Updated,Tasks Failed,Tasks Skipped,Task Name,Task Action,Task Status,Old Estimate,New Estimate,Old Rate,New Rate,Error Message'
   ];
   
-  // Add execution statistics as comments
+  // Add enhanced execution statistics
   csvLines.push(`# Execution Report Generated: ${statistics.endTime}`);
   csvLines.push(`# Execution Duration: ${statistics.duration}`);
   csvLines.push(`# Projects Processed: ${statistics.totalProjectsProcessed}`);
   csvLines.push(`# Projects Successful: ${statistics.projectsSuccessful}`);
-  csvLines.push(`# Projects Failed: ${statistics.projectsFailed}`);
+  csvLines.push(`# Projects with Failures: ${failedProjects.length}`);
+  csvLines.push(`# Tasks Updated Successfully: ${statistics.tasksUpdated}`);
+  csvLines.push(`# Tasks Failed: ${statistics.tasksFailed}`);
+  csvLines.push(`# Success Rate: ${statistics.totalProjectsProcessed > 0 ? ((statistics.projectsSuccessful / statistics.totalProjectsProcessed) * 100).toFixed(1) : '0'}%`);
+  csvLines.push('');
+  
+  // Add alert for failures
+  if (failedProjects.length > 0) {
+    csvLines.push(`# ⚠️  ALERT: ${failedProjects.length} project(s) had failures that require attention!`);
+    csvLines.push('');
+  }
+  
+  // Section 1: Failed Projects (most important)
+  if (failedProjects.length > 0) {
+    csvLines.push('# ❌ PROJECTS WITH FAILURES');
+    csvLines.push('# These projects had task failures that need investigation');
+    failedProjects.forEach(project => {
+      if (project.taskResults.length === 0) {
+        // Project with no task results
+        csvLines.push(`"Failure","${project.projectCode}","${project.projectName}","${project.action}","${project.tasksUpdated}","${project.tasksFailed}","${project.tasksSkipped}","N/A","N/A","Project Failed","N/A","N/A","N/A","N/A","${project.error || 'Project-level failure'}"`);
+      } else {
+        // Show only failed tasks for failed projects
+        const failedTasks = project.taskResults.filter(task => task.action === 'failed');
+        failedTasks.forEach((task, index) => {
+          const projectCodeCell = index === 0 ? project.projectCode : '';
+          const projectNameCell = index === 0 ? project.projectName : '';
+          const projectStatusCell = index === 0 ? project.action : '';
+          const tasksUpdatedCell = index === 0 ? project.tasksUpdated.toString() : '';
+          const tasksFailedCell = index === 0 ? project.tasksFailed.toString() : '';
+          const tasksSkippedCell = index === 0 ? project.tasksSkipped.toString() : '';
+          
+          const oldEstimate = task.oldValues ? task.oldValues.estimateMinutes.toString() : 'N/A';
+          const newEstimate = task.newValues ? task.newValues.estimateMinutes.toString() : 'N/A';
+          const oldRate = task.oldValues ? (task.oldValues.rate / 100).toFixed(2) : 'N/A';
+          const newRate = task.newValues ? (task.newValues.rate / 100).toFixed(2) : 'N/A';
+          
+          csvLines.push(`"Failure","${projectCodeCell}","${projectNameCell}","${projectStatusCell}","${tasksUpdatedCell}","${tasksFailedCell}","${tasksSkippedCell}","${task.taskName}","update","Failed","${oldEstimate}","${newEstimate}","${oldRate}","${newRate}","${task.error || 'Task update failed'}"`);
+        });
+      }
+    });
+    csvLines.push('');
+  }
+  
+  // Section 2: Successful Projects
+  if (successfulProjects.length > 0) {
+    csvLines.push('# ✅ SUCCESSFUL PROJECTS');
+    csvLines.push('# These projects were updated successfully');
+    successfulProjects.forEach(project => {
+      if (project.taskResults.length === 0) {
+        // Project with no task results but marked as success
+        csvLines.push(`"Success","${project.projectCode}","${project.projectName}","${project.action}","${project.tasksUpdated}","${project.tasksFailed}","${project.tasksSkipped}","N/A","N/A","Success","N/A","N/A","N/A","N/A","All tasks updated successfully"`);
+      } else {
+        // Show successful tasks (limit to first few to avoid clutter)
+        const successfulTasks = project.taskResults.filter(task => task.action === 'updated');
+        successfulTasks.slice(0, 5).forEach((task, index) => { // Limit to first 5 tasks per project
+          const projectCodeCell = index === 0 ? project.projectCode : '';
+          const projectNameCell = index === 0 ? project.projectName : '';
+          const projectStatusCell = index === 0 ? project.action : '';
+          const tasksUpdatedCell = index === 0 ? project.tasksUpdated.toString() : '';
+          const tasksFailedCell = index === 0 ? project.tasksFailed.toString() : '';
+          const tasksSkippedCell = index === 0 ? project.tasksSkipped.toString() : '';
+          
+          const oldEstimate = task.oldValues ? task.oldValues.estimateMinutes.toString() : 'N/A';
+          const newEstimate = task.newValues ? task.newValues.estimateMinutes.toString() : 'N/A';
+          const oldRate = task.oldValues ? (task.oldValues.rate / 100).toFixed(2) : 'N/A';
+          const newRate = task.newValues ? (task.newValues.rate / 100).toFixed(2) : 'N/A';
+          
+          csvLines.push(`"Success","${projectCodeCell}","${projectNameCell}","${projectStatusCell}","${tasksUpdatedCell}","${tasksFailedCell}","${tasksSkippedCell}","${task.taskName}","update","Updated","${oldEstimate}","${newEstimate}","${oldRate}","${newRate}","Updated successfully"`);
+        });
+        
+        // Add summary line if there are more tasks
+        if (successfulTasks.length > 5) {
+          csvLines.push(`"Success","","","","","","","... and ${successfulTasks.length - 5} more tasks","summary","All Updated","N/A","N/A","N/A","N/A","All remaining tasks updated successfully"`);
+        }
+      }
+    });
+    csvLines.push('');
+  }
+  
+  // Section 3: Summary Statistics
+  csvLines.push('# 📊 EXECUTION SUMMARY');
+  csvLines.push(`# Total Projects: ${statistics.totalProjectsProcessed}`);
+  csvLines.push(`# Successful Projects: ${statistics.projectsSuccessful}`);
+  csvLines.push(`# Projects with Failures: ${failedProjects.length}`);
+  csvLines.push(`# Total Tasks Processed: ${statistics.totalTasksProcessed}`);
   csvLines.push(`# Tasks Updated: ${statistics.tasksUpdated}`);
   csvLines.push(`# Tasks Failed: ${statistics.tasksFailed}`);
-  csvLines.push(''); // Empty line after metadata
-  
-  // Process each project result
-  results.forEach(project => {
-    if (project.taskResults.length === 0) {
-      // Project with no task results
-      csvLines.push(`"${project.projectCode}","${project.projectName}","${project.action}","${project.tasksUpdated}","${project.tasksFailed}","${project.tasksSkipped}","N/A","N/A","N/A","N/A","N/A","N/A","N/A","${project.error || 'N/A'}"`);
-    } else {
-      // Project with task results
-      project.taskResults.forEach((task, index) => {
-        const projectCodeCell = index === 0 ? project.projectCode : '';
-        const projectNameCell = index === 0 ? project.projectName : '';
-        const projectStatusCell = index === 0 ? project.action : '';
-        const tasksUpdatedCell = index === 0 ? project.tasksUpdated.toString() : '';
-        const tasksFailedCell = index === 0 ? project.tasksFailed.toString() : '';
-        const tasksSkippedCell = index === 0 ? project.tasksSkipped.toString() : '';
-        
-        const oldEstimate = task.oldValues ? task.oldValues.estimateMinutes.toString() : 'N/A';
-        const newEstimate = task.newValues ? task.newValues.estimateMinutes.toString() : 'N/A';
-        const oldRate = task.oldValues ? (task.oldValues.rate / 100).toFixed(2) : 'N/A';
-        const newRate = task.newValues ? (task.newValues.rate / 100).toFixed(2) : 'N/A';
-        
-        csvLines.push(`"${projectCodeCell}","${projectNameCell}","${projectStatusCell}","${tasksUpdatedCell}","${tasksFailedCell}","${tasksSkippedCell}","${task.taskName}","update","${task.action}","${oldEstimate}","${newEstimate}","${oldRate}","${newRate}","${task.error || 'N/A'}"`);
-      });
-    }
-  });
+  csvLines.push(`# Overall Success Rate: ${statistics.totalProjectsProcessed > 0 ? ((statistics.projectsSuccessful / statistics.totalProjectsProcessed) * 100).toFixed(1) : '0'}%`);
+  csvLines.push(`# Task Success Rate: ${statistics.totalTasksProcessed > 0 ? ((statistics.tasksUpdated / statistics.totalTasksProcessed) * 100).toFixed(1) : '0'}%`);
   
   return {
     filename,

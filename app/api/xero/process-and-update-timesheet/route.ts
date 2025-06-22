@@ -528,57 +528,96 @@ function generateComprehensiveReport(
   
   const successfulCreations = taskCreationResults.filter(r => r.success).length;
   const failedCreations = taskCreationResults.filter(r => !r.success).length;
-  const hasFailures = failedCreations > 0;
+  
+  // Filter actual failures vs "not found" projects
+  const actualFailures = taskCreationResults.filter(r => !r.success && 
+    !(r.error?.includes('not found') || r.error?.includes('Project code not found'))
+  );
+  const notFoundFailures = taskCreationResults.filter(r => !r.success && 
+    (r.error?.includes('not found') || r.error?.includes('Project code not found'))
+  );
+  
+  const hasActualFailures = actualFailures.length > 0;
   
   const csvLines = [
     'Section,Project Code,Project Name,Task Name,Action,Status,Previous Value,New Value,Details'
   ];
   
-  // Add metadata with warning if there are failures
+  // Add enhanced metadata with better failure categorization
   csvLines.push(`# Report Generated: ${new Date().toISOString()}`);
   csvLines.push(`# Period: ${timesheetData.metadata.period_range}`);
   csvLines.push(`# Timesheet Entries Processed: ${timesheetData.metadata.entries_processed}`);
   csvLines.push(`# Projects Consolidated: ${timesheetData.metadata.projects_consolidated}`);
   csvLines.push(`# Tasks Created Successfully: ${successfulCreations}`);
-  csvLines.push(`# Tasks Failed: ${failedCreations}`);
-  if (hasFailures) {
-    csvLines.push(`# WARNING: ${failedCreations} task(s) failed to create. See details below.`);
+  csvLines.push(`# Actual Task Failures: ${actualFailures.length}`);
+  csvLines.push(`# Projects Not Found (Likely Closed): ${notFoundFailures.length}`);
+  if (hasActualFailures) {
+    csvLines.push(`# ⚠️  ALERT: ${actualFailures.length} actual failure(s) require attention!`);
   }
   csvLines.push(`# Tasks Updated: ${updateResults.filter(r => r.success && !r.error?.includes('unchanged')).length}`);
   csvLines.push('');
   
-  // Task Creation Section - sort failed tasks first for visibility
+  // Task Creation Section - prioritize actual failures for visibility
   if (taskCreationResults.length > 0) {
-    csvLines.push('# TASK CREATION');
+    csvLines.push('# TASK OPERATIONS');
     
-    // Failed tasks first
-    const failedTasks = taskCreationResults.filter(r => !r.success);
-    const successfulTasks = taskCreationResults.filter(r => r.success);
-    
-    if (failedTasks.length > 0) {
-      csvLines.push('## FAILED TASKS');
-      failedTasks.forEach(result => {
-        csvLines.push(`"Task Creation","N/A","${result.projectName}","${result.taskName}","Create","FAILED","N/A","N/A","${result.error || 'Unknown error'}"`);
+    // Actual failures first (most important)
+    if (actualFailures.length > 0) {
+      csvLines.push('## ❌ ACTUAL FAILURES REQUIRING ATTENTION');
+      actualFailures.forEach(result => {
+        csvLines.push(`"Failure","N/A","${result.projectName}","${result.taskName}","Create","FAILED","N/A","N/A","${result.error || 'Unknown error'}"`);
       });
+      csvLines.push('');
     }
     
-    if (successfulTasks.length > 0) {
-      csvLines.push('## SUCCESSFUL TASKS');
+    // Then successful tasks
+    if (successfulCreations > 0) {
+      csvLines.push('## ✅ SUCCESSFUL OPERATIONS');
+      const successfulTasks = taskCreationResults.filter(r => r.success);
       successfulTasks.forEach(result => {
-        csvLines.push(`"Task Creation","N/A","${result.projectName}","${result.taskName}","Create","Success","N/A","Created","Task created successfully"`);
+        csvLines.push(`"Success","N/A","${result.projectName}","${result.taskName}","Create","Success","N/A","Created","Task created successfully"`);
       });
+      csvLines.push('');
     }
-    csvLines.push('');
+    
+    // Finally, not found projects (informational only)
+    if (notFoundFailures.length > 0) {
+      csvLines.push('## ℹ️  PROJECTS NOT FOUND (LIKELY CLOSED/COMPLETED)');
+      const projectGroups = new Map<string, TaskCreationResult[]>();
+      notFoundFailures.forEach(result => {
+        const projectKey = result.projectName || 'Unknown Project';
+        if (!projectGroups.has(projectKey)) {
+          projectGroups.set(projectKey, []);
+        }
+        projectGroups.get(projectKey)!.push(result);
+      });
+      
+      projectGroups.forEach((tasks, projectName) => {
+        csvLines.push(`"Info","N/A","${projectName}","${tasks.length} tasks","Skip","Info","N/A","N/A","Project likely moved to CLOSED/COMPLETED status - no action required"`);
+      });
+      csvLines.push('');
+    }
   }
   
   // Task Updates Section
-  csvLines.push('# TASK UPDATES');
-  updateResults.forEach(result => {
-    const status = result.success ? (result.error?.includes('unchanged') ? 'Unchanged' : 'Updated') : 'Failed';
-    const prevValue = result.previousEstimate !== undefined ? `${result.previousEstimate} min @ $${(result.previousRate || 0) / 100}` : 'N/A';
-    const newValue = `${result.newEstimate} min @ $${result.newRate / 100}`;
-    csvLines.push(`"Task Update","${result.projectCode}","${result.projectName}","${result.taskName}","Update","${status}","${prevValue}","${newValue}","${result.error || 'Updated successfully'}"`);
-  });
+  if (updateResults.length > 0) {
+    csvLines.push('# TASK UPDATES');
+    updateResults.forEach(result => {
+      const status = result.success ? (result.error?.includes('unchanged') ? 'Unchanged' : 'Updated') : 'Failed';
+      const prevValue = result.previousEstimate !== undefined ? `${result.previousEstimate} min @ $${(result.previousRate || 0) / 100}` : 'N/A';
+      const newValue = `${result.newEstimate} min @ $${result.newRate / 100}`;
+      csvLines.push(`"Update","${result.projectCode}","${result.projectName}","${result.taskName}","Update","${status}","${prevValue}","${newValue}","${result.error || 'Updated successfully'}"`);
+    });
+    csvLines.push('');
+  }
+  
+  // Add summary
+  csvLines.push('# 📊 SUMMARY');
+  csvLines.push(`# Total Task Operations: ${taskCreationResults.length + updateResults.length}`);
+  csvLines.push(`# Successful Operations: ${successfulCreations + updateResults.filter(r => r.success).length}`);
+  csvLines.push(`# Actual Failures: ${actualFailures.length}`);
+  csvLines.push(`# Projects Not Found: ${notFoundFailures.length}`);
+  csvLines.push(`# Success Rate (excluding not found): ${actualFailures.length === 0 ? '100%' : ((successfulCreations / (successfulCreations + actualFailures.length)) * 100).toFixed(1)}%`);
   
   return { filename, content: csvLines.join('\n') };
 }

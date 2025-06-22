@@ -170,12 +170,12 @@ export class XeroProjectService {
    */
   private static extractProjectCode(projectName: string): string {
     // Common patterns for project codes:
-    // 1. "ED25002 - Titanic" -> "ED25002"
-    // 2. "NY001 Project Name" -> "NY001"
+    // 1. "NY250388 - USS SAVANNAH (LCS 28)" -> "NY250388"
+    // 2. "ED25002 - Titanic" -> "ED25002"
     // 3. "ABC123: Description" -> "ABC123"
     
     const patterns = [
-      /^([A-Z]{2}\d{3,5})/, // ED25002, NY001, etc.
+      /^([A-Z]{2}\d{3,6})/, // NY250388 (8 chars), ED25002 (7 chars), etc.
       /^([A-Z]{3}\d{3})/,   // ABC123, etc.
       /^([A-Z]+\d+)/,       // Any letters followed by numbers
     ];

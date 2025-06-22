@@ -51,7 +51,7 @@ export async function GET() {
       projectCodeTaskMapping: projectData.projectCodes,
       allTaskNames,
       timeEntrySummary,
-      cached: new Date().getTime() - projectData.lastUpdated.getTime() > 1000
+      cached: false // Data is now always fetched fresh from API
     };
     
     console.log(`[Extract Project Codes API] Returning data for ${summary.totalProjects} projects with ${summary.uniqueProjectCodes} unique codes`);

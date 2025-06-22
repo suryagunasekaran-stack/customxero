@@ -75,13 +75,19 @@ export default function TenantSwitcher() {
         });
         window.dispatchEvent(tenantChangeEvent);
         
+        // Force immediate UI update
+        setTenantsData(prev => prev ? {
+          ...prev,
+          selectedTenant: tenantId
+        } : null);
+        
         // Use router.refresh() to force NextAuth to recalculate session
         router.refresh();
         
-        // Also refetch tenants to ensure we have latest data
+        // Force a hard refresh of the page to ensure all caches are cleared
         setTimeout(() => {
-          fetchTenants();
-        }, 100);
+          window.location.reload();
+        }, 500);
       } else {
         console.error('Failed to switch tenant - response not ok');
         // Revert local state on error
@@ -107,7 +113,7 @@ export default function TenantSwitcher() {
   return (
     <Menu as="div" className="relative inline-block text-left">
       <div>
-        <MenuButton className="inline-flex w-full justify-center items-center gap-x-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">
+        <MenuButton className="inline-flex w-full justify-center items-center gap-x-1.5 rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-xs ring-1 ring-gray-300 ring-inset hover:bg-gray-50">
           <BuildingOfficeIcon className="h-4 w-4 text-gray-400" />
           <span className="max-w-32 truncate">
             {currentTenant?.tenantName || 'Select Organisation'}
@@ -118,7 +124,7 @@ export default function TenantSwitcher() {
 
       <MenuItems
         transition
-        className="absolute right-0 z-10 mt-2 w-64 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 transition focus:outline-none data-[closed]:scale-95 data-[closed]:transform data-[closed]:opacity-0 data-[enter]:duration-100 data-[leave]:duration-75 data-[enter]:ease-out data-[leave]:ease-in"
+        className="absolute right-0 z-10 mt-2 w-64 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black/5 transition focus:outline-hidden data-closed:scale-95 data-closed:transform data-closed:opacity-0 data-enter:duration-100 data-enter:ease-out data-leave:duration-75 data-leave:ease-in"
       >
         <div className="py-1">
           <div className="px-4 py-2 text-xs font-medium text-gray-500 border-b border-gray-200">
@@ -126,47 +132,39 @@ export default function TenantSwitcher() {
           </div>
           {tenantsData.availableTenants.map((tenant) => (
             <MenuItem key={tenant.tenantId}>
-              {({ focus }) => (
-                <button
-                  onClick={() => handleTenantSwitch(tenant.tenantId)}
-                  disabled={switching === tenant.tenantId}
-                  className={`${
-                    focus ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
-                  } flex w-full items-center px-4 py-2 text-sm disabled:opacity-50`}
-                >
-                  <div className="flex items-center flex-1 min-w-0">
-                    <BuildingOfficeIcon className="h-4 w-4 text-gray-400 mr-3 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="truncate font-medium">
-                        {tenant.tenantName}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {tenant.tenantType}
-                      </div>
+              <button
+                onClick={() => handleTenantSwitch(tenant.tenantId)}
+                disabled={switching === tenant.tenantId}
+                className="flex w-full items-center px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden disabled:opacity-50"
+              >
+                <div className="flex items-center flex-1 min-w-0">
+                  <BuildingOfficeIcon className="h-4 w-4 text-gray-400 mr-3 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate font-medium">
+                      {tenant.tenantName}
                     </div>
-                    {switching === tenant.tenantId ? (
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 ml-2"></div>
-                    ) : tenantsData.selectedTenant === tenant.tenantId ? (
-                      <CheckIcon className="h-4 w-4 text-blue-500 ml-2 flex-shrink-0" />
-                    ) : null}
+                    <div className="text-xs text-gray-500">
+                      {tenant.tenantType}
+                    </div>
                   </div>
-                </button>
-              )}
+                  {switching === tenant.tenantId ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 ml-2"></div>
+                  ) : tenantsData.selectedTenant === tenant.tenantId ? (
+                    <CheckIcon className="h-4 w-4 text-blue-500 ml-2 flex-shrink-0" />
+                  ) : null}
+                </div>
+              </button>
             </MenuItem>
           ))}
           <div className="border-t border-gray-200">
             <MenuItem>
-              {({ focus }) => (
-                <button
-                  onClick={() => router.push('/tenant-selection')}
-                  className={`${
-                    focus ? 'bg-gray-100 text-gray-900' : 'text-gray-700'
-                  } flex w-full items-center px-4 py-2 text-sm`}
-                >
-                  <BuildingOfficeIcon className="h-4 w-4 text-gray-400 mr-3" />
-                  Manage Organisations
-                </button>
-              )}
+              <button
+                onClick={() => router.push('/tenant-selection')}
+                className="flex w-full items-center px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:text-gray-900 data-focus:outline-hidden"
+              >
+                <BuildingOfficeIcon className="h-4 w-4 text-gray-400 mr-3" />
+                Manage Organisations
+              </button>
             </MenuItem>
           </div>
         </div>

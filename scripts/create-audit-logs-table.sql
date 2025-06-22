@@ -60,4 +60,14 @@ CREATE POLICY "Service role has full access" ON audit_logs
 -- Policy to allow service role to insert logs
 CREATE POLICY "Service role can insert logs" ON audit_logs
     FOR INSERT
-    WITH CHECK (auth.role() = 'service_role'); 
+    WITH CHECK (auth.role() = 'service_role');
+
+-- Additional policy for anon role (for API routes that might use anon key)
+CREATE POLICY "Allow anon role to insert audit logs" ON audit_logs
+    FOR INSERT
+    WITH CHECK (true);
+
+-- Allow anon role to read logs (you can restrict this later if needed)
+CREATE POLICY "Allow anon role to view audit logs" ON audit_logs
+    FOR SELECT
+    USING (true); 

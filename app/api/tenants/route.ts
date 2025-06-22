@@ -112,12 +112,27 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    console.log('[Tenants POST] 🔄 SWITCHING TENANT:');
+    console.log('[Tenants POST]   User:', userId);
+    console.log('[Tenants POST]   From tenant:', session.tenantId);
+    console.log('[Tenants POST]   To tenant:', cleanTenantId);
+    console.log('[Tenants POST]   Tenant name:', availableTenants.find((t: any) => t.tenantId === cleanTenantId)?.tenantName);
+    
     await xeroTokenManager.saveSelectedTenant(userId, cleanTenantId);
-    console.log('[Tenants POST] Successfully saved tenant:', cleanTenantId, 'for user:', userId);
+    console.log('[Tenants POST] ✅ Successfully saved tenant:', cleanTenantId, 'for user:', userId);
 
     // Verify it was saved
     const verifyTenant = await xeroTokenManager.getSelectedTenant(userId);
-    console.log('[Tenants POST] Verification - saved tenant:', verifyTenant);
+    console.log('[Tenants POST] 🔍 Verification - saved tenant:', verifyTenant);
+    
+    if (verifyTenant !== cleanTenantId) {
+        console.error('[Tenants POST] 🚨 CRITICAL: Tenant save verification failed!');
+        console.error('[Tenants POST]   Expected:', cleanTenantId);
+        console.error('[Tenants POST]   Actual:', verifyTenant);
+        return NextResponse.json({ 
+          error: 'Failed to save tenant selection' 
+        }, { status: 500 });
+    }
 
     return NextResponse.json({ 
       success: true, 

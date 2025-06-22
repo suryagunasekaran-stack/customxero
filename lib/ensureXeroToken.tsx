@@ -16,7 +16,7 @@ export interface ValidTokenData {
  * @throws {Error} When authentication is invalid, token expired, or no tenant available
  */
 export async function ensureValidToken(): Promise<ValidTokenData> {
-    console.log('[ensureValidToken] Attempting to ensure a valid token.');
+    console.log('[ensureValidToken] 🔍 STARTING TENANT RESOLUTION');
     
     const session = await auth();
     
@@ -50,6 +50,7 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
     }
     
     const userId = userEmail.trim();
+    console.log('[ensureValidToken] 👤 USER:', userId);
     
     // Get available tenants from session or storage
     let availableTenants = session.tenants || [];
@@ -57,42 +58,56 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
         availableTenants = await xeroTokenManager.getUserTenants(userId) || [];
     }
     
-    // ALWAYS check Redis first for the selected tenant to get the latest value
-    const effectiveTenantId = await xeroTokenManager.getSelectedTenant(userId);
-    if (effectiveTenantId) {
-        console.log('[ensureValidToken] Using tenant ID from Redis storage:', effectiveTenantId);
-        return {
-            access_token: session.accessToken,
-            effective_tenant_id: effectiveTenantId,
-            user_id: userId,
-            available_tenants: availableTenants
-        };
-    }
+    console.log('[ensureValidToken] 🏢 AVAILABLE TENANTS:', availableTenants?.map(t => ({ id: t.tenantId, name: t.tenantName })));
+    console.log('[ensureValidToken] 📝 SESSION TENANT ID:', session.tenantId);
     
-    // Fall back to session if no Redis value
-    if (session.tenantId) {
-        console.log('[ensureValidToken] No Redis tenant, using session tenant:', session.tenantId);
+    // ALWAYS check Redis first for the selected tenant to get the latest value
+    const redisTenantId = await xeroTokenManager.getSelectedTenant(userId);
+    console.log('[ensureValidToken] 🗄️  REDIS TENANT ID:', redisTenantId);
+    
+    let finalTenantId: string;
+    let tenantSource: string;
+    
+    if (redisTenantId) {
+        finalTenantId = redisTenantId;
+        tenantSource = 'Redis';
+        console.log('[ensureValidToken] ✅ Using tenant ID from Redis storage:', redisTenantId);
+    } else if (session.tenantId) {
+        finalTenantId = session.tenantId;
+        tenantSource = 'Session';
+        console.log('[ensureValidToken] ⚠️  No Redis tenant, using session tenant:', session.tenantId);
         // Save it to Redis for consistency
         await xeroTokenManager.saveSelectedTenant(userId, session.tenantId);
-        return {
-            access_token: session.accessToken,
-            effective_tenant_id: session.tenantId,
-            user_id: userId,
-            available_tenants: availableTenants
-        };
-    }
-    
-    // If we have tenants but no selection, use the first one
-    if (availableTenants && availableTenants.length > 0) {
+    } else if (availableTenants && availableTenants.length > 0) {
         const defaultTenant = availableTenants.find((t: any) => t.tenantType === 'ORGANISATION') || availableTenants[0];
+        finalTenantId = defaultTenant.tenantId;
+        tenantSource = 'Default';
+        console.log('[ensureValidToken] 🎯 Using default tenant:', defaultTenant);
         await xeroTokenManager.saveSelectedTenant(userId, defaultTenant.tenantId);
-        return {
-            access_token: session.accessToken,
-            effective_tenant_id: defaultTenant.tenantId,
-            user_id: userId,
-            available_tenants: availableTenants
-        };
+    } else {
+        console.error('[ensureValidToken] ❌ NO TENANT AVAILABLE');
+        throw new Error('No tenant ID available. Please select a tenant.');
     }
     
-    throw new Error('No tenant ID available. Please select a tenant.');
+    // Validate the selected tenant exists in available tenants
+    const selectedTenantInfo = availableTenants?.find(t => t.tenantId === finalTenantId);
+    if (!selectedTenantInfo) {
+        console.error('[ensureValidToken] 🚨 CRITICAL: Selected tenant not found in available tenants!');
+        console.error('[ensureValidToken] Selected:', finalTenantId);
+        console.error('[ensureValidToken] Available:', availableTenants?.map(t => t.tenantId));
+        throw new Error(`Selected tenant ${finalTenantId} is not available. Please reselect a tenant.`);
+    }
+    
+    console.log('[ensureValidToken] 🎉 FINAL RESOLUTION:');
+    console.log('[ensureValidToken]   Source:', tenantSource);
+    console.log('[ensureValidToken]   Tenant ID:', finalTenantId);
+    console.log('[ensureValidToken]   Tenant Name:', selectedTenantInfo.tenantName);
+    console.log('[ensureValidToken]   User:', userId);
+    
+    return {
+        access_token: session.accessToken,
+        effective_tenant_id: finalTenantId,
+        user_id: userId,
+        available_tenants: availableTenants
+    };
 }
