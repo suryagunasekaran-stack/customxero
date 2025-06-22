@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { XeroProjectService } from '@/lib/xeroProjectService';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
+import Decimal from 'decimal.js';
 
 interface ProjectSnapshot {
   projectId: string;
@@ -12,16 +13,16 @@ interface ProjectSnapshot {
     taskName: string;
     estimateMinutes: number;
     actualMinutes: number;
-    rate: number;
-    estimatedCost: number;
-    actualCost: number;
+    rate: string;           // was: number
+    estimatedCost: string;  // was: number
+    actualCost: string;     // was: number
   }[];
   totals: {
     totalEstimateMinutes: number;
     totalActualMinutes: number;
-    totalEstimatedCost: number;
-    totalActualCost: number;
-    wipValue: number;
+    totalEstimatedCost: string;  // was: number
+    totalActualCost: string;     // was: number
+    wipValue: string;            // was: number
   };
 }
 
@@ -35,13 +36,13 @@ interface MonthlySnapshot {
   projectSnapshots: ProjectSnapshot[];
   summary: {
     totalProjects: number;
-    totalWipValue: number;
-    totalEstimatedCost: number;
-    totalActualCost: number;
+    totalWipValue: string;        // was: number
+    totalEstimatedCost: string;   // was: number
+    totalActualCost: string;      // was: number
   };
 }
 
-function calculateWipValue(estimatedCost: number, actualCost: number): number {
+function calculateWipValue(estimatedCost: string, actualCost: string): string {
   // WIP = Work completed but not yet billed
   // For now, we'll use actual cost as WIP value
   // This can be adjusted based on business rules
@@ -137,9 +138,9 @@ export async function POST(request: NextRequest) {
     
     // Process each project
     const projectSnapshots: ProjectSnapshot[] = [];
-    let totalWipValue = 0;
-    let totalEstimatedCost = 0;
-    let totalActualCost = 0;
+    let totalWipValue = new Decimal(0);
+    let totalEstimatedCost = new Decimal(0);
+    let totalActualCost = new Decimal(0);
     
     for (const project of projectData.projects) {
       // Since we don't fetch tasks or time entries anymore, we'll use project-level data
@@ -147,26 +148,26 @@ export async function POST(request: NextRequest) {
       const taskSnapshots: any[] = []; // No task-level data available
       
       // Use project-level financial data from Xero API for WIP calculation
-      const totalTaskAmount = project.totalTaskAmount?.value || 0;
-      const totalExpenseAmount = project.totalExpenseAmount?.value || 0;
-      const totalInvoiced = project.totalInvoiced?.value || 0;
-      const totalToBeInvoiced = project.totalToBeInvoiced?.value || 0;
+      const totalTaskAmount = new Decimal(project.totalTaskAmount?.value || "0.00");
+      const totalExpenseAmount = new Decimal(project.totalExpenseAmount?.value || "0.00");
+      const totalInvoiced = new Decimal(project.totalInvoiced?.value || "0.00");
+      const totalToBeInvoiced = new Decimal(project.totalToBeInvoiced?.value || "0.00");
       
       // Calculate project totals using project-level Xero data
       const totals = {
         totalEstimateMinutes: 0, // Not available at project level
         totalActualMinutes: project.minutesLogged || 0,
-        totalEstimatedCost: project.estimate?.value || 0,
-        totalActualCost: totalTaskAmount + totalExpenseAmount,
-        wipValue: 0
+        totalEstimatedCost: project.estimate?.value || "0.00",
+        totalActualCost: totalTaskAmount.plus(totalExpenseAmount).toFixed(2),
+        wipValue: "0.00"
       };
       
       // WIP = Work completed but not yet invoiced
-      totals.wipValue = totalToBeInvoiced;
+      totals.wipValue = totalToBeInvoiced.toFixed(2);
       
-      totalWipValue += totals.wipValue;
-      totalEstimatedCost += totals.totalEstimatedCost;
-      totalActualCost += totals.totalActualCost;
+      totalWipValue = totalWipValue.plus(totals.wipValue);
+      totalEstimatedCost = totalEstimatedCost.plus(totals.totalEstimatedCost);
+      totalActualCost = totalActualCost.plus(totals.totalActualCost);
       
       projectSnapshots.push({
         projectId: project.projectId,
@@ -189,9 +190,9 @@ export async function POST(request: NextRequest) {
       projectSnapshots,
       summary: {
         totalProjects: projectSnapshots.length,
-        totalWipValue,
-        totalEstimatedCost,
-        totalActualCost
+        totalWipValue: totalWipValue.toFixed(2),
+        totalEstimatedCost: totalEstimatedCost.toFixed(2),
+        totalActualCost: totalActualCost.toFixed(2)
       }
     };
     

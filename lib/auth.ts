@@ -119,21 +119,11 @@ export const authConfig: NextAuthConfig = {
         if (session.user?.email && typeof session.user.email === 'string' && session.user.email.trim()) {
           const xeroTokenManager = await getXeroTokenManager();
           const selectedTenant = await xeroTokenManager.getSelectedTenant(session.user.email);
-          console.log('[Auth Session] 🔍 TENANT LOOKUP:');
-          console.log('[Auth Session]   User:', session.user.email);
-          console.log('[Auth Session]   Token tenant:', token.tenantId);
-          console.log('[Auth Session]   Redis tenant:', selectedTenant);
           if (selectedTenant) {
             session.tenantId = selectedTenant;
-            console.log('[Auth Session] ✅ Using Redis tenant:', selectedTenant);
-          } else {
-            console.log('[Auth Session] ⚠️  Using token tenant:', token.tenantId);
           }
-        } else {
-          console.warn('[Auth Session] No valid user email found, skipping Redis tenant lookup');
         }
       } catch (error) {
-        console.error("Error reading selected tenant from Redis:", error);
         // Continue with token tenant if Redis fails
       }
       

@@ -11,17 +11,22 @@ export async function GET(request: NextRequest) {
   console.log('[Xero API Route] Received GET request for projects.');
 
   try {
-    // Use the XeroProjectService to get fresh data (no caching)
-    const projectData = await XeroProjectService.getProjectData();
+    // Get status filter from query parameter
+    const { searchParams } = new URL(request.url);
+    const states = searchParams.get('states'); // INPROGRESS, CLOSED, or null for all
     
-    console.log(`[Xero API Route] Returning ${projectData.projects.length} projects from service`);
+    // Use the XeroProjectService to get fresh data (no caching)
+    const projectData = await XeroProjectService.getProjectData(states || undefined);
+    
+    console.log(`[Xero API Route] Returning ${projectData.projects.length} projects from service (status: ${states || 'all'})`);
     
     return NextResponse.json({ 
       projects: projectData.projects,
       metadata: {
         tenantId: projectData.tenantId,
         tenantName: projectData.tenantName,
-        cached: false
+        cached: false,
+        statusFilter: states || 'all'
       }
     });
 

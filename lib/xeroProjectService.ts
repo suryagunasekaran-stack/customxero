@@ -9,23 +9,23 @@ export interface XeroProject {
   status: string;
   estimate?: {
     currency: string;
-    value: number;
+    value: string;  // was: number
   };
   totalTaskAmount?: {
     currency: string;
-    value: number;
+    value: string;  // was: number
   };
   totalExpenseAmount?: {
     currency: string;
-    value: number;
+    value: string;  // was: number
   };
   totalInvoiced?: {
     currency: string;
-    value: number;
+    value: string;  // was: number
   };
   totalToBeInvoiced?: {
     currency: string;
-    value: number;
+    value: string;  // was: number
   };
   minutesLogged?: number;
 }
@@ -47,16 +47,17 @@ export interface ProjectData {
 export class XeroProjectService {
   /**
    * Gets project data directly from Xero API (no caching)
+   * @param {string} [status] - Optional status filter (INPROGRESS, CLOSED)
    * @returns {Promise<ProjectData>} Complete project data
    */
-  static async getProjectData(): Promise<ProjectData> {
+  static async getProjectData(status?: string): Promise<ProjectData> {
     const { effective_tenant_id, available_tenants } = await ensureValidToken();
     
     // Find tenant name from available tenants
     const currentTenant = available_tenants.find((t: any) => t.tenantId === effective_tenant_id);
     const tenant_name = currentTenant ? currentTenant.tenantName : 'Unknown Tenant';
 
-    const data = await this.fetchAllProjectData(effective_tenant_id, tenant_name);
+    const data = await this.fetchAllProjectData(effective_tenant_id, tenant_name, status);
     
     return {
       ...data,
@@ -82,12 +83,13 @@ export class XeroProjectService {
 
   private static async fetchAllProjectData(
     tenantId: string, 
-    tenantName: string
+    tenantName: string,
+    status?: string
   ): Promise<Omit<ProjectData, 'tenantId' | 'tenantName'>> {
     const { access_token } = await ensureValidToken();
     
     // Fetch all projects using the proper Xero Projects API
-    const projects = await this.fetchAllProjects(access_token, tenantId);
+    const projects = await this.fetchAllProjects(access_token, tenantId, status);
     
     // Extract project codes from names (e.g., "ED25002 - Titanic" -> "ED25002")
     projects.forEach(project => {
@@ -104,21 +106,26 @@ export class XeroProjectService {
    * Fetches all projects from Xero API with pagination support
    * @param {string} accessToken - Xero access token
    * @param {string} tenantId - Xero tenant ID
+   * @param {string} [status] - Optional status filter (INPROGRESS, CLOSED)
    * @returns {Promise<XeroProject[]>} Array of all projects
    */
-  private static async fetchAllProjects(accessToken: string, tenantId: string): Promise<XeroProject[]> {
+  private static async fetchAllProjects(accessToken: string, tenantId: string, status?: string): Promise<XeroProject[]> {
     const allProjects: XeroProject[] = [];
     let page = 1;
     const pageSize = 100;
     let hasMorePages = true;
 
-    console.log('[XeroProjectService] Starting to fetch all projects...');
+    console.log(`[XeroProjectService] Starting to fetch projects (status: ${status || 'all'})...`);
 
     while (hasMorePages) {
       try {
         await SmartRateLimit.waitIfNeeded();
         
-        const url = `https://api.xero.com/projects.xro/2.0/Projects?page=${page}&pageSize=${pageSize}`;
+        let url = `https://api.xero.com/projects.xro/2.0/Projects?page=${page}&pageSize=${pageSize}`;
+        if (status) {
+          url += `&status=${status}`;
+        }
+        
         const response = await fetch(url, {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -159,7 +166,7 @@ export class XeroProjectService {
       }
     }
 
-    console.log(`[XeroProjectService] Successfully fetched ${allProjects.length} total projects`);
+    console.log(`[XeroProjectService] Successfully fetched ${allProjects.length} projects (status: ${status || 'all'})`);
     return allProjects;
   }
 

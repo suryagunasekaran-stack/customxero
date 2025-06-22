@@ -9,7 +9,7 @@ interface ConsolidatedTask {
   name: string;
   rate: {
     currency: string;
-    value: number;
+    value: string;  // was: number
   };
   chargeType: string;
   estimateMinutes: number;
@@ -43,7 +43,7 @@ interface XeroTask {
   name: string;
   rate: {
     currency: string;
-    value: number;
+    value: string;  // was: number
   };
   chargeType: string;
   estimateMinutes: number;
@@ -179,14 +179,11 @@ async function getActiveXeroProjects(accessToken: string, tenantId: string): Pro
   // Extract project codes from project names
   const projects = (data.items || []).map((project: any) => {
     const extractedCode = extractProjectCode(project.name);
-    console.log(`[Project Code Extraction] "${project.name}" -> "${extractedCode}"`);
     return {
       ...project,
       projectCode: extractedCode
     };
   });
-
-  console.log(`[Direct Processing] Successfully extracted project codes for ${projects.length} projects`);
 
   return {
     projects,
@@ -217,6 +214,39 @@ async function getProjectTasks(projectId: string, accessToken: string, tenantId:
   return data.items || [];
 }
 
+// Batch fetch tasks for multiple projects
+async function getBatchProjectTasks(
+  projectIds: string[],
+  accessToken: string,
+  tenantId: string
+): Promise<Map<string, XeroTask[]>> {
+  const tasksByProject = new Map<string, XeroTask[]>();
+  
+  // Process in batches of 5 to respect rate limits
+  const batchSize = 5;
+  for (let i = 0; i < projectIds.length; i += batchSize) {
+    const batch = projectIds.slice(i, i + batchSize);
+    
+    // Execute batch requests in parallel
+    const promises = batch.map(async (projectId) => {
+      try {
+        const tasks = await getProjectTasks(projectId, accessToken, tenantId);
+        return { projectId, tasks };
+      } catch (error) {
+        console.error(`[Error] Failed to fetch tasks for project ${projectId}:`, error);
+        return { projectId, tasks: [] };
+      }
+    });
+    
+    const results = await Promise.all(promises);
+    results.forEach(({ projectId, tasks }) => {
+      tasksByProject.set(projectId, tasks);
+    });
+  }
+  
+  return tasksByProject;
+}
+
 // Create or update a task
 async function createOrUpdateTask(
   projectId: string,
@@ -232,7 +262,7 @@ async function createOrUpdateTask(
     name: task.name,
     rate: {
       currency,
-      value: Math.round(task.rate.value) // Ensure integer cents
+      value: Number(task.rate.value) / 100 // Convert cents to dollars
     },
     chargeType: task.chargeType,
     estimateMinutes: task.estimateMinutes
@@ -312,113 +342,29 @@ async function batchUpdateXeroTasks(
     }
   });
 
-  console.log(`[Direct Processing] Processing ${Object.keys(payload).length} project codes`);
-  console.log(`[Direct Processing] Available Xero projects: ${projects.length}`);
-  console.log(`[Direct Processing] Matching projects: ${Object.keys(payload).filter(code => projectsByCode.has(code)).length}`);
-
-  // Enhanced debugging for payload inspection
   const payloadProjectCodes = Object.keys(payload);
-  console.log(`[Direct Processing] 🔍 PAYLOAD INSPECTION:`);
-  console.log(`[Direct Processing] Project codes in payload: [${payloadProjectCodes.join(', ')}]`);
-
-  // Comprehensive payload debugging
-  function debugPayloadStructure(payload: ConsolidatedPayload, projects: XeroProject[]) {
-    console.log(`\n[DEBUG] 📋 COMPREHENSIVE PAYLOAD DEBUG:`);
-    console.log(`[DEBUG] Total project codes in payload: ${Object.keys(payload).length}`);
-    console.log(`[DEBUG] Total active Xero projects: ${projects.length}`);
-    
-    // Check for exact matches
-    const exactMatches = Object.keys(payload).filter(code => 
-      projects.some(p => p.projectCode === code)
-    );
-    console.log(`[DEBUG] Exact matches: ${exactMatches.length} [${exactMatches.slice(0, 10).join(', ')}${exactMatches.length > 10 ? '...' : ''}]`);
-    
-    // Check for potential partial matches
-    const unmatchedPayloadCodes = Object.keys(payload).filter(code => 
-      !projects.some(p => p.projectCode === code)
-    );
-    console.log(`[DEBUG] Unmatched payload codes: ${unmatchedPayloadCodes.length}`);
-    
-    // Sample payload projects for debugging
-    console.log(`[DEBUG] Sample payload projects (first 10):`);
-    Object.entries(payload).slice(0, 10).forEach(([code, tasks]) => {
-      console.log(`[DEBUG]   ${code}: ${tasks.length} tasks [${tasks.map(t => t.name).join(', ')}]`);
-    });
-    
-    // Sample Xero projects for comparison
-    console.log(`[DEBUG] Sample Xero projects (first 10):`);
-    projects.slice(0, 10).forEach(p => {
-      console.log(`[DEBUG]   ${p.projectCode}: "${p.name}" (${p.status})`);
-    });
-  }
-
-  debugPayloadStructure(payload, projects);
-
-  // Check for specific project codes that might be problematic
-  const problemProjectCodes = payloadProjectCodes.filter(code => 
-    code.includes('NY250388') || code.includes('USS SAVANNAH') || code.includes('LCS')
-  );
-  if (problemProjectCodes.length > 0) {
-    console.log(`[Direct Processing] 🎯 FOUND POTENTIAL DEMO PROJECT: ${problemProjectCodes.join(', ')}`);
-    problemProjectCodes.forEach(code => {
-      const tasks = payload[code];
-      console.log(`[Direct Processing] Project ${code} has ${tasks.length} tasks:`, tasks.map(t => t.name));
-      console.log(`[Direct Processing] Project ${code} tasks details:`, tasks.map(t => ({
-        name: t.name,
-        estimateMinutes: t.estimateMinutes,
-        rate: t.rate.value,
-        idempotencyKey: t.idempotencyKey
-      })));
-    });
-  }
+  const matchingProjectsCount = payloadProjectCodes.filter(code => projectsByCode.has(code)).length;
   
-  // Log first few available Xero projects for debugging
-  console.log(`[Direct Processing] 📋 Available Xero projects (first 10):`, 
-    projects.slice(0, 10).map(p => ({ code: p.projectCode, name: p.name, status: p.status }))
-  );
-  
-  // Check if any Xero projects contain the demo project
-  const demoProjectsInXero = projects.filter(p => 
-    p.name.includes('USS SAVANNAH') || p.projectCode?.includes('NY250388') || p.name.includes('LCS')
-  );
-  if (demoProjectsInXero.length > 0) {
-    console.log(`[Direct Processing] 🎯 FOUND DEMO PROJECTS IN XERO:`, demoProjectsInXero.map(p => ({
-      code: p.projectCode,
-      name: p.name,
-      status: p.status,
-      id: p.projectId
-    })));
-  }
+  console.log(`[Processing Stats] Projects in payload: ${payloadProjectCodes.length}, Active in Xero: ${projects.length}, Matches: ${matchingProjectsCount}`);
 
-  // Enhanced debugging: Show all extracted project codes
-  console.log(`[Direct Processing] 🔍 ALL EXTRACTED PROJECT CODES:`, 
-    projects.map(p => `"${p.projectCode}" from "${p.name}"`).slice(0, 10)
-  );
+  // Get all matching projects and batch fetch their tasks
+  const matchingProjectsList = payloadProjectCodes
+    .map(code => projectsByCode.get(code))
+    .filter((project): project is XeroProject => project !== undefined);
+  
+  const projectTasksMap = matchingProjectsList.length > 0 
+    ? await getBatchProjectTasks(
+        matchingProjectsList.map(p => p.projectId), 
+        accessToken, 
+        tenantId
+      )
+    : new Map();
 
   // Process each project in the payload
   for (const [projectCode, tasks] of Object.entries(payload)) {
     const project = projectsByCode.get(projectCode);
     
-    // Enhanced logging for project matching
-    console.log(`[Direct Processing] Processing project code: ${projectCode}`);
-    
     if (!project) {
-      // Enhanced logging for not found projects
-      console.log(`[Direct Processing] ❌ Project ${projectCode} not found in active Xero projects`);
-      
-      // Check if this might be a partial match issue
-      const possibleMatches = projects.filter(p => 
-        p.name.toLowerCase().includes(projectCode.toLowerCase()) ||
-        p.projectCode?.toLowerCase().includes(projectCode.toLowerCase()) ||
-        projectCode.toLowerCase().includes(p.projectCode?.toLowerCase() || '')
-      );
-      
-      if (possibleMatches.length > 0) {
-        console.log(`[Direct Processing] 🔍 Possible matches for ${projectCode}:`, 
-          possibleMatches.map(p => ({ code: p.projectCode, name: p.name, status: p.status }))
-        );
-      }
-      
       // Project not found in active Xero projects
       tasks.forEach(task => {
         results.push({
@@ -433,42 +379,25 @@ async function batchUpdateXeroTasks(
       continue;
     }
 
-    // Enhanced logging for found projects
-    console.log(`[Direct Processing] ✅ Found project ${projectCode} -> ${project.name} (${project.status})`);
-
     try {
-      // Get existing tasks for this project
-      const existingTasks = await getProjectTasks(project.projectId, accessToken, tenantId);
-      const existingTasksMap = new Map(existingTasks.map(task => [task.name.toLowerCase(), task]));
-
-      console.log(`[Direct Processing] Project ${projectCode}: Processing ${tasks.length} tasks, ${existingTasks.length} existing`);
-      
-      // Log existing tasks for debugging
-      if (existingTasks.length > 0) {
-        console.log(`[Direct Processing] Existing tasks in ${projectCode}: [${existingTasks.map(t => t.name).join(', ')}]`);
-      }
+      // Get existing tasks from batch result
+      const existingTasks = projectTasksMap.get(project.projectId) || [];
+      const existingTasksMap = new Map<string, XeroTask>(
+        existingTasks.map((task: XeroTask) => [task.name.toLowerCase(), task])
+      );
 
       // Process each task
       for (const task of tasks) {
-        const existingTask = existingTasksMap.get(task.name.toLowerCase());
-        
-        console.log(`[Direct Processing] Processing task "${task.name}" for project ${projectCode}`);
-        console.log(`[Direct Processing] Task details:`, {
-          estimateMinutes: task.estimateMinutes,
-          rate: task.rate.value,
-          existingTask: existingTask ? 'Found' : 'Not Found'
-        });
+        const existingTask = existingTasksMap.get(task.name.toLowerCase()) || null;
         
         const updateResult = await createOrUpdateTask(
           project.projectId,
           task,
-          existingTask || null,
+          existingTask,
           accessToken,
           tenantId,
           currency
         );
-
-        console.log(`[Direct Processing] Task "${task.name}" result:`, updateResult);
 
         results.push({
           projectCode,
@@ -478,12 +407,12 @@ async function batchUpdateXeroTasks(
           success: updateResult.success,
           error: updateResult.error,
           details: existingTask ? 
-            `Updated from ${existingTask.estimateMinutes}min/$${(existingTask.rate.value/100).toFixed(2)} to ${task.estimateMinutes}min/$${(task.rate.value/100).toFixed(2)}` :
-            `Created with ${task.estimateMinutes}min/$${(task.rate.value/100).toFixed(2)}`
+            `Updated from ${existingTask.estimateMinutes}min/$${(Number(existingTask.rate.value)/100).toFixed(2)} to ${task.estimateMinutes}min/$${(Number(task.rate.value)/100).toFixed(2)}` :
+            `Created with ${task.estimateMinutes}min/$${(Number(task.rate.value)/100).toFixed(2)}`
         });
       }
     } catch (error) {
-      console.error(`[Direct Processing] Error processing project ${projectCode}:`, error);
+      console.error(`[Error] Processing project ${projectCode}:`, error);
       // If we can't process the project at all, mark all tasks as failed
       tasks.forEach(task => {
         results.push({
@@ -595,25 +524,13 @@ function generateProcessingReport(
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
-  console.log('[Direct Processing API] Starting timesheet processing');
+  console.log('[API] Starting timesheet processing');
 
   // Initialize audit logger
   const session = await auth();
   const { access_token, effective_tenant_id, available_tenants } = await ensureValidToken();
   const selectedTenant = available_tenants?.find(t => t.tenantId === effective_tenant_id);
   const auditLogger = new AuditLogger(session, effective_tenant_id, selectedTenant?.tenantName);
-
-  // Enhanced tenant debugging
-  console.log(`[Direct Processing API] 🏢 COMPREHENSIVE TENANT DEBUG:`);
-  console.log(`[Direct Processing API] User email:`, session?.user?.email);
-  console.log(`[Direct Processing API] Session tenant ID:`, session?.tenantId);
-  console.log(`[Direct Processing API] Effective tenant ID (from ensureValidToken):`, effective_tenant_id);
-  console.log(`[Direct Processing API] Selected tenant from available_tenants:`, selectedTenant);
-  console.log(`[Direct Processing API] Available tenants:`, available_tenants?.map(t => ({ id: t.tenantId, name: t.tenantName })));
-  
-  // Verify which tenant's data we'll actually fetch
-  console.log(`[Direct Processing API] 🎯 WILL FETCH DATA FROM TENANT:`, effective_tenant_id);
-  console.log(`[Direct Processing API] 🎯 TENANT NAME WILL BE:`, selectedTenant?.tenantName || 'Unknown');
 
   let processingLogId: string | null = null;
 
@@ -627,7 +544,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
     }
 
-    console.log('[Direct Processing API] Processing file:', file.name);
+    console.log('[API] Processing file:', file.name);
 
     // Log file upload
     await auditLogger.logSuccess('TIMESHEET_UPLOAD', {
@@ -643,7 +560,7 @@ export async function POST(request: NextRequest) {
     }, request);
 
     const timesheetData = await processTimesheetWithPython(file);
-    console.log(`[Direct Processing API] Timesheet processed: ${timesheetData.metadata.entries_processed} entries, ${timesheetData.metadata.projects_consolidated} projects`);
+    console.log(`[Stats] Processed: ${timesheetData.metadata.entries_processed} entries, ${timesheetData.metadata.projects_consolidated} projects`);
 
     // Update log with processing results
     if (processingLogId) {
@@ -656,18 +573,22 @@ export async function POST(request: NextRequest) {
 
     // Step 2: Get active Xero projects and verify tenant
     const { projects, tenantName } = await getActiveXeroProjects(access_token, effective_tenant_id);
-    console.log(`[Direct Processing API] Found ${projects.length} active Xero projects for tenant: ${tenantName}`);
-
-    // Enhanced tenant verification debugging
-    console.log(`[Direct Processing API] 🔍 TENANT VERIFICATION:`);
-    console.log(`[Direct Processing API] Xero Organization API returned tenantName: "${tenantName}"`);
-    console.log(`[Direct Processing API] Selected tenant from session: "${selectedTenant?.tenantName}"`);
-    console.log(`[Direct Processing API] Effective tenant ID: "${effective_tenant_id}"`);
-    console.log(`[Direct Processing API] Tenant config will use: tenantId="${effective_tenant_id}", tenantName="${tenantName}"`);
-
-    // Show what the tenant config logic will return
-    const debugConfig = getTaskConfigForTenant(effective_tenant_id, tenantName);
-    console.log(`[Direct Processing API] Tenant config currency: ${debugConfig.currency}`);
+    console.log(`[Stats] Found ${projects.length} active IN PROGRESS Xero projects for: ${tenantName}`);
+    
+    // Log the project codes we found in Xero
+    const xeroProjectCodes = projects.map(p => p.projectCode).filter(Boolean);
+    console.log(`[Validation] Xero IN PROGRESS project codes: [${xeroProjectCodes.join(', ')}]`);
+    
+    // Log the project codes from the timesheet
+    const timesheetProjectCodes = Object.keys(timesheetData.consolidated_payload);
+    console.log(`[Validation] Timesheet project codes: [${timesheetProjectCodes.join(', ')}]`);
+    
+    // Find matches and log them
+    const matchingCodes = timesheetProjectCodes.filter(code => xeroProjectCodes.includes(code));
+    const nonMatchingCodes = timesheetProjectCodes.filter(code => !xeroProjectCodes.includes(code));
+    
+    console.log(`[Validation] ✅ Matching IN PROGRESS projects: ${matchingCodes.length} [${matchingCodes.join(', ')}]`);
+    console.log(`[Validation] ❌ Non-matching projects (likely CLOSED/COMPLETED): ${nonMatchingCodes.length} [${nonMatchingCodes.join(', ')}]`);
 
     // Verify we have a valid tenant before proceeding
     if (!tenantName || tenantName === 'Unknown') {
@@ -774,12 +695,37 @@ export async function POST(request: NextRequest) {
       downloadableReport: report
     };
 
-    console.log('[Direct Processing API] Processing complete:', summary);
+    // Final validation logging
+    console.log(`[Final Validation] ============ PROCESSING SUMMARY ============`);
+    console.log(`[Final Validation] Timesheet entries processed: ${summary.entriesProcessed}`);
+    console.log(`[Final Validation] Total projects in timesheet: ${summary.projectsAnalyzed}`);
+    console.log(`[Final Validation] Projects matched with IN PROGRESS Xero projects: ${summary.projectsMatched}`);
+    console.log(`[Final Validation] Tasks created: ${summary.tasksCreated}`);
+    console.log(`[Final Validation] Tasks updated: ${summary.tasksUpdated}`);
+    console.log(`[Final Validation] Actual task failures: ${summary.actualTasksFailed}`);
+    console.log(`[Final Validation] Projects not found (likely CLOSED): ${summary.projectsNotFound}`);
+    
+    // Validate successful operations were only for IN PROGRESS projects
+    const successfulOperations = results.filter(r => r.success);
+    const failedNotFound = results.filter(r => !r.success && r.error?.includes('not found in active Xero projects'));
+    
+    console.log(`[Final Validation] ✅ Successful operations: ${successfulOperations.length} (only for IN PROGRESS projects)`);
+    console.log(`[Final Validation] ℹ️  Not found operations: ${failedNotFound.length} (expected for CLOSED projects)`);
+    
+    if (summary.actualTasksFailed === 0) {
+      console.log(`[Final Validation] ✅ SUCCESS: No actual failures - all operations completed successfully`);
+    } else {
+      console.log(`[Final Validation] ⚠️  WARNING: ${summary.actualTasksFailed} actual failures need attention`);
+    }
+    
+    console.log(`[Final Validation] ================================================`);
+
+    console.log('[Stats] Complete - Created:', summary.tasksCreated, 'Updated:', summary.tasksUpdated, 'Failed:', summary.actualTasksFailed);
 
     return NextResponse.json(response);
 
   } catch (error: any) {
-    console.error('[Direct Processing API] Error:', error);
+    console.error('[API Error]:', error.message || error);
     
     // Log the failure
     await auditLogger.logFailure(
