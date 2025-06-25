@@ -1,11 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useSyncProject } from '../../../hooks/useSyncProject';
 import {
   SyncProjectCard,
   ManhourBillingCard,
-  TimesheetProcessingCard
+  TimesheetProcessingCard,
+  BlobUploadCard,
+  BlobBrowserCard
 } from '../../../components/xero';
 import MonthlySnapshotCard from '../../../components/xero/MonthlySnapshotCard';
 
@@ -18,6 +20,9 @@ import MonthlySnapshotCard from '../../../components/xero/MonthlySnapshotCard';
 export default function XeroPage() {
   // Get syncing state to pass to components that need to be disabled during sync
   const { isSyncing } = useSyncProject();
+  
+  // State to trigger refresh of blob browser when files are uploaded
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -40,11 +45,26 @@ export default function XeroPage() {
         </div>
 
         {/* Secondary Actions */}
-        <div>
+        <div className="mb-12">
           <h2 className="text-lg font-medium text-gray-900 mb-4">Additional Tools</h2>
           <div className="grid gap-6 md:grid-cols-2">
             <ManhourBillingCard disabled={isSyncing} />
             <MonthlySnapshotCard disabled={isSyncing} />
+          </div>
+        </div>
+
+        {/* File Management */}
+        <div>
+          <h2 className="text-lg font-medium text-gray-900 mb-4">File Management</h2>
+          <div className="grid gap-6 md:grid-cols-2">
+            <BlobUploadCard 
+              disabled={isSyncing} 
+              onUploadSuccess={() => setRefreshTrigger(prev => prev + 1)}
+            />
+            <BlobBrowserCard 
+              disabled={isSyncing} 
+              refreshTrigger={refreshTrigger}
+            />
           </div>
         </div>
 
