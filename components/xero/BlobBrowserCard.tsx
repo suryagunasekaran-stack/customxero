@@ -19,9 +19,10 @@ interface BlobFile {
 interface BlobBrowserCardProps {
   disabled?: boolean;
   refreshTrigger?: any; // Trigger refresh when files are uploaded
+  onFileSelect?: (blobUrl: string, fileName: string) => void; // Optional callback for file selection
 }
 
-export default function BlobBrowserCard({ disabled = false, refreshTrigger }: BlobBrowserCardProps) {
+export default function BlobBrowserCard({ disabled = false, refreshTrigger, onFileSelect }: BlobBrowserCardProps) {
   const [files, setFiles] = useState<BlobFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<BlobFile | null>(null);
@@ -209,6 +210,15 @@ export default function BlobBrowserCard({ disabled = false, refreshTrigger }: Bl
             </p>
           </div>
           <div className="mt-3 flex space-x-2">
+            {onFileSelect && (
+              <button
+                onClick={() => onFileSelect(selectedFile.url, selectedFile.pathname)}
+                disabled={disabled}
+                className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+              >
+                Select for Processing
+              </button>
+            )}
             <button
               onClick={() => handleDownload(selectedFile)}
               disabled={disabled}

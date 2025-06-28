@@ -535,27 +535,64 @@ export async function POST(request: NextRequest) {
   let processingLogId: string | null = null;
 
   try {
-    // Get uploaded file
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
+    let file: File;
+    let fileName: string;
     
-    if (!file) {
-      await auditLogger.logFailure('TIMESHEET_UPLOAD', 'No file uploaded', { step: 'file_validation' }, request);
-      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+    // Check if request is JSON (blob URL) or FormData (direct upload)
+    const contentType = request.headers.get('content-type');
+    if (contentType?.includes('application/json')) {
+      // Handle blob URL
+      const body = await request.json();
+      const { blobUrl, fileName: blobFileName } = body;
+      
+      if (!blobUrl || !blobFileName) {
+        await auditLogger.logFailure('TIMESHEET_UPLOAD', 'Missing blobUrl or fileName', { step: 'blob_validation' }, request);
+        return NextResponse.json({ error: 'blobUrl and fileName are required' }, { status: 400 });
+      }
+      
+      fileName = blobFileName;
+      
+      // Download file from blob URL
+      console.log('[API] Downloading file from blob URL:', blobUrl);
+      const blobResponse = await fetch(blobUrl);
+      if (!blobResponse.ok) {
+        await auditLogger.logFailure('TIMESHEET_UPLOAD', 'Failed to download file from blob URL', { 
+          step: 'blob_download',
+          blobUrl,
+          status: blobResponse.status 
+        }, request);
+        throw new Error('Failed to download file from blob URL');
+      }
+      
+      const arrayBuffer = await blobResponse.arrayBuffer();
+      file = new File([arrayBuffer], fileName, { 
+        type: blobResponse.headers.get('content-type') || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+    } else {
+      // Handle direct file upload
+      const formData = await request.formData();
+      file = formData.get('file') as File;
+      
+      if (!file) {
+        await auditLogger.logFailure('TIMESHEET_UPLOAD', 'No file uploaded', { step: 'file_validation' }, request);
+        return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+      }
+      
+      fileName = file.name;
     }
 
-    console.log('[API] Processing file:', file.name);
+    console.log('[API] Processing file:', fileName);
 
     // Log file upload
     await auditLogger.logSuccess('TIMESHEET_UPLOAD', {
-      filename: file.name,
+      filename: fileName,
       fileSize: file.size,
       fileType: file.type
     }, request);
 
     // Step 1: Process timesheet with Python backend
     processingLogId = await auditLogger.startAction('TIMESHEET_PROCESS', {
-      filename: file.name,
+      filename: fileName,
       step: 'python_processing'
     }, request);
 

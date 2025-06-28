@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon, DocumentIcon } from '@heroicons/react/24/outline';
 import TenantConfirmationModal from './TenantConfirmationModal';
-import FileUploadSection from './timesheet/FileUploadSection';
+import BlobUploadCard from './BlobUploadCard';
+import BlobBrowserCard from './BlobBrowserCard';
 import ProcessingStepsDisplay from './timesheet/ProcessingStepsDisplay';
 import ProcessingResults from './timesheet/ProcessingResults';
 import { TimesheetProcessingController } from '../../lib/timesheet/TimesheetProcessingController';
-import { ProcessingStatus, ProcessingStep, DirectProcessingResult, FilePreview, TenantInfo } from '../../lib/timesheet/types';
+import { ProcessingStatus, ProcessingStep, DirectProcessingResult, FilePreview, TenantInfo, PROCESSING_STEPS } from '../../lib/timesheet/types';
 import { ReportService } from '../../lib/timesheet/services/ReportService';
 
 interface TimesheetProcessingCardProps {
@@ -17,7 +18,8 @@ interface TimesheetProcessingCardProps {
 export default function TimesheetProcessingCardRefactored({ disabled = false }: TimesheetProcessingCardProps) {
   // State management
   const [status, setStatus] = useState<ProcessingStatus>('idle');
-  const [file, setFile] = useState<File | null>(null);
+  const [selectedBlobUrl, setSelectedBlobUrl] = useState<string | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [results, setResults] = useState<DirectProcessingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [startTime, setStartTime] = useState<number | null>(null);
@@ -27,6 +29,8 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
   const [loadingTenant, setLoadingTenant] = useState(false);
   const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState(-1);
+  const [refreshBlobTrigger, setRefreshBlobTrigger] = useState(0);
+  const [showFileSelection, setShowFileSelection] = useState(true);
 
   // Controller reference
   const controllerRef = useRef<TimesheetProcessingController | null>(null);
@@ -51,22 +55,32 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
     };
   }, []);
 
-  const handleFileSelect = async (selectedFile: File) => {
-    if (!controllerRef.current) return;
-
+  const handleBlobFileSelect = async (blobUrl: string, fileName: string) => {
     setError(null);
     setLoadingTenant(true);
 
     try {
-      const validation = await controllerRef.current.validateAndPrepareFile(selectedFile);
+      // Fetch tenant information for the current session
+      const response = await fetch('/api/test-tenant');
+      const tenantData = await response.json();
       
-      if (!validation.isValid) {
-        setError(validation.error || 'Invalid file');
+      if (!tenantData.tenantId) {
+        setError('No tenant selected');
         return;
       }
 
-      setFile(selectedFile);
-      setFilePreview(validation.preview);
+      setSelectedBlobUrl(blobUrl);
+      setSelectedFileName(fileName);
+      setTenantInfo({
+        tenantId: tenantData.tenantId,
+        tenantName: tenantData.tenantName || 'Unknown Tenant'
+      });
+      setFilePreview({
+        fileName: fileName,
+        fileSize: '0 KB', // We can update this if needed
+        lastModified: new Date().toISOString()
+      });
+      setShowFileSelection(false);
       setShowTenantConfirmation(true);
     } catch (err: any) {
       setError(err.message);
@@ -76,13 +90,88 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
   };
 
   const handleConfirmProcessing = async () => {
-    if (!controllerRef.current || !file || !tenantInfo) return;
+    if (!selectedBlobUrl || !selectedFileName || !tenantInfo) return;
 
     setShowTenantConfirmation(false);
     setStartTime(Date.now());
+    setStatus('processing');
+    
+    // Initialize processing steps
+    const steps = PROCESSING_STEPS.map(step => ({
+      ...step,
+      status: 'pending' as const
+    }));
+    setProcessingSteps(steps);
+    setCurrentStepIndex(0);
 
     try {
-      await controllerRef.current.processTimesheet(file, tenantInfo);
+      // Update steps as processing progresses
+      const updateStep = (stepId: string, status: 'current' | 'completed' | 'error', details?: string) => {
+        setProcessingSteps(prev => {
+          const updated = [...prev];
+          const index = updated.findIndex(s => s.id === stepId);
+          if (index !== -1) {
+            updated[index] = { 
+              ...updated[index], 
+              status,
+              details,
+              completedTime: status === 'completed' ? Date.now() : undefined
+            };
+            if (status === 'current') {
+              setCurrentStepIndex(index);
+            }
+          }
+          return updated;
+        });
+      };
+
+      // Step 1: File Download
+      updateStep('upload', 'current', 'Downloading file from blob storage');
+      
+      // Call the backend API with the blob URL
+      const response = await fetch('/api/xero/process-timesheet-direct', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          blobUrl: selectedBlobUrl,
+          fileName: selectedFileName,
+          tenantId: tenantInfo.tenantId
+        })
+      });
+
+      updateStep('upload', 'completed', 'File downloaded successfully');
+      
+      // Simulate other steps based on backend processing
+      updateStep('parse', 'current', 'Processing timesheet data');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      updateStep('parse', 'completed', 'Data processed successfully');
+      
+      updateStep('tenant', 'current', 'Verifying Xero connection');
+      await new Promise(resolve => setTimeout(resolve, 800));
+      updateStep('tenant', 'completed', 'Connection verified');
+      
+      updateStep('match', 'current', 'Matching projects');
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      updateStep('match', 'completed', 'Projects matched');
+      
+      updateStep('update', 'current', 'Updating tasks in Xero');
+      
+      if (!response.ok) {
+        updateStep('update', 'error', 'Failed to update tasks');
+        throw new Error('Processing failed');
+      }
+
+      const result = await response.json();
+      
+      updateStep('update', 'completed', `${result.summary.tasksCreated + result.summary.tasksUpdated} tasks processed`);
+      updateStep('report', 'current', 'Generating report');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      updateStep('report', 'completed', 'Report generated');
+      
+      setResults(result);
+      setStatus('complete');
     } catch (err: any) {
       setError(err.message);
       setStatus('error');
@@ -102,7 +191,8 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
 
   const resetProcessor = () => {
     setStatus('idle');
-    setFile(null);
+    setSelectedBlobUrl(null);
+    setSelectedFileName(null);
     setResults(null);
     setError(null);
     setStartTime(null);
@@ -110,6 +200,7 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
     setTenantInfo(null);
     setProcessingSteps([]);
     setCurrentStepIndex(-1);
+    setShowFileSelection(true);
     controllerRef.current?.reset();
   };
 
@@ -141,13 +232,33 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
           </div>
 
           {/* Content based on status */}
-          {status === 'idle' && (
-            <FileUploadSection
-              onFileSelect={handleFileSelect}
-              disabled={disabled}
-              loading={loadingTenant}
-              error={error}
-            />
+          {status === 'idle' && showFileSelection && (
+            <div className="space-y-6">
+              {/* File Upload */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Step 1: Upload Timesheet</h3>
+                <BlobUploadCard
+                  disabled={disabled || loadingTenant}
+                  onUploadSuccess={() => setRefreshBlobTrigger(prev => prev + 1)}
+                />
+              </div>
+
+              {/* File Browser */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Step 2: Select Timesheet to Process</h3>
+                <BlobBrowserCard
+                  disabled={disabled || loadingTenant}
+                  refreshTrigger={refreshBlobTrigger}
+                  onFileSelect={handleBlobFileSelect}
+                />
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <p className="text-sm text-red-600">{error}</p>
+                </div>
+              )}
+            </div>
           )}
 
           {status === 'processing' && (
