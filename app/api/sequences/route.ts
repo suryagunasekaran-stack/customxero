@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
         
         return {
           ...sequence,
+          departmentCode: sequence.departmentCode,
           projectCount,
           lastProjectCreated: lastProject?.createdAt || null,
           lastProjectNumber: lastProject?.projectNumber || null,
