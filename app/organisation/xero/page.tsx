@@ -5,7 +5,9 @@ import { useSyncProject } from '../../../hooks/useSyncProject';
 import {
   SyncProjectCard,
   ManhourBillingCard,
-  TimesheetProcessingCard
+  TimesheetProcessingCard,
+  ContactUpdateCard,
+  ContactDownloadCard
 } from '../../../components/xero';
 import MonthlySnapshotCard from '../../../components/xero/MonthlySnapshotCard';
 
@@ -45,6 +47,8 @@ export default function XeroPage() {
           <div className="grid gap-6 md:grid-cols-2">
             <ManhourBillingCard disabled={isSyncing} />
             <MonthlySnapshotCard disabled={isSyncing} />
+            <ContactUpdateCard disabled={isSyncing} />
+            <ContactDownloadCard disabled={isSyncing} />
           </div>
         </div>
 
