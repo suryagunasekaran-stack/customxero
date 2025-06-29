@@ -4,6 +4,7 @@ export { default as TimesheetProcessingCard } from './TimesheetProcessingCardRef
 export { default as MonthlySnapshotCard } from './MonthlySnapshotCard';
 export { default as ContactUpdateCard } from './ContactUpdateCard';
 export { default as ContactDownloadCard } from './ContactDownloadCard';
+export { default as ProjectCreateCard } from './ProjectCreateCard';
 export { default as ReportDownloadOptions } from './ReportDownloadOptions';
 export { default as TenantConfirmationModal } from './TenantConfirmationModal';
 export { default as ProcessingStatusModal } from './ProcessingStatusModal';
