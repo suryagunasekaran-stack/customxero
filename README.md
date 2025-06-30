@@ -372,8 +372,12 @@ NEXTAUTH_URL=http://localhost:3000
 CLIENT_ID=your_xero_client_id
 CLIENT_SECRET=your_xero_client_secret
 
-# Pipedrive API Key (from Pipedrive Settings)
-PIPEDRIVE_KEY=your_pipedrive_api_key
+# Pipedrive API Keys (tenant-specific configuration)
+# Primary tenant: 6dd39ea4-e6a6-4993-a37a-21482ccf8d22
+PIPEDRIVE_KEY=your_pipedrive_api_key_tenant_1
+# Secondary tenant: ea67107e-c352-40a9-a8b8-24d81ae3fc85  
+PIPEDRIVE_KEY_2=your_pipedrive_api_key_tenant_2
+# Note: Tenant ab4b2a02-e700-4fe8-a32d-5419d4195e1b has Pipedrive disabled
 
 # Supabase Configuration (from Supabase Dashboard)
 SUPABASE_ANON_KEY=your_supabase_anonymous_key

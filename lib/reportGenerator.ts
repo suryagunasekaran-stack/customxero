@@ -19,6 +19,8 @@ export interface ProjectComparisonData {
   projectsOnlyInPipedrive: Array<{ name: string; key: string; id?: string; status?: string }>;
   projectsOnlyInXero: Array<{ name: string; key: string; id?: string; status?: string }>;
   matchedProjects?: Array<{ pipedriveProject: any; xeroProject: any; key: string }>;
+  pipedriveDisabled?: boolean;
+  pipedriveError?: string;
 }
 
 export class ProfessionalReportGenerator {
@@ -65,7 +67,7 @@ export class ProfessionalReportGenerator {
 
     // Executive Summary Sheet
     const summaryData = [
-      ['Project Comparison Report'],
+      [data.pipedriveDisabled ? 'Xero Projects Report' : 'Project Comparison Report'],
       [''],
       ['Report Information'],
       ['Company', this.COMPANY_NAME],
@@ -75,22 +77,40 @@ export class ProfessionalReportGenerator {
       ['Tenant ID', metadata.tenantId],
       ['Generated On', metadata.generatedAt.toLocaleString()],
       ['Report Version', this.REPORT_VERSION],
-      [''],
-      ['Executive Summary'],
-      ['Total Matched Projects', data.matchedCount],
-      ['Projects Only in Pipedrive', data.onlyInPipedriveCount],
-      ['Projects Only in Xero', data.onlyInXeroCount],
-      ['Total Projects Analyzed', data.matchedCount + data.onlyInPipedriveCount + data.onlyInXeroCount],
-      [''],
-      ['Sync Status'],
-      ['Synchronization Level', this.getSyncStatus(data)],
-      ['Action Required', data.onlyInPipedriveCount > 0 || data.onlyInXeroCount > 0 ? 'Yes' : 'No'],
-      [''],
-      ['Key Insights'],
-      ['Data Source Comparison', 'Pipedrive (CRM) vs Xero (Accounting)'],
-      ['Matching Logic', 'Extract text before " - ", remove spaces, lowercase comparison'],
-      ['Last Updated', new Date().toLocaleString()]
+      ['']
     ];
+
+    if (data.pipedriveDisabled) {
+      summaryData.push(
+        ['Executive Summary'],
+        ['Pipedrive Status', 'Disabled'],
+        ['Total Xero Projects', data.onlyInXeroCount.toString()],
+        ['Report Type', 'Xero Projects Analysis'],
+        ['Pipedrive Note', data.pipedriveError || 'Integration disabled'],
+        [''],
+        ['Key Insights'],
+        ['Data Source', 'Xero (Accounting) Only'],
+        ['Analysis Type', 'Complete Xero projects inventory'],
+        ['Last Updated', new Date().toLocaleString()]
+      );
+    } else {
+      summaryData.push(
+        ['Executive Summary'],
+        ['Total Matched Projects', data.matchedCount.toString()],
+        ['Projects Only in Pipedrive', data.onlyInPipedriveCount.toString()],
+        ['Projects Only in Xero', data.onlyInXeroCount.toString()],
+        ['Total Projects Analyzed', (data.matchedCount + data.onlyInPipedriveCount + data.onlyInXeroCount).toString()],
+        [''],
+        ['Sync Status'],
+        ['Synchronization Level', this.getSyncStatus(data)],
+        ['Action Required', data.onlyInPipedriveCount > 0 || data.onlyInXeroCount > 0 ? 'Yes' : 'No'],
+        [''],
+        ['Key Insights'],
+        ['Data Source Comparison', 'Pipedrive (CRM) vs Xero (Accounting)'],
+        ['Matching Logic', 'Extract text before " - ", remove spaces, lowercase comparison'],
+        ['Last Updated', new Date().toLocaleString()]
+      );
+    }
 
     const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
     
@@ -100,8 +120,8 @@ export class ProfessionalReportGenerator {
     
     XLSX.utils.book_append_sheet(workbook, summarySheet, 'Executive Summary');
 
-    // Pipedrive Only Projects Sheet
-    if (data.projectsOnlyInPipedrive.length > 0) {
+    // Pipedrive Only Projects Sheet (skip if disabled)
+    if (!data.pipedriveDisabled && data.projectsOnlyInPipedrive.length > 0) {
       const pipedriveData = [
         ['Projects Only in Pipedrive', '', '', ''],
         ['These projects exist in Pipedrive but not in Xero', '', '', ''],
@@ -123,15 +143,27 @@ export class ProfessionalReportGenerator {
       XLSX.utils.book_append_sheet(workbook, pipedriveSheet, 'Pipedrive Only');
     }
 
-    // Xero Only Projects Sheet
+    // Xero Projects Sheet
     if (data.projectsOnlyInXero.length > 0) {
-      const xeroData = [
-        ['Projects Only in Xero', '', '', ''],
-        ['These projects exist in Xero but not in Pipedrive', '', '', ''],
-        ['Action Required: Consider reviewing project status in CRM', '', '', ''],
-        [''],
-        ['No.', 'Project Name', 'Matching Key', 'Status']
-      ];
+      let xeroData: string[][];
+      
+      if (data.pipedriveDisabled) {
+        xeroData = [
+          ['Xero Projects', '', '', ''],
+          ['Complete list of projects in your Xero organization', '', '', ''],
+          ['Pipedrive integration is disabled for this tenant', '', '', ''],
+          [''],
+          ['No.', 'Project Name', 'Matching Key', 'Status']
+        ];
+      } else {
+        xeroData = [
+          ['Projects Only in Xero', '', '', ''],
+          ['These projects exist in Xero but not in Pipedrive', '', '', ''],
+          ['Action Required: Consider reviewing project status in CRM', '', '', ''],
+          [''],
+          ['No.', 'Project Name', 'Matching Key', 'Status']
+        ];
+      }
 
       data.projectsOnlyInXero.forEach((project, index) => {
         xeroData.push([
@@ -143,7 +175,7 @@ export class ProfessionalReportGenerator {
       });
 
       const xeroSheet = XLSX.utils.aoa_to_sheet(xeroData);
-      XLSX.utils.book_append_sheet(workbook, xeroSheet, 'Xero Only');
+      XLSX.utils.book_append_sheet(workbook, xeroSheet, data.pipedriveDisabled ? 'Xero Projects' : 'Xero Only');
     }
 
     // Matched Projects Sheet (if available)
@@ -217,14 +249,23 @@ export class ProfessionalReportGenerator {
     
     // Summary
     csvContent += `Executive Summary\n`;
-    csvContent += `Matched Projects,${data.matchedCount}\n`;
-    csvContent += `Pipedrive Only,${data.onlyInPipedriveCount}\n`;
-    csvContent += `Xero Only,${data.onlyInXeroCount}\n`;
-    csvContent += `Sync Status,${this.getSyncStatus(data)}\n`;
+    
+    if (data.pipedriveDisabled) {
+      csvContent += `Pipedrive Status,Disabled\n`;
+      csvContent += `Total Xero Projects,${data.onlyInXeroCount}\n`;
+      csvContent += `Report Type,Xero Projects Analysis\n`;
+      csvContent += `Pipedrive Note,"${data.pipedriveError || 'Integration disabled'}"\n`;
+    } else {
+      csvContent += `Matched Projects,${data.matchedCount}\n`;
+      csvContent += `Pipedrive Only,${data.onlyInPipedriveCount}\n`;
+      csvContent += `Xero Only,${data.onlyInXeroCount}\n`;
+      csvContent += `Sync Status,${this.getSyncStatus(data)}\n`;
+    }
+    
     csvContent += `\n`;
     
-    // Pipedrive only projects
-    if (data.projectsOnlyInPipedrive.length > 0) {
+    // Pipedrive only projects (skip if disabled)
+    if (!data.pipedriveDisabled && data.projectsOnlyInPipedrive.length > 0) {
       csvContent += `Projects Only in Pipedrive\n`;
       csvContent += `No,Project Name,Matching Key\n`;
       data.projectsOnlyInPipedrive.forEach((project, index) => {
@@ -233,9 +274,13 @@ export class ProfessionalReportGenerator {
       csvContent += `\n`;
     }
     
-    // Xero only projects
+    // Xero projects
     if (data.projectsOnlyInXero.length > 0) {
-      csvContent += `Projects Only in Xero\n`;
+      if (data.pipedriveDisabled) {
+        csvContent += `Xero Projects\n`;
+      } else {
+        csvContent += `Projects Only in Xero\n`;
+      }
       csvContent += `No,Project Name,Matching Key\n`;
       data.projectsOnlyInXero.forEach((project, index) => {
         csvContent += `${index + 1},"${project.name}","${project.key}"\n`;
@@ -272,15 +317,23 @@ export class ProfessionalReportGenerator {
     // Executive Summary
     reportContent += `📈 EXECUTIVE SUMMARY\n`;
     reportContent += `${subDivider}\n`;
-    reportContent += `Total Projects Analyzed  : ${data.matchedCount + data.onlyInPipedriveCount + data.onlyInXeroCount}\n`;
-    reportContent += `✅ Matched Projects      : ${data.matchedCount}\n`;
-    reportContent += `📤 Pipedrive Only        : ${data.onlyInPipedriveCount}\n`;
-    reportContent += `📥 Xero Only             : ${data.onlyInXeroCount}\n`;
-    reportContent += `🎯 Synchronization       : ${this.getSyncStatus(data)}\n`;
-    reportContent += `⚠️  Action Required       : ${data.onlyInPipedriveCount > 0 || data.onlyInXeroCount > 0 ? 'Yes' : 'No'}\n\n`;
     
-    // Projects only in Pipedrive
-    if (data.onlyInPipedriveCount > 0) {
+    if (data.pipedriveDisabled) {
+      reportContent += `🔒 Pipedrive Status      : Disabled for this organization\n`;
+      reportContent += `📊 Total Xero Projects   : ${data.onlyInXeroCount}\n`;
+      reportContent += `✅ Report Type           : Xero Projects Analysis\n`;
+      reportContent += `⚠️  Pipedrive Note       : ${data.pipedriveError || 'Integration disabled'}\n\n`;
+    } else {
+      reportContent += `Total Projects Analyzed  : ${data.matchedCount + data.onlyInPipedriveCount + data.onlyInXeroCount}\n`;
+      reportContent += `✅ Matched Projects      : ${data.matchedCount}\n`;
+      reportContent += `📤 Pipedrive Only        : ${data.onlyInPipedriveCount}\n`;
+      reportContent += `📥 Xero Only             : ${data.onlyInXeroCount}\n`;
+      reportContent += `🎯 Synchronization       : ${this.getSyncStatus(data)}\n`;
+      reportContent += `⚠️  Action Required       : ${data.onlyInPipedriveCount > 0 || data.onlyInXeroCount > 0 ? 'Yes' : 'No'}\n\n`;
+    }
+    
+    // Projects only in Pipedrive (skip if Pipedrive is disabled)
+    if (!data.pipedriveDisabled && data.onlyInPipedriveCount > 0) {
       reportContent += `📤 PROJECTS ONLY IN PIPEDRIVE (${data.onlyInPipedriveCount})\n`;
       reportContent += `${subDivider}\n`;
       reportContent += `These projects exist in Pipedrive but not in Xero.\n`;
@@ -294,12 +347,19 @@ export class ProfessionalReportGenerator {
       });
     }
     
-    // Projects only in Xero
+    // Projects in Xero (adjust title based on Pipedrive status)
     if (data.onlyInXeroCount > 0) {
-      reportContent += `📥 PROJECTS ONLY IN XERO (${data.onlyInXeroCount})\n`;
-      reportContent += `${subDivider}\n`;
-      reportContent += `These projects exist in Xero but not in Pipedrive.\n`;
-      reportContent += `Consider reviewing project status in your CRM system.\n\n`;
+      if (data.pipedriveDisabled) {
+        reportContent += `📊 XERO PROJECTS (${data.onlyInXeroCount})\n`;
+        reportContent += `${subDivider}\n`;
+        reportContent += `Complete list of projects in your Xero organization.\n`;
+        reportContent += `Pipedrive integration is disabled for this tenant.\n\n`;
+      } else {
+        reportContent += `📥 PROJECTS ONLY IN XERO (${data.onlyInXeroCount})\n`;
+        reportContent += `${subDivider}\n`;
+        reportContent += `These projects exist in Xero but not in Pipedrive.\n`;
+        reportContent += `Consider reviewing project status in your CRM system.\n\n`;
+      }
       
       data.projectsOnlyInXero.forEach((project, index) => {
         reportContent += `${String(index + 1).padStart(3, ' ')}. ${project.name}\n`;
@@ -309,20 +369,38 @@ export class ProfessionalReportGenerator {
       });
     }
     
-    // Perfect sync message
-    if (data.matchedCount > 0 && data.onlyInPipedriveCount === 0 && data.onlyInXeroCount === 0) {
+    // Perfect sync message (only show if Pipedrive is enabled)
+    if (!data.pipedriveDisabled && data.matchedCount > 0 && data.onlyInPipedriveCount === 0 && data.onlyInXeroCount === 0) {
       reportContent += `🎉 PERFECT SYNCHRONIZATION\n`;
       reportContent += `${subDivider}\n`;
       reportContent += `Congratulations! All projects are perfectly synchronized between\n`;
       reportContent += `Pipedrive and Xero. No action required.\n\n`;
     }
     
+    // Pipedrive disabled message
+    if (data.pipedriveDisabled) {
+      reportContent += `🔒 PIPEDRIVE INTEGRATION STATUS\n`;
+      reportContent += `${subDivider}\n`;
+      reportContent += `Pipedrive integration is disabled for this organization.\n`;
+      reportContent += `This report shows all projects currently in your Xero system.\n`;
+      reportContent += `Contact your administrator if you need Pipedrive integration enabled.\n\n`;
+    }
+    
     // Technical details
     reportContent += `🔧 TECHNICAL DETAILS\n`;
     reportContent += `${subDivider}\n`;
-    reportContent += `Data Sources        : Pipedrive (CRM) ↔ Xero (Accounting)\n`;
-    reportContent += `Matching Algorithm  : Extract text before " - ", remove spaces, lowercase\n`;
-    reportContent += `Match Accuracy      : ${((data.matchedCount / (data.matchedCount + data.onlyInPipedriveCount + data.onlyInXeroCount)) * 100).toFixed(1)}%\n`;
+    
+    if (data.pipedriveDisabled) {
+      reportContent += `Data Sources        : Xero (Accounting) Only\n`;
+      reportContent += `Pipedrive Status    : Integration Disabled\n`;
+      reportContent += `Analysis Type       : Xero Projects Inventory\n`;
+      reportContent += `Total Projects      : ${data.onlyInXeroCount}\n`;
+    } else {
+      reportContent += `Data Sources        : Pipedrive (CRM) ↔ Xero (Accounting)\n`;
+      reportContent += `Matching Algorithm  : Extract text before " - ", remove spaces, lowercase\n`;
+      reportContent += `Match Accuracy      : ${((data.matchedCount / (data.matchedCount + data.onlyInPipedriveCount + data.onlyInXeroCount)) * 100).toFixed(1)}%\n`;
+    }
+    
     reportContent += `Processing Time     : ${new Date().toLocaleString()}\n\n`;
     
     reportContent += `${divider}\n`;

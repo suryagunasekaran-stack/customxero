@@ -26,6 +26,12 @@ export const useSyncProject = () => {
     const response = await fetch('/api/pipedrive/projects');
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ message: response.statusText }));
+      
+      // Handle cases where Pipedrive is disabled for the tenant
+      if (response.status === 403) {
+        throw new Error(`PIPEDRIVE_DISABLED: ${errorData.message || 'Pipedrive integration is disabled for this organization'}`);
+      }
+      
       throw new Error(`HTTP error! status: ${response.status} - ${errorData.message || 'Unknown error'}`);
     }
     const data = await response.json();
@@ -130,29 +136,53 @@ export const useSyncProject = () => {
     setReportMetadata(null);
 
     try {
-      // Fetch projects from both systems and tenant info in parallel
-      const [pdProjects, xrProjects, tenantInfo] = await Promise.all([
-        fetchPipedriveProjects(),
-        fetchXeroProjects(),
-        fetchTenantInfo()
-      ]);
+      // Fetch tenant info first
+      const tenantInfo = await fetchTenantInfo();
+      
+      let pdProjects: any[] = [];
+      let pipedriveDisabled = false;
+      let pipedriveError = '';
+      
+      try {
+        // Try to fetch Pipedrive projects
+        pdProjects = await fetchPipedriveProjects();
+      } catch (error) {
+        const errorMessage = (error as Error).message;
+        if (errorMessage.startsWith('PIPEDRIVE_DISABLED:')) {
+          pipedriveDisabled = true;
+          pipedriveError = errorMessage.replace('PIPEDRIVE_DISABLED: ', '');
+          console.log('Pipedrive disabled for tenant:', tenantInfo.tenantId, '-', pipedriveError);
+        } else {
+          throw error; // Re-throw non-Pipedrive-disabled errors
+        }
+      }
+      
+      // Fetch Xero projects
+      const xrProjects = await fetchXeroProjects();
 
-      // Compare projects
+      // Compare projects (empty array for pdProjects if Pipedrive is disabled)
       const comparisonResult = await compareProjects(pdProjects, xrProjects);
       
       // Create metadata for the report
       const metadata: ReportMetadata = {
-        reportTitle: 'Project Comparison Report',
+        reportTitle: pipedriveDisabled ? 'Xero Projects Report (Pipedrive Disabled)' : 'Project Comparison Report',
         generatedBy: session?.user?.name || session?.user?.email || 'Unknown User',
         userEmail: session?.user?.email || 'unknown@example.com',
         tenantName: tenantInfo.tenantName,
         tenantId: tenantInfo.tenantId,
         generatedAt: new Date(),
-        reportType: 'Project Synchronization Analysis',
+        reportType: pipedriveDisabled ? 'Xero Projects Analysis' : 'Project Synchronization Analysis',
         version: '2.0'
       };
       
-      setComparisonData(comparisonResult);
+      // Add Pipedrive status to comparison data
+      const enhancedComparisonResult = {
+        ...comparisonResult,
+        pipedriveDisabled,
+        pipedriveError
+      };
+      
+      setComparisonData(enhancedComparisonResult);
       setReportMetadata(metadata);
       setShowDownloadOptions(true);
     } catch (error) {
