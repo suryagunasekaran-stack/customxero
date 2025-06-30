@@ -11,11 +11,20 @@ const STANDARD_TASKS = ['Manhour', 'Overtime', 'Internal Manpower', 'External Ma
 
 // Task configuration function similar to existing pattern
 function getTaskConfigForTenant(tenantId: string, tenantName?: string) {
-  // Default SGD configuration for most tenants
+  // Special USD configuration for specific tenant
+  if (tenantId === 'ab4b2a02-e700-4fe8-a32d-5419d4195e1b') {
+    return {
+      rate: { currency: "USD", value: 0.01 },
+      chargeType: "FIXED",
+      estimateMinutes: 1  // Minimum 1 minute required by Xero API
+    };
+  }
+  
+  // Default SGD configuration for all other tenants
   return {
     rate: { currency: "SGD", value: 0.01 },
     chargeType: "FIXED",
-    estimateMinutes: 0
+    estimateMinutes: 1  // Minimum 1 minute required by Xero API
   };
 }
 
@@ -43,6 +52,104 @@ interface CreateResult {
   idempotencyKey?: string;
   success: boolean;
   tasksCreated?: TaskCreationResult[];
+}
+
+interface CreateError {
+  project: string;
+  error: string;
+}
+
+/**
+ * Generate comprehensive project creation report for download
+ */
+function generateProjectCreationReport(
+  results: CreateResult[],
+  errors: CreateError[],
+  totalProjects: number,
+  tenantName?: string
+): { filename: string; content: string } {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+  const filename = `project-creation-report-${timestamp}.csv`;
+  
+  const csvLines = [
+    'Section,Project Name,Project ID,Tasks Created,Tasks Failed,Status,Details,Error'
+  ];
+  
+  // Add metadata
+  csvLines.push(`# Report Generated: ${new Date().toISOString()}`);
+  csvLines.push(`# Tenant: ${tenantName || 'Current Selected Tenant'}`);
+  csvLines.push(`# Total Projects Requested: ${totalProjects}`);
+  csvLines.push(`# Projects Created Successfully: ${results.length}`);
+  csvLines.push(`# Projects Failed: ${errors.length}`);
+  csvLines.push(`# Success Rate: ${totalProjects > 0 ? ((results.length / totalProjects) * 100).toFixed(1) : 0}%`);
+  csvLines.push('');
+  
+  // Add alert for failures
+  if (errors.length > 0) {
+    csvLines.push(`# ⚠️  ALERT: ${errors.length} project creation failure(s) detected!`);
+    csvLines.push('');
+  }
+  
+  // Section 1: Successfully Created Projects
+  if (results.length > 0) {
+    csvLines.push('# ✅ SUCCESSFULLY CREATED PROJECTS');
+    csvLines.push('# These projects and their tasks were created successfully');
+    results.forEach(result => {
+      const tasksCreated = result.tasksCreated?.filter(t => t.success).length || 0;
+      const tasksFailed = result.tasksCreated?.filter(t => !t.success).length || 0;
+      const details = `${tasksCreated} tasks created${tasksFailed > 0 ? `, ${tasksFailed} tasks failed` : ''}`;
+      
+      csvLines.push(
+        `"Success","${result.project}","${result.projectId}","${tasksCreated}","${tasksFailed}","Created","${details}","N/A"`
+      );
+      
+      // Add task details if any tasks failed
+      if (result.tasksCreated && tasksFailed > 0) {
+        result.tasksCreated.filter(t => !t.success).forEach(task => {
+          csvLines.push(
+            `"Task Error","${result.project}","${result.projectId}","0","1","Task Failed","Task: ${task.taskName}","${task.error || 'Unknown task error'}"`
+          );
+        });
+      }
+    });
+    csvLines.push('');
+  }
+  
+  // Section 2: Failed Projects
+  if (errors.length > 0) {
+    csvLines.push('# ❌ FAILED PROJECT CREATIONS');
+    csvLines.push('# These projects could not be created');
+    errors.forEach(error => {
+      csvLines.push(
+        `"Failure","${error.project}","N/A","0","0","Failed","Project creation failed","${error.error}"`
+      );
+    });
+    csvLines.push('');
+  }
+  
+  // Add task summary if tasks were created
+  const allTaskResults = results.flatMap(r => r.tasksCreated || []);
+  if (allTaskResults.length > 0) {
+    const totalTasks = allTaskResults.length;
+    const successfulTasks = allTaskResults.filter(t => t.success).length;
+    const failedTasks = totalTasks - successfulTasks;
+    
+    csvLines.push('# 📋 TASK CREATION SUMMARY');
+    csvLines.push(`# Total Tasks: ${totalTasks}`);
+    csvLines.push(`# Successful Tasks: ${successfulTasks}`);
+    csvLines.push(`# Failed Tasks: ${failedTasks}`);
+    csvLines.push(`# Task Success Rate: ${totalTasks > 0 ? ((successfulTasks / totalTasks) * 100).toFixed(1) : 0}%`);
+    csvLines.push('');
+  }
+  
+  // Add summary
+  csvLines.push('# 📊 OVERALL SUMMARY');
+  csvLines.push(`# Total Operations: ${totalProjects + allTaskResults.length}`);
+  csvLines.push(`# Projects Created: ${results.length}/${totalProjects}`);
+  csvLines.push(`# Tasks Created: ${allTaskResults.filter(t => t.success).length}/${allTaskResults.length}`);
+  csvLines.push(`# Overall Success Rate: ${((results.length + allTaskResults.filter(t => t.success).length) / (totalProjects + allTaskResults.length) * 100).toFixed(1)}%`);
+  
+  return { filename, content: csvLines.join('\n') };
 }
 
 /**
@@ -89,8 +196,13 @@ export async function POST(request: NextRequest) {
       projectNames: body.projects.map(p => p.name)
     });
 
+    console.log(`[Create Projects API] ============ STARTING PROJECT CREATION ============`);
+    console.log(`[Create Projects API] Total projects to create: ${body.projects.length}`);
+    console.log(`[Create Projects API] Tenant: ${selectedTenant?.tenantName || 'Current Selected'}`);
+    console.log(`[Create Projects API] Projects: ${body.projects.map(p => p.name).join(', ')}`);
+
     const results: CreateResult[] = [];
-    const errors = [];
+    const errors: CreateError[] = [];
 
     // Process each project
     for (let i = 0; i < body.projects.length; i++) {
@@ -203,6 +315,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Generate comprehensive report
+    const report = generateProjectCreationReport(results, errors, body.projects.length, selectedTenant?.tenantName);
+
+    // Final validation logging
+    console.log(`[Create Projects API] ============ PROJECT CREATION SUMMARY ============`);
+    console.log(`[Create Projects API] Total projects requested: ${body.projects.length}`);
+    console.log(`[Create Projects API] Projects created successfully: ${successCount}`);
+    console.log(`[Create Projects API] Projects failed: ${errorCount}`);
+    console.log(`[Create Projects API] Success rate: ${body.projects.length > 0 ? ((successCount / body.projects.length) * 100).toFixed(1) : 0}%`);
+    
+    // Task creation summary
+    const allTaskResults = results.flatMap(r => r.tasksCreated || []);
+    if (allTaskResults.length > 0) {
+      const totalTasks = allTaskResults.length;
+      const successfulTasks = allTaskResults.filter(t => t.success).length;
+      const failedTasks = totalTasks - successfulTasks;
+      console.log(`[Create Projects API] Total tasks attempted: ${totalTasks}`);
+      console.log(`[Create Projects API] Tasks created successfully: ${successfulTasks}`);
+      console.log(`[Create Projects API] Tasks failed: ${failedTasks}`);
+      console.log(`[Create Projects API] Task success rate: ${totalTasks > 0 ? ((successfulTasks / totalTasks) * 100).toFixed(1) : 0}%`);
+      
+      if (failedTasks > 0) {
+        console.log(`[Create Projects API] ⚠️  Task failures detected - see detailed results`);
+      }
+    }
+    
+    if (errorCount > 0) {
+      console.log(`[Create Projects API] ⚠️  Project creation failures:`);
+      errors.forEach(error => {
+        console.log(`[Create Projects API]   - ${error.project}: ${error.error}`);
+      });
+    }
+    
+    console.log(`[Create Projects API] Report filename: ${report.filename}`);
+    console.log(`[Create Projects API] ============ END PROJECT CREATION SUMMARY ============`);
+
     // Return response
     if (successCount === body.projects.length) {
       // All projects created successfully
@@ -214,7 +362,8 @@ export async function POST(request: NextRequest) {
           total: body.projects.length,
           successful: successCount,
           failed: errorCount
-        }
+        },
+        downloadableReport: report
       });
     } else if (successCount > 0) {
       // Partial success
@@ -227,7 +376,8 @@ export async function POST(request: NextRequest) {
           total: body.projects.length,
           successful: successCount,
           failed: errorCount
-        }
+        },
+        downloadableReport: report
       }, { status: 207 }); // Multi-status
     } else {
       // Complete failure
@@ -239,7 +389,8 @@ export async function POST(request: NextRequest) {
           total: body.projects.length,
           successful: successCount,
           failed: errorCount
-        }
+        },
+        downloadableReport: report
       }, { status: 400 });
     }
     

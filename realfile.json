@@ -1,0 +1,377 @@
+[
+  {
+    "ContactId": "4b8520c1-da06-46e8-9cb9-474a00b25b1e",
+    "Name": "AF243418-Girolando Express",
+    "Taxable Value": "39,800.00"
+  },
+  {
+    "ContactId": "ba854e9e-c99c-422d-9131-f62a90857825",
+    "Name": "AF243673-Oceanicasub XlV",
+    "Taxable Value": "2,200.00"
+  },
+  {
+    "ContactId": "b8b2115c-56a9-43a3-9d40-44f75f92d7e3",
+    "Name": "AF243844-TBC",
+    "Taxable Value": "65,000.00"
+  },
+  {
+    "ContactId": "38da56d2-552e-4bc8-9ee6-4b81c248c9b5",
+    "Name": "AF244043-MT Hawks Glory",
+    "Taxable Value": "1,500.00"
+  },
+  {
+    "ContactId": "5ee8370f-024d-4757-ab5a-336234eb0d2d",
+    "Name": "AF25156-Sea Thesaurus",
+    "Taxable Value": "6,720.00"
+  },
+  {
+    "ContactId": "814bd617-f97e-45de-a893-cb5c4c215872",
+    "Name": "AF25222-Hyundai 2500",
+    "Taxable Value": "100.00"
+  },
+  {
+    "ContactId": "1d166767-2999-4de6-adbb-bdb06475d100",
+    "Name": "AF25278-KST Zodiac",
+    "Taxable Value": "3,500.00"
+  },
+  {
+    "ContactId": "814bd617-f97e-45de-a893-cb5c4c215872",
+    "Name": "AF25365-Gudali Express",
+    "Taxable Value": "100.00"
+  },
+  {
+    "ContactId": "7f0b4fd9-0c55-4c3b-99ed-99db6eb91754",
+    "Name": "AF25744-Perdana Expredition",
+    "Taxable Value": "1,400.00"
+  },
+  {
+    "ContactId": "5ee8370f-024d-4757-ab5a-336234eb0d2d",
+    "Name": "AF25809-Sea Endurance",
+    "Taxable Value": "3,000.00"
+  },
+  {
+    "ContactId": "4b8520c1-da06-46e8-9cb9-474a00b25b1e",
+    "Name": "AF251015-Gloucester Express",
+    "Taxable Value": "2,500.00"
+  },
+  {
+    "ContactId": "4408c8e3-bc76-4d3c-a622-0cb210f47a27",
+    "Name": "AF251066-Hafnia Bobcat",
+    "Taxable Value": "4,000.00"
+  },
+  {
+    "ContactId": "f51d90b5-30c7-4f3e-8b67-0574ad9219d1",
+    "Name": "AF251137-Siem Pilot",
+    "Taxable Value": "11,000.00"
+  },
+  {
+    "ContactId": "eee8bde0-ef65-42ef-83b3-22cf96ab40a5",
+    "Name": "AF251206-Anna Marina",
+    "Taxable Value": "2,500.00"
+  },
+  {
+    "ContactId": "814bd617-f97e-45de-a893-cb5c4c215872",
+    "Name": "AF251217-Prima Lautan II",
+    "Taxable Value": "100.00"
+  },
+  {
+    "ContactId": "814bd617-f97e-45de-a893-cb5c4c215872",
+    "Name": "AF251218-NN24 Resolute",
+    "Taxable Value": "100.00"
+  },
+  {
+    "ContactId": "f51d90b5-30c7-4f3e-8b67-0574ad9219d1",
+    "Name": "AF251244-Siem Pilot",
+    "Taxable Value": "5,856.00"
+  },
+  {
+    "ContactId": "7f0b4fd9-0c55-4c3b-99ed-99db6eb91754",
+    "Name": "AF251253-NA",
+    "Taxable Value": "5,000.00"
+  },
+  {
+    "ContactId": "3ede8fdd-687d-4398-be88-d65c01ec2194",
+    "Name": "AF251293-Boka Centre",
+    "Taxable Value": "5,000.00"
+  },
+  {
+    "ContactId": "3e894aba-fa08-475a-9269-53ac2f4e1359",
+    "Name": "AF251305-Ever Grade",
+    "Taxable Value": "6,000.00"
+  },
+  {
+    "ContactId": "1748c494-8db8-4513-b30e-fd3462fdc937",
+    "Name": "AF251335-Gas Planet",
+    "Taxable Value": "12,000.00"
+  },
+  {
+    "ContactId": "0a5cfa54-d376-4199-b59d-b1e2132dcc77",
+    "Name": "AF251336-Wide India",
+    "Taxable Value": "1,100.00"
+  },
+  {
+    "ContactId": "0a5cfa54-d376-4199-b59d-b1e2132dcc77",
+    "Name": "AF251338-Wide India",
+    "Taxable Value": "1,200.00"
+  },
+  {
+    "ContactId": "c900560a-d999-4ecf-957d-09590cf655b4",
+    "Name": "AF251356-Spas Tiga",
+    "Taxable Value": "2,000.00"
+  },
+  {
+    "ContactId": "3da50a1e-f566-4ed0-b199-14d8d6119b7c",
+    "Name": "AF251357-Congo River",
+    "Taxable Value": "55,650.00"
+  },
+  {
+    "ContactId": "ce4eb5fa-fff0-476f-b775-bfafd64bfca4",
+    "Name": "AF251358-TI2 Apple",
+    "Taxable Value": "20,000.00"
+  },
+  {
+    "ContactId": "4b8520c1-da06-46e8-9cb9-474a00b25b1e",
+    "Name": "AF251421-Gudali Express",
+    "Taxable Value": "3,625.00"
+  },
+  {
+    "ContactId": "72abfb56-cbb1-40eb-9fe4-19e5fdc17d43",
+    "Name": "AF251444-KST 58",
+    "Taxable Value": "850.00"
+  },
+  {
+    "ContactId": "69624709-7473-4448-9cef-8008a136b50a",
+    "Name": "AF251448-MV.Saleh",
+    "Taxable Value": "4,260.00"
+  },
+  {
+    "ContactId": "72abfb56-cbb1-40eb-9fe4-19e5fdc17d43",
+    "Name": "AF251450-KST 31",
+    "Taxable Value": "500.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251453-Thames",
+    "Taxable Value": "5,500.00"
+  },
+  {
+    "ContactId": "06f5e488-1aa3-46d8-965f-e4fd6fa3199a",
+    "Name": "AF251456-Jumbo Jubilee",
+    "Taxable Value": "6,720.00"
+  },
+  {
+    "ContactId": "c900560a-d999-4ecf-957d-09590cf655b4",
+    "Name": "AF251459-Amalya",
+    "Taxable Value": "2,000.00"
+  },
+  {
+    "ContactId": "92251907-e1a9-4297-86d9-78254d9820fb",
+    "Name": "AF251461-Sanmar Regent",
+    "Taxable Value": "5,000.00"
+  },
+  {
+    "ContactId": "b95e4ce5-6588-435b-a29b-611b1b9f43f9",
+    "Name": "AF251464-Siem Pilot",
+    "Taxable Value": "1,000.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251490-Humber",
+    "Taxable Value": "1,350.00"
+  },
+  {
+    "ContactId": "7f0b4fd9-0c55-4c3b-99ed-99db6eb91754",
+    "Name": "AF251496-Asia Evergreen",
+    "Taxable Value": "2,000.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251519-MT Glover",
+    "Taxable Value": "850.00"
+  },
+  {
+    "ContactId": "814bd617-f97e-45de-a893-cb5c4c215872",
+    "Name": "AF251520-Hyundai Oceanpia",
+    "Taxable Value": "10,000.00"
+  },
+  {
+    "ContactId": "317f319a-03a1-4843-954d-57c81f13e851",
+    "Name": "AF251535-TBC",
+    "Taxable Value": "500.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251551-Juma",
+    "Taxable Value": "500.00"
+  },
+  {
+    "ContactId": "7f0b4fd9-0c55-4c3b-99ed-99db6eb91754",
+    "Name": "AF251554-SPM Ashwa",
+    "Taxable Value": "4,500.00"
+  },
+  {
+    "ContactId": "7f0b4fd9-0c55-4c3b-99ed-99db6eb91754",
+    "Name": "AF251559-Valor",
+    "Taxable Value": "1,000.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251562-Maple",
+    "Taxable Value": "500.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251563-Densa",
+    "Taxable Value": "500.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251588-Perl",
+    "Taxable Value": "1,500.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251589-Indus",
+    "Taxable Value": "500.00"
+  },
+  {
+    "ContactId": "7f0b4fd9-0c55-4c3b-99ed-99db6eb91754",
+    "Name": "AF251593-Maran Gas Sparta",
+    "Taxable Value": "500.00"
+  },
+  {
+    "ContactId": "aeb29a44-4b97-47d7-b40a-9b3ec644d470",
+    "Name": "AF251595-Ocean Swagman",
+    "Taxable Value": "7,500.00"
+  },
+  {
+    "ContactId": "7f0b4fd9-0c55-4c3b-99ed-99db6eb91754",
+    "Name": "AF251601-Sinar Ternate",
+    "Taxable Value": "7,000.00"
+  },
+  {
+    "ContactId": "4e089ed8-8b10-42ad-b6c7-b607001e068e",
+    "Name": "AF251602-V Star",
+    "Taxable Value": "4,491.00"
+  },
+  {
+    "ContactId": "a730ed72-b39e-4320-8ef9-80a16c09a2ee",
+    "Name": "AF251604-M/T Ascona",
+    "Taxable Value": "2,500.00"
+  },
+  {
+    "ContactId": "814bd617-f97e-45de-a893-cb5c4c215872",
+    "Name": "AF251610-Zoe Schulte",
+    "Taxable Value": "100.00"
+  },
+  {
+    "ContactId": "b2dd2e1c-2f1b-4296-8e0a-196d786ab2d6",
+    "Name": "AF251611-SLNC Goodwill",
+    "Taxable Value": "1,500.00"
+  },
+  {
+    "ContactId": "7f0b4fd9-0c55-4c3b-99ed-99db6eb91754",
+    "Name": "AF251615-TBC",
+    "Taxable Value": "7,000.00"
+  },
+  {
+    "ContactId": "957ecdee-0eb2-463a-a55e-567e25ff81c4",
+    "Name": "AF251633-Sea1 Sapphire",
+    "Taxable Value": "8,000.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251642-Kara",
+    "Taxable Value": "1,700.00"
+  },
+  {
+    "ContactId": "e57abb15-f338-4d0b-a1fe-d2d989cab588",
+    "Name": "AF251644-Boka Defender",
+    "Taxable Value": "1,200.00"
+  },
+  {
+    "ContactId": "1ec78b07-52f5-4f3f-838e-c4a81c736260",
+    "Name": "AF251661-Brightoil Dragon",
+    "Taxable Value": "1,000.00"
+  },
+  {
+    "ContactId": "7b0e2e18-e4d0-45bf-a6c3-c04787291a0f",
+    "Name": "AF251672-ES Aspire",
+    "Taxable Value": "4,520.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251689-Oigawa",
+    "Taxable Value": "2,500.00"
+  },
+  {
+    "ContactId": "3e894aba-fa08-475a-9269-53ac2f4e1359",
+    "Name": "AF251692-Ever Greet",
+    "Taxable Value": "6,000.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251699-MT Avon",
+    "Taxable Value": "2,000.00"
+  },
+  {
+    "ContactId": "62255db6-8f95-4e9a-92d8-ad679d4d7bd7",
+    "Name": "AF251700-Olympic Trust",
+    "Taxable Value": "600.00"
+  },
+  {
+    "ContactId": "b95e4ce5-6588-435b-a29b-611b1b9f43f9",
+    "Name": "AF251708-NA",
+    "Taxable Value": "1,000.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251725-Lena",
+    "Taxable Value": "2,000.00"
+  },
+  {
+    "ContactId": "92251907-e1a9-4297-86d9-78254d9820fb",
+    "Name": "AF251732-Sanmar Royal",
+    "Taxable Value": "2,400.00"
+  },
+  {
+    "ContactId": "3e894aba-fa08-475a-9269-53ac2f4e1359",
+    "Name": "AF251743-Ever Globe",
+    "Taxable Value": "6,000.00"
+  },
+  {
+    "ContactId": "3da50a1e-f566-4ed0-b199-14d8d6119b7c",
+    "Name": "AF251753-Brabo",
+    "Taxable Value": "19,000.00"
+  },
+  {
+    "ContactId": "1748c494-8db8-4513-b30e-fd3462fdc937",
+    "Name": "AF251755-Lady Amanda",
+    "Taxable Value": "7,200.00"
+  },
+  {
+    "ContactId": "ed7cc4fa-5529-41f9-b7d3-753b1d3ed303",
+    "Name": "AF251725-Lena",
+    "Taxable Value": "2,000.00"
+  },
+  {
+    "ContactId": "92251907-e1a9-4297-86d9-78254d9820fb",
+    "Name": "AF251732-Sanmar Royal",
+    "Taxable Value": "2,400.00"
+  },
+  {
+    "ContactId": "3e894aba-fa08-475a-9269-53ac2f4e1359",
+    "Name": "AF251743-Ever Globe",
+    "Taxable Value": "6,000.00"
+  },
+  {
+    "ContactId": "3da50a1e-f566-4ed0-b199-14d8d6119b7c",
+    "Name": "AF251753-Brabo",
+    "Taxable Value": "19,000.00"
+  },
+  {
+    "ContactId": "1748c494-8db8-4513-b30e-fd3462fdc937",
+    "Name": "AF251755-Lady Amanda",
+    "Taxable Value": "7,200.00"
+  }
+]

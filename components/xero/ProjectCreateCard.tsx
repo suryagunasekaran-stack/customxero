@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { PlusCircleIcon, CheckCircleIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline';
+import { PlusCircleIcon, CheckCircleIcon, CloudArrowUpIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
 import ConfirmationDialog from '../ConfirmationDialog';
 import { FunctionCardProps } from './types';
 
@@ -38,6 +38,23 @@ interface CreateError {
   error: string;
 }
 
+interface CreateProjectsResponse {
+  success: boolean;
+  message: string;
+  results?: CreateResult[];
+  errors?: CreateError[];
+  summary?: {
+    total: number;
+    successful: number;
+    failed: number;
+  };
+  downloadableReport?: {
+    filename: string;
+    content: string;
+  };
+  error?: string;
+}
+
 export default function ProjectCreateCard({ disabled = false }: ProjectCreateCardProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
@@ -47,6 +64,7 @@ export default function ProjectCreateCard({ disabled = false }: ProjectCreateCar
   const [parsedProjects, setParsedProjects] = useState<XeroProject[]>([]);
   const [results, setResults] = useState<{ successful: CreateResult[]; failed: CreateError[] } | null>(null);
   const [filePreview, setFilePreview] = useState<string>('');
+  const [downloadableReport, setDownloadableReport] = useState<{ filename: string; content: string } | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -144,6 +162,30 @@ export default function ProjectCreateCard({ disabled = false }: ProjectCreateCar
     });
   };
 
+  // Download report function
+  const downloadReport = (report: { filename: string; content: string }) => {
+    try {
+      const blob = new Blob([report.content], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = report.filename;
+      link.style.display = 'none';
+      
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      console.log(`[Project Creation] Downloaded report: ${report.filename}`);
+    } catch (error) {
+      console.error('[Project Creation] Failed to download report:', error);
+      setError('Failed to download report. Please try again.');
+    }
+  };
+
   const handleCreateProjects = async () => {
     if (!selectedFile) {
       setError('Please select a JSON file');
@@ -159,6 +201,7 @@ export default function ProjectCreateCard({ disabled = false }: ProjectCreateCar
       setError(null);
       setSuccess(null);
       setResults(null);
+      setDownloadableReport(null);
 
       const response = await fetch('/api/xero/projects/create', {
         method: 'POST',
@@ -168,7 +211,7 @@ export default function ProjectCreateCard({ disabled = false }: ProjectCreateCar
         body: JSON.stringify({ projects }),
       });
 
-      const data = await response.json();
+      const data: CreateProjectsResponse = await response.json();
 
       if (data.success) {
         const successMsg = data.message || `Successfully created ${data.summary?.successful || 0} project(s)`;
@@ -180,6 +223,12 @@ export default function ProjectCreateCard({ disabled = false }: ProjectCreateCar
             successful: data.results || [],
             failed: data.errors || []
           });
+        }
+        
+        // Store and auto-download report
+        if (data.downloadableReport) {
+          setDownloadableReport(data.downloadableReport);
+          downloadReport(data.downloadableReport);
         }
         
         // Clear form on complete success
@@ -195,9 +244,15 @@ export default function ProjectCreateCard({ disabled = false }: ProjectCreateCar
         setError(data.error || data.message || 'Failed to create projects');
         if (data.errors) {
           setResults({
-            successful: [],
+            successful: data.results || [],
             failed: data.errors
           });
+        }
+        
+        // Store and auto-download report even for failures
+        if (data.downloadableReport) {
+          setDownloadableReport(data.downloadableReport);
+          downloadReport(data.downloadableReport);
         }
       }
     } catch (err: any) {
@@ -279,7 +334,18 @@ export default function ProjectCreateCard({ disabled = false }: ProjectCreateCar
           {/* Results Display */}
           {results && (results.successful.length > 0 || results.failed.length > 0) && (
             <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-              <h3 className="text-sm font-medium text-gray-900 mb-3">Creation Results</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium text-gray-900">Creation Results</h3>
+                {downloadableReport && (
+                  <button
+                    onClick={() => downloadReport(downloadableReport)}
+                    className="inline-flex items-center px-3 py-1 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                  >
+                    <DocumentArrowDownIcon className="w-3 h-3 mr-1" />
+                    Download Report
+                  </button>
+                )}
+              </div>
               
               {results.successful.length > 0 && (
                 <div className="mb-3">
@@ -349,6 +415,10 @@ export default function ProjectCreateCard({ disabled = false }: ProjectCreateCar
                  <li className="flex items-start">
                    <span className="text-gray-400 mr-2">•</span>
                    <span>Provides detailed success and error reporting</span>
+                 </li>
+                 <li className="flex items-start">
+                   <span className="text-gray-400 mr-2">•</span>
+                   <span>Generates downloadable CSV report with full details</span>
                  </li>
               </ul>
             </div>
