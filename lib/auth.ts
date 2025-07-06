@@ -97,11 +97,13 @@ export const authConfig: NextAuthConfig = {
       }
       
       // Return previous token if the access token has not expired yet
-      if (token.expiresAt && Date.now() < (token.expiresAt as number) * 1000) {
+      // Use a 5 minute buffer to refresh tokens proactively
+      const fiveMinutesInMs = 5 * 60 * 1000;
+      if (token.expiresAt && Date.now() < ((token.expiresAt as number) * 1000 - fiveMinutesInMs)) {
         return token
       }
       
-      // Access token has expired, try to update it
+      // Access token has expired or will expire soon, try to update it
       return refreshAccessToken(token)
     },
     async session({ session, token }) {
@@ -149,6 +151,14 @@ export const authConfig: NextAuthConfig = {
  */
 async function refreshAccessToken(token: any) {
   try {
+    // Log refresh attempt for debugging
+    console.log(`[Auth] Attempting to refresh token at ${new Date().toISOString()}`);
+    
+    if (!token.refreshToken) {
+      console.error('[Auth] No refresh token available');
+      throw new Error('No refresh token available');
+    }
+
     const response = await fetch("https://identity.xero.com/connect/token", {
       method: "POST",
       headers: {
@@ -166,17 +176,49 @@ async function refreshAccessToken(token: any) {
     const refreshedTokens = await response.json()
 
     if (!response.ok) {
+      console.error('[Auth] Token refresh failed:', {
+        status: response.status,
+        error: refreshedTokens.error,
+        error_description: refreshedTokens.error_description
+      });
       throw refreshedTokens
     }
 
-    return {
+    console.log('[Auth] Token refreshed successfully');
+
+    // Update token with new values
+    const updatedToken = {
       ...token,
       accessToken: refreshedTokens.access_token,
       expiresAt: Date.now() / 1000 + refreshedTokens.expires_in,
       refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
+      error: undefined // Clear any previous errors
+    };
+
+    // If we have a new refresh token, update tenants as well
+    if (refreshedTokens.refresh_token && refreshedTokens.refresh_token !== token.refreshToken) {
+      try {
+        const res = await fetch("https://api.xero.com/connections", {
+          headers: {
+            Authorization: `Bearer ${refreshedTokens.access_token}`,
+            Accept: "application/json",
+          },
+        });
+        if (res.ok) {
+          const connections = await res.json();
+          updatedToken.tenants = connections;
+          if (!updatedToken.tenantId && connections.length > 0) {
+            updatedToken.tenantId = connections[0].tenantId;
+          }
+        }
+      } catch (error) {
+        console.error("[Auth] Failed to update tenants after refresh:", error);
+      }
     }
+
+    return updatedToken;
   } catch (error) {
-    console.error("Error refreshing access token", error)
+    console.error("[Auth] Error refreshing access token:", error);
     return {
       ...token,
       error: "RefreshAccessTokenError",

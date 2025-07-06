@@ -9,6 +9,7 @@ import {
   MenuItems
 } from '@headlessui/react';
 import { ChevronDownIcon, BuildingOfficeIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { useApiClient } from '@/hooks/useApiClient';
 
 interface XeroTenant {
   tenantId: string;
@@ -26,6 +27,9 @@ interface TenantsData {
 
 export default function TenantSwitcher() {
   const router = useRouter();
+  const { apiCall } = useApiClient({
+    onError: (error) => console.error('Failed to fetch tenants:', error)
+  });
   const [tenantsData, setTenantsData] = useState<TenantsData | null>(null);
   const [switching, setSwitching] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,13 +40,10 @@ export default function TenantSwitcher() {
 
   const fetchTenants = async () => {
     try {
-      const response = await fetch('/api/tenants');
-      if (response.ok) {
-        const data = await response.json();
-        setTenantsData(data);
-      }
+      const data = await apiCall<TenantsData>('/api/tenants');
+      setTenantsData(data);
     } catch (error) {
-      console.error('Failed to fetch tenants:', error);
+      // Error already logged by onError callback
     } finally {
       setLoading(false);
     }
@@ -54,45 +55,30 @@ export default function TenantSwitcher() {
     setSwitching(tenantId);
     
     try {
-      const response = await fetch('/api/tenants', {
+      await apiCall('/api/tenants', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({ tenantId }),
       });
-
-      if (response.ok) {
-        // Update local state immediately
-        setTenantsData(prev => prev ? {
-          ...prev,
-          selectedTenant: tenantId
-        } : null);
-        
-        // Dispatch tenant change event for cache refresh
-        const tenantChangeEvent = new CustomEvent('tenantChanged', {
-          detail: { tenantId, tenantName: tenantsData?.availableTenants.find(t => t.tenantId === tenantId)?.tenantName }
-        });
-        window.dispatchEvent(tenantChangeEvent);
-        
-        // Force immediate UI update
-        setTenantsData(prev => prev ? {
-          ...prev,
-          selectedTenant: tenantId
-        } : null);
-        
-        // Use router.refresh() to force NextAuth to recalculate session
-        router.refresh();
-        
-        // Force a hard refresh of the page to ensure all caches are cleared
-        setTimeout(() => {
-          window.location.reload();
-        }, 500);
-      } else {
-        console.error('Failed to switch tenant - response not ok');
-        // Revert local state on error
-        fetchTenants();
-      }
+      
+      // Update local state immediately
+      setTenantsData(prev => prev ? {
+        ...prev,
+        selectedTenant: tenantId
+      } : null);
+      
+      // Dispatch tenant change event for cache refresh
+      const tenantChangeEvent = new CustomEvent('tenantChanged', {
+        detail: { tenantId, tenantName: tenantsData?.availableTenants.find(t => t.tenantId === tenantId)?.tenantName }
+      });
+      window.dispatchEvent(tenantChangeEvent);
+      
+      // Use router.refresh() to force NextAuth to recalculate session
+      router.refresh();
+      
+      // Force a hard refresh of the page to ensure all caches are cleared
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
     } catch (error) {
       console.error('Failed to switch tenant:', error);
       // Revert local state on error

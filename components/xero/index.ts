@@ -5,6 +5,8 @@ export { default as MonthlySnapshotCard } from './MonthlySnapshotCard';
 export { default as ContactUpdateCard } from './ContactUpdateCard';
 export { default as ContactDownloadCard } from './ContactDownloadCard';
 export { default as ProjectCreateCard } from './ProjectCreateCard';
+export { default as ProjectsInProgressCard } from './ProjectsInProgressCard';
+export { default as InvoicesDownloadCard } from './InvoicesDownloadCard';
 export { default as QuotesDownloadCard } from './QuotesDownloadCard';
 export { default as ReportDownloadOptions } from './ReportDownloadOptions';
 export { default as TenantConfirmationModal } from './TenantConfirmationModal';

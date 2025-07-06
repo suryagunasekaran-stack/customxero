@@ -28,14 +28,15 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
 
     // Check if token has expired
     const now = Date.now() / 1000;
-    const buffer = 60; // 60 seconds buffer
+    const buffer = 300; // 5 minutes buffer to match auth.ts
     
     if (session.expiresAt && session.expiresAt <= now + buffer) {
         if (session.error === 'RefreshAccessTokenError') {
             throw new Error('Failed to refresh token. Please re-authenticate.');
         }
-        // NextAuth should handle the refresh automatically
-        throw new Error('Token expired. Please re-authenticate.');
+        // Token is about to expire or has expired
+        // This shouldn't happen if auth.ts is refreshing proactively
+        throw new Error('Token expired or expiring soon. Please try again.');
     }
     
     const userEmail = session.user?.email;
