@@ -504,13 +504,33 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
               <button
                 onClick={triggerFileInput}
                 disabled={disabled || loadingTenant}
-                className="w-full flex flex-col items-center justify-center px-6 py-8 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 hover:bg-gray-50 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full flex flex-col items-center justify-center px-6 py-8 border-2 border-dashed rounded-lg hover:bg-gray-50 transition-all duration-200 group disabled:opacity-50 disabled:cursor-not-allowed text-white"
+                style={{
+                  backgroundColor: (disabled || loadingTenant) 
+                    ? 'oklch(21.6% 0.006 56.043)' 
+                    : 'oklch(27.4% 0.006 286.033)',
+                  borderColor: (disabled || loadingTenant) 
+                    ? 'oklch(21.6% 0.006 56.043)' 
+                    : 'oklch(27.4% 0.006 286.033)'
+                }}
+                onMouseEnter={(e) => {
+                  if (!disabled && !loadingTenant) {
+                    e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+                    e.currentTarget.style.borderColor = 'oklch(21.6% 0.006 56.043)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!disabled && !loadingTenant) {
+                    e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+                    e.currentTarget.style.borderColor = 'oklch(27.4% 0.006 286.033)';
+                  }
+                }}
               >
-                <CloudArrowUpIcon className="h-12 w-12 text-gray-400 group-hover:text-gray-500 mb-3" />
-                <span className="text-sm font-medium text-gray-700 group-hover:text-gray-800">
+                <CloudArrowUpIcon className="h-12 w-12 mb-3" />
+                <span className="text-sm font-medium">
                   {loadingTenant ? 'Verifying Xero connection...' : 'Click to upload timesheet'}
                 </span>
-                <span className="text-xs text-gray-500 mt-1">
+                <span className="text-xs mt-1 opacity-80">
                   Excel files only (.xlsx, .xls) - Processing starts immediately
                 </span>
               </button>
@@ -730,13 +750,31 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
               <div className="flex gap-3">
                 <button
                   onClick={resetProcessor}
-                  className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="flex-1 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors"
+                  style={{
+                    backgroundColor: 'oklch(27.4% 0.006 286.033)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+                  }}
                 >
                   Process Another
                 </button>
                 <button
                   onClick={() => downloadReport(results.downloadableReport)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors"
+                  style={{
+                    backgroundColor: 'oklch(27.4% 0.006 286.033)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+                  }}
                 >
                   <DocumentArrowDownIcon className="w-4 h-4" />
                   Download Report
@@ -755,7 +793,16 @@ export default function TimesheetProcessingCard({ disabled = false }: { disabled
               
               <button
                 onClick={resetProcessor}
-                className="w-full px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+                className="w-full px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors"
+                style={{
+                  backgroundColor: 'oklch(27.4% 0.006 286.033)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+                }}
               >
                 Try Again
               </button>

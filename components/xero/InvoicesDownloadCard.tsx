@@ -110,31 +110,59 @@ export default function InvoicesDownloadCard({ disabled = false }: InvoicesDownl
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => setSelectedFormat('excel')}
-              className={`
-                flex items-center justify-center p-3 rounded-lg border-2 transition-all
-                ${selectedFormat === 'excel' 
-                  ? 'border-blue-500 bg-blue-50 text-blue-700' 
-                  : 'border-gray-200 hover:border-gray-300 text-gray-600'
+              className="flex items-center justify-center p-3 rounded-lg border-2 transition-all text-white font-medium"
+              style={{
+                backgroundColor: selectedFormat === 'excel' 
+                  ? 'oklch(21.6% 0.006 56.043)' 
+                  : 'oklch(27.4% 0.006 286.033)',
+                borderColor: selectedFormat === 'excel' 
+                  ? 'oklch(21.6% 0.006 56.043)' 
+                  : 'oklch(27.4% 0.006 286.033)'
+              }}
+              onMouseEnter={(e) => {
+                if (selectedFormat !== 'excel') {
+                  e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+                  e.currentTarget.style.borderColor = 'oklch(21.6% 0.006 56.043)';
                 }
-              `}
+              }}
+              onMouseLeave={(e) => {
+                if (selectedFormat !== 'excel') {
+                  e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+                  e.currentTarget.style.borderColor = 'oklch(27.4% 0.006 286.033)';
+                }
+              }}
               disabled={isDownloading}
             >
               <TableCellsIcon className="h-5 w-5 mr-2" />
-              <span className="font-medium">Excel</span>
+              <span>Excel</span>
             </button>
             <button
               onClick={() => setSelectedFormat('json')}
-              className={`
-                flex items-center justify-center p-3 rounded-lg border-2 transition-all
-                ${selectedFormat === 'json' 
-                  ? 'border-blue-500 bg-blue-50 text-blue-700' 
-                  : 'border-gray-200 hover:border-gray-300 text-gray-600'
+              className="flex items-center justify-center p-3 rounded-lg border-2 transition-all text-white font-medium"
+              style={{
+                backgroundColor: selectedFormat === 'json' 
+                  ? 'oklch(21.6% 0.006 56.043)' 
+                  : 'oklch(27.4% 0.006 286.033)',
+                borderColor: selectedFormat === 'json' 
+                  ? 'oklch(21.6% 0.006 56.043)' 
+                  : 'oklch(27.4% 0.006 286.033)'
+              }}
+              onMouseEnter={(e) => {
+                if (selectedFormat !== 'json') {
+                  e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+                  e.currentTarget.style.borderColor = 'oklch(21.6% 0.006 56.043)';
                 }
-              `}
+              }}
+              onMouseLeave={(e) => {
+                if (selectedFormat !== 'json') {
+                  e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+                  e.currentTarget.style.borderColor = 'oklch(27.4% 0.006 286.033)';
+                }
+              }}
               disabled={isDownloading}
             >
               <DocumentIcon className="h-5 w-5 mr-2" />
-              <span className="font-medium">JSON</span>
+              <span>JSON</span>
             </button>
           </div>
         </div>
@@ -176,7 +204,22 @@ export default function InvoicesDownloadCard({ disabled = false }: InvoicesDownl
         <button
           onClick={handleDownloadInvoices}
           disabled={isDisabled}
-          className="w-full inline-flex items-center justify-center px-6 py-3 text-base font-medium text-white bg-purple-600 rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+          className="w-full inline-flex items-center justify-center px-6 py-3 text-base font-medium text-white rounded-lg disabled:cursor-not-allowed transition-colors"
+          style={{
+            backgroundColor: isDisabled 
+              ? 'oklch(21.6% 0.006 56.043)' 
+              : 'oklch(27.4% 0.006 286.033)'
+          }}
+          onMouseEnter={(e) => {
+            if (!isDisabled) {
+              e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isDisabled) {
+              e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+            }
+          }}
         >
           <ArrowDownTrayIcon className={`h-5 w-5 mr-2 ${isDownloading ? 'animate-bounce' : ''}`} />
           {isDownloading ? 'Downloading...' : `Download Invoices as ${selectedFormat.toUpperCase()}`}

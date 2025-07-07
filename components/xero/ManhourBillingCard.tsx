@@ -89,7 +89,22 @@ export default function ManhourBillingCard({ disabled = false }: ManhourBillingC
           <button
             onClick={() => setShowConfirmation(true)}
             disabled={disabled || isProcessing}
-            className="w-full inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+            className="w-full inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+            style={{
+              backgroundColor: (disabled || isProcessing) 
+                ? 'oklch(21.6% 0.006 56.043)' 
+                : 'oklch(27.4% 0.006 286.033)'
+            }}
+            onMouseEnter={(e) => {
+              if (!disabled && !isProcessing) {
+                e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!disabled && !isProcessing) {
+                e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+              }
+            }}
           >
             {isProcessing ? (
               <>

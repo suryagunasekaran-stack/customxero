@@ -162,31 +162,49 @@ export default function ReportDownloadOptions({
                 key={option.format}
                 onClick={() => handleDownload(option.format)}
                 disabled={isDownloading}
-                className={`relative p-4 rounded-lg border-2 transition-all duration-200 text-left ${option.color} ${
-                  isDownloading ? 'opacity-75 cursor-not-allowed' : 'cursor-pointer'
-                }`}
+                className="relative p-4 rounded-lg border-2 transition-all duration-200 text-left text-white disabled:opacity-75 disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor: isDownloading 
+                    ? 'oklch(21.6% 0.006 56.043)' 
+                    : 'oklch(27.4% 0.006 286.033)',
+                  borderColor: isDownloading 
+                    ? 'oklch(21.6% 0.006 56.043)' 
+                    : 'oklch(27.4% 0.006 286.033)'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isDownloading) {
+                    e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+                    e.currentTarget.style.borderColor = 'oklch(21.6% 0.006 56.043)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isDownloading) {
+                    e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+                    e.currentTarget.style.borderColor = 'oklch(27.4% 0.006 286.033)';
+                  }
+                }}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-start">
-                    <Icon className={`h-6 w-6 mr-3 mt-0.5 ${option.iconColor}`} />
+                    <Icon className="h-6 w-6 mr-3 mt-0.5 text-white" />
                     <div>
                       <div className="flex items-center">
-                        <h5 className="font-medium text-gray-900">{option.title}</h5>
+                        <h5 className="font-medium text-white">{option.title}</h5>
                         {option.recommended && (
                           <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
                             Recommended
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-gray-600 mt-1">{option.description}</p>
+                      <p className="text-sm text-white opacity-80 mt-1">{option.description}</p>
                     </div>
                   </div>
                   
                   <div className="flex items-center">
                     {isDownloading ? (
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
                     ) : (
-                      <DocumentArrowDownIcon className="h-5 w-5 text-gray-400" />
+                      <DocumentArrowDownIcon className="h-5 w-5 text-white opacity-60" />
                     )}
                   </div>
                 </div>

@@ -37,11 +37,7 @@ export default function OrganisationHeader() {
     const pathname = usePathname()
     
     const navigation = [
-        { name: 'Home', href: '/organisation', current: pathname === '/organisation' },
         { name: 'Xero', href: '/organisation/xero', current: pathname === '/organisation/xero' },
-        { name: 'Sequences', href: '/sequences', current: pathname === '/sequences' },
-        { name: 'Audit Logs', href: '/organisation/logs', current: pathname === '/organisation/logs' },
-        { name: 'Reset Tasks', href: '/organisation/reset-tasks', current: pathname === '/organisation/reset-tasks' },
     ]
     
     const userNavigation = [
@@ -55,18 +51,21 @@ export default function OrganisationHeader() {
     }
 
     return (
-        <Popover as="header" className="bg-indigo-600 pb-24 ">
+        <Popover as="header" className="pb-8" style={{ backgroundColor: 'oklch(55.4% 0.046 257.417)' }}>
             <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:max-w-7xl lg:px-8">
-                <div className="relative flex items-center justify-center py-5 lg:justify-between">
+                <div className="relative flex items-center justify-center py-3 lg:justify-between">
                     {/* Logo */}
                     <div className="absolute left-0 shrink-0 lg:static">
                         <a href="#">
-                            <span className="sr-only">Your Company</span>
-                            <img
-                                alt="Your Company"
-                                src="https://tailwindcss.com/plus-assets/img/logos/mark.svg?color=indigo&shade=300"
-                                className="h-8 w-auto"
-                            />
+                            <div className="flex items-center gap-2">
+
+                                <img
+                                    alt="Your Company"
+                                    src="/logo512-removebg-preview_edited_non_transparent-removebg-preview.png"
+                                    className="h-8 w-auto"
+                                />
+                                                                <span>Brightsun Marine</span>
+                            </div>
                         </a>
                     </div>
 
@@ -112,22 +111,6 @@ export default function OrganisationHeader() {
                         </Menu>
                     </div>
 
-                    {/* Search */}
-                    <div className="min-w-0 flex-1 px-12 lg:hidden">
-                        <div className="mx-auto grid w-full max-w-xs grid-cols-1">
-                            <input
-                                name="search"
-                                type="search"
-                                placeholder="Search"
-                                aria-label="Search"
-                                className="peer col-start-1 row-start-1 block w-full rounded-md bg-white/20 py-1.5 pr-3 pl-10 text-base text-white outline-hidden placeholder:text-white focus:bg-white focus:text-gray-900 focus:outline-2 focus:outline-offset-2 focus:outline-white/40 focus:placeholder:text-gray-400 sm:text-sm/6"
-                            />
-                            <MagnifyingGlassIcon
-                                aria-hidden="true"
-                                className="pointer-events-none col-start-1 row-start-1 ml-3 size-5 self-center text-white peer-focus:text-gray-400"
-                            />
-                        </div>
-                    </div>
 
                     {/* Menu button */}
                     <div className="absolute right-0 shrink-0 lg:hidden">
@@ -140,7 +123,7 @@ export default function OrganisationHeader() {
                         </PopoverButton>
                     </div>
                 </div>
-                <div className="hidden border-t border-white/20 py-5 lg:block">
+                <div className="hidden border-t border-white/20 py-3 lg:block">
                     <div className="grid grid-cols-3 items-center gap-8">
                         <div className="col-span-2">
                             <nav className="flex space-x-4 items-center">
@@ -161,19 +144,6 @@ export default function OrganisationHeader() {
                                     <TenantSwitcher />
                                 </div>
                             </nav>
-                        </div>
-                        <div className="mx-auto grid w-full max-w-md grid-cols-1">
-                            <input
-                                name="search"
-                                type="search"
-                                placeholder="Search"
-                                aria-label="Search"
-                                className="peer col-start-1 row-start-1 block w-full rounded-md bg-white/20 py-1.5 pr-3 pl-10 text-sm/6 text-white outline-hidden placeholder:text-white focus:bg-white focus:text-gray-900 focus:outline-2 focus:outline-offset-2 focus:outline-white/40 focus:placeholder:text-gray-400"
-                            />
-                            <MagnifyingGlassIcon
-                                aria-hidden="true"
-                                className="pointer-events-none col-start-1 row-start-1 ml-3 size-5 self-center text-white peer-focus:text-gray-400"
-                            />
                         </div>
                     </div>
                 </div>
@@ -218,7 +188,7 @@ export default function OrganisationHeader() {
                                         {item.name}
                                     </a>
                                 ))}
-                                <div className="px-3 py-2">
+                                <div className="px-3 py-2 w-full">
                                     <TenantSwitcher />
                                 </div>
                             </div>
