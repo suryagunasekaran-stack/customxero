@@ -35,6 +35,9 @@ export default function XeroPage() {
             <InvoicesDownloadCard disabled={isSyncing} />
             <TimesheetProcessingCard disabled={isSyncing} />
             <MonthlySnapshotCard disabled={isSyncing} />
+            <ProjectsInProgressCard disabled={isSyncing} />
+            <ContactDownloadCard disabled={isSyncing} />
+            <ProjectCreateCard disabled={isSyncing} />
           </div>
         </div>
       </div>

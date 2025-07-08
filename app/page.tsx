@@ -17,7 +17,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (status === 'authenticated') {
-      router.push('/organisatio/xero');
+      router.push('/organisation/xero');
     }
   }, [status, router]);
 

@@ -1,10 +1,6 @@
 'use client';
 
 import {
-    Menu,
-    MenuButton,
-    MenuItem,
-    MenuItems,
     Popover,
     PopoverBackdrop,
     PopoverButton,
@@ -39,10 +35,6 @@ export default function OrganisationHeader() {
     const navigation = [
         { name: 'Xero', href: '/organisation/xero', current: pathname === '/organisation/xero' },
     ]
-    
-    const userNavigation = [
-        { name: 'Sign out', action: () => signOut({ callbackUrl: '/' }) },
-    ]
 
     const user = {
         name: session?.user?.name || session?.user?.email || 'User',
@@ -51,7 +43,7 @@ export default function OrganisationHeader() {
     }
 
     return (
-        <Popover as="header" className="pb-8" style={{ backgroundColor: 'oklch(55.4% 0.046 257.417)' }}>
+        <Popover as="header" className="pb-8" style={{ backgroundColor: 'oklch(21.6% 0.006 56.043)' }}>
             <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:max-w-7xl lg:px-8">
                 <div className="relative flex items-center justify-center py-3 lg:justify-between">
                     {/* Logo */}
@@ -70,45 +62,31 @@ export default function OrganisationHeader() {
                     </div>
 
                     {/* Right section on desktop */}
-                    <div className="hidden lg:ml-4 lg:flex lg:items-center lg:pr-0.5">
-                        <button
-                            type="button"
-                            className="relative shrink-0 rounded-full p-1 text-indigo-200 hover:bg-white/10 hover:text-white focus:ring-2 focus:ring-white focus:outline-hidden"
-                        >
-                            <span className="absolute -inset-1.5" />
-                            <span className="sr-only">View notifications</span>
-                            <BellIcon aria-hidden="true" className="size-6" />
-                        </button>
-
-                        {/* Profile dropdown */}
-                        <Menu as="div" className="relative ml-4 shrink-0">
-                            <div>
-                                <MenuButton className="relative flex rounded-full bg-white text-sm ring-2 ring-white/20 focus:ring-white focus:outline-hidden">
-                                    <span className="absolute -inset-1.5" />
-                                    <span className="sr-only">Open user menu</span>
-                                    <img alt="" src={user.imageUrl} className="size-8 rounded-full" />
-                                </MenuButton>
+                    <div className="hidden lg:ml-4 lg:flex lg:items-center lg:pr-0.5 lg:gap-4">
+                        {/* User info */}
+                        <div className="flex items-center gap-3">
+                            <div className="text-right">
+                                <div className="text-sm font-medium text-white">{user.name}</div>
+                                <div className="text-xs text-indigo-200">{user.email}</div>
                             </div>
-                            <MenuItems
-                                transition
-                                className="absolute -right-2 z-10 mt-2 w-48 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 focus:outline-hidden data-leave:transition data-leave:duration-75 data-leave:ease-in data-closed:data-leave:scale-95 data-closed:data-leave:transform data-closed:data-leave:opacity-0"
-                            >
-                                <div className="px-4 py-2 text-sm text-gray-700 border-b">
-                                    <div className="font-medium">{user.name}</div>
-                                    <div className="text-gray-500">{user.email}</div>
-                                </div>
-                                {userNavigation.map((item) => (
-                                    <MenuItem key={item.name}>
-                                        <button
-                                            onClick={item.action}
-                                            className="block w-full text-left px-4 py-2 text-sm text-gray-700 data-focus:bg-gray-100 data-focus:outline-hidden"
-                                        >
-                                            {item.name}
-                                        </button>
-                                    </MenuItem>
-                                ))}
-                            </MenuItems>
-                        </Menu>
+                        </div>
+                        
+                        {/* Sign out button */}
+                        <button
+                            onClick={() => signOut({ callbackUrl: '/' })}
+                            className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                            style={{
+                                backgroundColor: 'oklch(27.4% 0.006 286.033)'
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+                            }}
+                        >
+                            Sign Out
+                        </button>
                     </div>
 
 
@@ -208,19 +186,24 @@ export default function OrganisationHeader() {
                                 >
                                     <span className="absolute -inset-1.5" />
                                     <span className="sr-only">View notifications</span>
-                                    <BellIcon aria-hidden="true" className="size-6" />
                                 </button>
                             </div>
-                            <div className="mt-3 space-y-1 px-2">
-                                {userNavigation.map((item) => (
-                                    <button
-                                        key={item.name}
-                                        onClick={item.action}
-                                        className="block w-full text-left rounded-md px-3 py-2 text-base font-medium text-gray-900 hover:bg-gray-100 hover:text-gray-800"
-                                    >
-                                        {item.name}
-                                    </button>
-                                ))}
+                            <div className="mt-3 px-2">
+                                <button
+                                    onClick={() => signOut({ callbackUrl: '/' })}
+                                    className="w-full inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                                    style={{
+                                        backgroundColor: 'oklch(27.4% 0.006 286.033)'
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+                                    }}
+                                >
+                                    Sign Out
+                                </button>
                             </div>
                         </div>
                     </div>
