@@ -4,19 +4,66 @@ import { auth } from '@/lib/auth';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 
 /**
- * Extracts comparison key from project name for matching logic
- * Matches patterns like "ED25002 - Project Name" and extracts "ed25002"
- * @param {string | undefined | null} name - Project name to extract key from
- * @returns {string} Normalized comparison key (lowercase, no spaces)
+ * Extracts comparison key from Xero project name
+ * For patterns like "ED255007 - Viking Passero", returns "ed255007-vikingpassero"
+ * @param {string | undefined | null} name - Xero project name
+ * @returns {string} Normalized comparison key (lowercase, with hyphen-separated parts)
  */
-const getComparisonKey = (name: string | undefined | null): string => {
+const getXeroComparisonKey = (name: string | undefined | null): string => {
   if (!name) return 'UNKNOWN_PROJECT_NAME';
+  
+  // Split by " - " to handle "ED255007 - Viking Passero" pattern
   const parts = name.split(' - ');
   if (parts.length > 1) {
-    return parts[0].replace(/\s+/g, '').toLowerCase(); // Remove spaces and lowercase
+    // Take the first part (e.g., "ED255007") and the rest joined together
+    const projectCode = parts[0].replace(/\s+/g, '').toLowerCase();
+    const projectName = parts.slice(1).join(' ').replace(/\s+/g, '').toLowerCase();
+    return projectCode + (projectName ? '-' + projectName : '');
   }
-  // Fallback: if " - " is not present, use the whole name, remove spaces, and lowercase
-  return name.replace(/\s+/g, '').toLowerCase(); 
+  
+  // Fallback: if no " - " is present, use the whole name
+  return name.replace(/\s+/g, '').toLowerCase();
+};
+
+/**
+ * Extracts comparison key from Pipedrive project name
+ * For patterns like "ED242263-PC2-Ithaki", returns "ed242263-ithaki"
+ * Removes middle segments like "PC2" that are common in ED components
+ * @param {string | undefined | null} name - Pipedrive project name
+ * @returns {string} Normalized comparison key (lowercase, with specific parts)
+ */
+const getPipedriveComparisonKey = (name: string | undefined | null): string => {
+  if (!name) return 'UNKNOWN_PROJECT_NAME';
+  
+  // First check if it has the " - " pattern (similar to Xero)
+  if (name.includes(' - ')) {
+    const parts = name.split(' - ');
+    const projectCode = parts[0].replace(/\s+/g, '').toLowerCase();
+    const projectName = parts.slice(1).join(' ').replace(/\s+/g, '').toLowerCase();
+    return projectCode + (projectName ? '-' + projectName : '');
+  }
+  
+  // Handle patterns like "ED242263-PC2-Ithaki" for ED components
+  if (name.toUpperCase().startsWith('ED')) {
+    const segments = name.split('-');
+    if (segments.length >= 3) {
+      // For ED projects, typically keep first segment (ED number) and last segment (vessel name)
+      // Remove middle segments like "PC2", "PC1", etc.
+      const edNumber = segments[0].replace(/\s+/g, '').toLowerCase();
+      const vesselName = segments[segments.length - 1].replace(/\s+/g, '').toLowerCase();
+      return `${edNumber}-${vesselName}`;
+    }
+  }
+  
+  // Handle other hyphenated patterns
+  const segments = name.split('-');
+  if (segments.length > 1) {
+    // Keep all segments but remove spaces
+    return segments.map(s => s.replace(/\s+/g, '').toLowerCase()).join('-');
+  }
+  
+  // Fallback: use the whole name
+  return name.replace(/\s+/g, '').toLowerCase();
 };
 
 /**
@@ -55,10 +102,10 @@ export async function POST(request: NextRequest) {
     }, request);
 
     const pipedriveProjectMap = new Map(
-      pipedriveProjects.map((p: any) => [getComparisonKey(p.name || p.title), p]) // p.title for Pipedrive deals
+      pipedriveProjects.map((p: any) => [getPipedriveComparisonKey(p.name || p.title), p]) // p.title for Pipedrive deals
     );
     const xeroProjectMap = new Map(
-      xeroProjects.map((x: any) => [getComparisonKey(x.name), x])
+      xeroProjects.map((x: any) => [getXeroComparisonKey(x.name), x])
     );
 
     const matchedProjects: { pipedrive: any, xero: any }[] = [];
@@ -86,8 +133,8 @@ export async function POST(request: NextRequest) {
       onlyInPipedriveCount: onlyInPipedrive.length,
       onlyInXeroCount: onlyInXero.length,
       // Include names for reporting
-      projectsOnlyInPipedrive: onlyInPipedrive.map(p => ({ name: p.name || p.title, key: getComparisonKey(p.name || p.title) })),
-      projectsOnlyInXero: onlyInXero.map(x => ({ name: x.name, key: getComparisonKey(x.name) })),
+      projectsOnlyInPipedrive: onlyInPipedrive.map(p => ({ name: p.name || p.title, key: getPipedriveComparisonKey(p.name || p.title) })),
+      projectsOnlyInXero: onlyInXero.map(x => ({ name: x.name, key: getXeroComparisonKey(x.name) })),
       // matchedProjectDetails: matchedProjects.map(m => ({ pdName: m.pipedrive.name || m.pipedrive.title, xeroName: m.xero.name, key: getComparisonKey(m.pipedrive.name || m.pipedrive.title) })),
       summary: `Matched: ${matchedProjects.length}, Pipedrive only: ${onlyInPipedrive.length}, Xero only: ${onlyInXero.length}`
     };

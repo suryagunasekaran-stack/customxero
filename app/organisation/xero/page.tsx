@@ -11,6 +11,8 @@ import {
   ProjectCreateCard,
   ProjectsInProgressCard,
   InvoicesDownloadCard,
+  InvoiceUpdateCard,
+  InvoiceUpdateDirectCard,
   QuotesDownloadCard
 } from '../../../components/xero';
 import MonthlySnapshotCard from '../../../components/xero/MonthlySnapshotCard';
@@ -33,11 +35,13 @@ export default function XeroPage() {
           <SyncProjectCard disabled={false} />
             <ManhourBillingCard disabled={isSyncing} />
             <InvoicesDownloadCard disabled={isSyncing} />
+            <InvoiceUpdateCard disabled={isSyncing} />
+            <InvoiceUpdateDirectCard disabled={isSyncing} />
             <TimesheetProcessingCard disabled={isSyncing} />
             <MonthlySnapshotCard disabled={isSyncing} />
-            <ProjectsInProgressCard disabled={isSyncing} />
+            {/* <ProjectsInProgressCard disabled={isSyncing} />
             <ContactDownloadCard disabled={isSyncing} />
-            <ProjectCreateCard disabled={isSyncing} />
+            <ProjectCreateCard disabled={isSyncing} /> */}
           </div>
         </div>
       </div>

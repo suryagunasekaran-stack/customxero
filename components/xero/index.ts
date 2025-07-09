@@ -7,6 +7,8 @@ export { default as ContactDownloadCard } from './ContactDownloadCard';
 export { default as ProjectCreateCard } from './ProjectCreateCard';
 export { default as ProjectsInProgressCard } from './ProjectsInProgressCard';
 export { default as InvoicesDownloadCard } from './InvoicesDownloadCard';
+export { default as InvoiceUpdateCard } from './InvoiceUpdateCard';
+export { default as InvoiceUpdateDirectCard } from './InvoiceUpdateDirectCard';
 export { default as QuotesDownloadCard } from './QuotesDownloadCard';
 export { default as ReportDownloadOptions } from './ReportDownloadOptions';
 export { default as TenantConfirmationModal } from './TenantConfirmationModal';

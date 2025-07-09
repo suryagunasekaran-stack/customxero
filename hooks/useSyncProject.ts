@@ -240,9 +240,9 @@ Source Systems:
   - Xero (Projects)
 
 Comparison Key Logic:
-  - Extracts text before " - " in project name.
-  - Removes all spaces.
-  - Converts to lowercase.
+  - Xero: Extracts code and name (e.g., "ED255007 - Viking Passero" → "ed255007-vikingpassero")
+  - Pipedrive: For ED projects, extracts code and vessel (e.g., "ED242263-PC2-Ithaki" → "ed242263-ithaki")
+  - All keys are normalized to lowercase
 ========================================
 
 Summary:

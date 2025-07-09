@@ -96,7 +96,7 @@ export default function InvoicesDownloadCard({ disabled = false }: InvoicesDownl
           <div className="bg-gray-50 rounded-lg p-4">
             <h3 className="text-sm font-medium text-gray-900 mb-2">What this does:</h3>
             <ul className="space-y-1 text-sm text-gray-600">
-              <li>• Fetches all invoices from Xero using pagination</li>
+              <li>• Fetches sales invoices only (ACCREC type) - excludes bills</li>
               <li>• Handles Xero's 100k invoice limit safely</li>
               <li>• Supports both Excel and JSON export formats</li>
               <li>• Orders invoices by last updated date (newest first)</li>

@@ -107,7 +107,7 @@ export class ProfessionalReportGenerator {
         [''],
         ['Key Insights'],
         ['Data Source Comparison', 'Pipedrive (CRM) vs Xero (Accounting)'],
-        ['Matching Logic', 'Extract text before " - ", remove spaces, lowercase comparison'],
+        ['Matching Logic', 'Xero: Extract code and name (e.g., ED255007-vikingpassero)\nPipedrive: For ED projects, extract code and vessel name (e.g., ED242263-ithaki)'],
         ['Last Updated', new Date().toLocaleString()]
       );
     }
@@ -397,7 +397,8 @@ export class ProfessionalReportGenerator {
       reportContent += `Total Projects      : ${data.onlyInXeroCount}\n`;
     } else {
       reportContent += `Data Sources        : Pipedrive (CRM) ↔ Xero (Accounting)\n`;
-      reportContent += `Matching Algorithm  : Extract text before " - ", remove spaces, lowercase\n`;
+      reportContent += `Matching Algorithm  : Xero: code-name pattern (e.g., ED255007-vikingpassero)\n`;
+      reportContent += `                      Pipedrive: ED projects use code-vessel (e.g., ED242263-ithaki)\n`;
       reportContent += `Match Accuracy      : ${((data.matchedCount / (data.matchedCount + data.onlyInPipedriveCount + data.onlyInXeroCount)) * 100).toFixed(1)}%\n`;
     }
     

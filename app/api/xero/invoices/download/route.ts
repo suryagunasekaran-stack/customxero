@@ -61,7 +61,8 @@ export async function GET(request: NextRequest) {
     // Fetch all pages of invoices
     while (hasMorePages) {
       // Use optimized query with paging to avoid 100k limit
-      const url = `https://api.xero.com/api.xro/2.0/Invoices?page=${page}&pageSize=${pageSize}&order=UpdatedDateUTC DESC`;
+      // Filter for ACCREC (sales invoices) only, excluding ACCPAY (bills/purchase invoices)
+      const url = `https://api.xero.com/api.xro/2.0/Invoices?where=Type%3D%22ACCREC%22&page=${page}&pageSize=${pageSize}&order=UpdatedDateUTC DESC`;
       
       await SmartRateLimit.waitIfNeeded();
       
