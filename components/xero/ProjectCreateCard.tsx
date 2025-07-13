@@ -1,9 +1,12 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { PlusCircleIcon, CheckCircleIcon, CloudArrowUpIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
+import { PlusCircleIcon, CloudArrowUpIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
 import ConfirmationDialog from '../ConfirmationDialog';
 import { FunctionCardProps } from './types';
+import { downloadJSON, downloadText } from '@/utils/download';
+import { SuccessAlert, ErrorAlert } from '@/components/common/Alert';
+import { FileUploadButton } from '@/components/common/FileUpload';
 
 interface ProjectCreateCardProps extends FunctionCardProps {}
 
@@ -165,19 +168,7 @@ export default function ProjectCreateCard({ disabled = false }: ProjectCreateCar
   // Download report function
   const downloadReport = (report: { filename: string; content: string }) => {
     try {
-      const blob = new Blob([report.content], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = report.filename;
-      link.style.display = 'none';
-      
-      document.body.appendChild(link);
-      link.click();
-      
-      // Cleanup
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadText(report.content, report.filename);
       
       console.log(`[Project Creation] Downloaded report: ${report.filename}`);
     } catch (error) {
@@ -282,15 +273,7 @@ export default function ProjectCreateCard({ disabled = false }: ProjectCreateCar
   };
 
   const downloadExample = () => {
-    const blob = new Blob([exampleJson], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'example-projects.json';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    downloadJSON(JSON.parse(exampleJson), 'example-projects.json');
   };
 
   const triggerFileInput = () => {
@@ -315,21 +298,10 @@ export default function ProjectCreateCard({ disabled = false }: ProjectCreateCar
           </div>
 
           {/* Success Message */}
-          {success && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center">
-                <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2" />
-                <p className="text-sm text-green-800">{success}</p>
-              </div>
-            </div>
-          )}
+          {success && <SuccessAlert message={success} onClose={() => setSuccess(null)} />}
 
           {/* Error Message */}
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-800">{error}</p>
-            </div>
-          )}
+          {error && <ErrorAlert message={error} onClose={() => setError(null)} />}
 
           {/* Results Display */}
           {results && (results.successful.length > 0 || results.failed.length > 0) && (

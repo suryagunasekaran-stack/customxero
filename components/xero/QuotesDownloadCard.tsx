@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { DocumentTextIcon, ArrowDownTrayIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { DocumentTextIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import ConfirmationDialog from '../ConfirmationDialog';
 import { FunctionCardProps } from './types';
+import { downloadFile } from '@/utils/download';
+import { SuccessAlert, ErrorAlert } from '@/components/common/Alert';
 
 interface QuotesDownloadCardProps extends FunctionCardProps {}
 
@@ -34,16 +36,7 @@ export default function QuotesDownloadCard({ disabled = false }: QuotesDownloadC
 
       // Create blob and download
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      link.style.display = 'none';
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      downloadFile(blob, filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
       setSuccess(`Accepted quotes downloaded successfully as ${filename}`);
       
@@ -74,21 +67,10 @@ export default function QuotesDownloadCard({ disabled = false }: QuotesDownloadC
           </div>
 
           {/* Success Message */}
-          {success && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center">
-                <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2" />
-                <p className="text-sm text-green-800">{success}</p>
-              </div>
-            </div>
-          )}
+          {success && <SuccessAlert message={success} onClose={() => setSuccess(null)} />}
 
           {/* Error Message */}
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-800">{error}</p>
-            </div>
-          )}
+          {error && <ErrorAlert message={error} onClose={() => setError(null)} />}
 
           {/* Description */}
           <div className="mb-6">

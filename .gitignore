@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated files
+batch-summary.json
+scripts/split-payload.js
+
+# example/test files
+*.example.ts
+*.optimized.ts

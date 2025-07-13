@@ -1,9 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { UserGroupIcon, ArrowDownTrayIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { UserGroupIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import ConfirmationDialog from '../ConfirmationDialog';
 import { FunctionCardProps } from './types';
+import { downloadFile } from '@/utils/download';
+import { SuccessAlert, ErrorAlert } from '@/components/common/Alert';
+import { FunctionBaseCard } from '@/components/common/BaseCard';
 
 interface ContactDownloadCardProps extends FunctionCardProps {}
 
@@ -35,16 +38,7 @@ export default function ContactDownloadCard({ disabled = false }: ContactDownloa
 
       // Create blob and download
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      link.style.display = 'none';
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      downloadFile(blob, filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
       // Try to get contact count from response (if available)
       // This is a rough estimate since we can't easily get it from the Excel file
@@ -61,37 +55,19 @@ export default function ContactDownloadCard({ disabled = false }: ContactDownloa
 
   return (
     <>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
-        <div className="p-6">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-xl font-semibold text-gray-900">Contact Download</h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Download all Xero contacts as Excel file
-              </p>
-            </div>
-            <div className="p-2 bg-green-100 rounded-lg">
-              <UserGroupIcon className="h-6 w-6 text-green-600" />
-            </div>
-          </div>
+      <FunctionBaseCard
+        title="Contact Download"
+        description="Download all Xero contacts as Excel file"
+        icon={<UserGroupIcon className="h-6 w-6 text-green-600" />}
+        iconBackgroundColor="bg-green-100"
+        disabled={disabled}
+      >
 
           {/* Success Message */}
-          {success && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center">
-                <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2" />
-                <p className="text-sm text-green-800">{success}</p>
-              </div>
-            </div>
-          )}
+          {success && <SuccessAlert message={success} onClose={() => setSuccess(null)} />}
 
           {/* Error Message */}
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-sm text-red-800">{error}</p>
-            </div>
-          )}
+          {error && <ErrorAlert message={error} onClose={() => setError(null)} />}
 
           {/* Description */}
           <div className="mb-6">
@@ -157,8 +133,7 @@ export default function ContactDownloadCard({ disabled = false }: ContactDownloa
               </>
             )}
           </button>
-        </div>
-      </div>
+      </FunctionBaseCard>
 
       {/* Confirmation Dialog */}
       <ConfirmationDialog

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { CameraIcon, CalendarDaysIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import ConfirmationDialog from '../ConfirmationDialog';
+import { downloadJSON } from '@/utils/download';
 
 interface MonthlySnapshotCardProps {
   disabled?: boolean;
@@ -48,15 +49,7 @@ export default function MonthlySnapshotCard({ disabled = false }: MonthlySnapsho
 
       // Auto-download report
       if (data.downloadableReport) {
-        const blob = new Blob([data.downloadableReport.content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = data.downloadableReport.filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+        downloadJSON(JSON.parse(data.downloadableReport.content), data.downloadableReport.filename);
       }
 
       // Reset success state after 5 seconds

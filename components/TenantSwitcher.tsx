@@ -35,19 +35,29 @@ export default function TenantSwitcher() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchTenants();
-  }, []);
+    let cancelled = false;
 
-  const fetchTenants = async () => {
-    try {
-      const data = await apiCall<TenantsData>('/api/tenants');
-      setTenantsData(data);
-    } catch (error) {
-      // Error already logged by onError callback
-    } finally {
-      setLoading(false);
-    }
-  };
+    const fetchTenants = async () => {
+      try {
+        const data = await apiCall<TenantsData>('/api/tenants');
+        if (!cancelled) {
+          setTenantsData(data);
+        }
+      } catch (error) {
+        // Error already logged by onError callback
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchTenants();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiCall]);
 
   const handleTenantSwitch = async (tenantId: string) => {
     if (tenantId === tenantsData?.selectedTenant) return;

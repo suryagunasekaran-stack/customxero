@@ -1,5 +1,13 @@
 import NextAuth from "next-auth"
 import type { NextAuthConfig } from "next-auth"
+import type { 
+  XeroJWT, 
+  XeroSession, 
+  UserInfoContext, 
+  DecodedToken,
+  TokenRefreshResponse,
+  XeroTenant 
+} from "@/types/auth.types"
 
 /**
  * Dynamically imports xeroTokenManager to avoid edge runtime issues
@@ -27,7 +35,7 @@ export const authConfig: NextAuthConfig = {
         },
       },
       userinfo: {
-        request: async (context: any) => {
+        request: async (context: UserInfoContext) => {
           // Return the ID token claims instead of calling userinfo with proper error handling
           try {
             if (!context?.tokens?.id_token) {
@@ -54,14 +62,14 @@ export const authConfig: NextAuthConfig = {
             }
             
             const decoded = Buffer.from(payload, 'base64').toString();
-            return JSON.parse(decoded);
+            return JSON.parse(decoded) as DecodedToken;
           } catch (error) {
             console.error('[Auth] Error parsing ID token:', error);
             return {};
           }
         }
       },
-      profile(profile) {
+      profile(profile: DecodedToken) {
         return {
           id: profile.sub,
           name: profile.name || `${profile.given_name} ${profile.family_name}`,
@@ -71,11 +79,11 @@ export const authConfig: NextAuthConfig = {
     },
   ],
   callbacks: {
-    async jwt({ token, account }) {
+    async jwt({ token, account }): Promise<XeroJWT> {
       if (account?.access_token) {
-        token.accessToken = account.access_token
-        token.refreshToken = account.refresh_token
-        token.expiresAt = account.expires_at
+        token.access_token = account.access_token
+        token.refresh_token = account.refresh_token
+        token.expires_at = account.expires_at
         
         // Get tenantId from Xero connections
         try {
@@ -86,10 +94,8 @@ export const authConfig: NextAuthConfig = {
             },
           })
           if (res.ok) {
-            const connections = await res.json()
+            const connections: XeroTenant[] = await res.json()
             token.tenants = connections
-            // Set default tenant to first one
-            token.tenantId = connections[0]?.tenantId
           }
         } catch (error) {
           console.error("Failed to fetch Xero connections:", error)
@@ -99,22 +105,21 @@ export const authConfig: NextAuthConfig = {
       // Return previous token if the access token has not expired yet
       // Use a 5 minute buffer to refresh tokens proactively
       const fiveMinutesInMs = 5 * 60 * 1000;
-      if (token.expiresAt && Date.now() < ((token.expiresAt as number) * 1000 - fiveMinutesInMs)) {
-        return token
+      if (token.expires_at && Date.now() < ((token.expires_at as number) * 1000 - fiveMinutesInMs)) {
+        return token as XeroJWT
       }
       
       // Access token has expired or will expire soon, try to update it
-      return refreshAccessToken(token)
+      return refreshAccessToken(token as XeroJWT)
     },
-    async session({ session, token }) {
-      session.accessToken = token.accessToken as string
-      session.refreshToken = token.refreshToken as string
-      session.expiresAt = token.expiresAt as number
-      session.error = token.error as string | undefined
+    async session({ session, token }): Promise<XeroSession> {
+      const xeroToken = token as XeroJWT;
+      const xeroSession = session as XeroSession;
+      
+      xeroSession.error = xeroToken.error;
       
       // Get tenant data from token
-      session.tenants = token.tenants as any[] || [];
-      session.tenantId = token.tenantId as string;
+      xeroSession.tenants = xeroToken.tenants || [];
       
       // Try to get selected tenant from Redis (with error handling)
       try {
@@ -129,7 +134,7 @@ export const authConfig: NextAuthConfig = {
         // Continue with token tenant if Redis fails
       }
       
-      return session
+      return xeroSession
     },
   },
   pages: {
@@ -146,15 +151,15 @@ export const authConfig: NextAuthConfig = {
 
 /**
  * Refreshes an expired Xero access token using the refresh token
- * @param {any} token - The current token object containing refresh token
- * @returns {Promise<any>} Updated token object with new access token or error state
+ * @param {XeroJWT} token - The current token object containing refresh token
+ * @returns {Promise<XeroJWT>} Updated token object with new access token or error state
  */
-async function refreshAccessToken(token: any) {
+async function refreshAccessToken(token: XeroJWT): Promise<XeroJWT> {
   try {
     // Log refresh attempt for debugging
     console.log(`[Auth] Attempting to refresh token at ${new Date().toISOString()}`);
     
-    if (!token.refreshToken) {
+    if (!token.refresh_token) {
       console.error('[Auth] No refresh token available');
       throw new Error('No refresh token available');
     }
@@ -169,11 +174,11 @@ async function refreshAccessToken(token: any) {
       },
       body: new URLSearchParams({
         grant_type: "refresh_token",
-        refresh_token: token.refreshToken,
+        refresh_token: token.refresh_token,
       }),
     })
 
-    const refreshedTokens = await response.json()
+    const refreshedTokens: TokenRefreshResponse = await response.json()
 
     if (!response.ok) {
       console.error('[Auth] Token refresh failed:', {
@@ -187,16 +192,16 @@ async function refreshAccessToken(token: any) {
     console.log('[Auth] Token refreshed successfully');
 
     // Update token with new values
-    const updatedToken = {
+    const updatedToken: XeroJWT = {
       ...token,
-      accessToken: refreshedTokens.access_token,
-      expiresAt: Date.now() / 1000 + refreshedTokens.expires_in,
-      refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
+      access_token: refreshedTokens.access_token,
+      expires_at: Math.floor(Date.now() / 1000) + refreshedTokens.expires_in,
+      refresh_token: refreshedTokens.refresh_token ?? token.refresh_token,
       error: undefined // Clear any previous errors
     };
 
     // If we have a new refresh token, update tenants as well
-    if (refreshedTokens.refresh_token && refreshedTokens.refresh_token !== token.refreshToken) {
+    if (refreshedTokens.refresh_token && refreshedTokens.refresh_token !== token.refresh_token) {
       try {
         const res = await fetch("https://api.xero.com/connections", {
           headers: {
@@ -205,11 +210,8 @@ async function refreshAccessToken(token: any) {
           },
         });
         if (res.ok) {
-          const connections = await res.json();
+          const connections: XeroTenant[] = await res.json();
           updatedToken.tenants = connections;
-          if (!updatedToken.tenantId && connections.length > 0) {
-            updatedToken.tenantId = connections[0].tenantId;
-          }
         }
       } catch (error) {
         console.error("[Auth] Failed to update tenants after refresh:", error);

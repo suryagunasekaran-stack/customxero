@@ -7,9 +7,6 @@ import {
   ManhourBillingCard,
   TimesheetProcessingCard,
   ContactUpdateCard,
-  ContactDownloadCard,
-  ProjectCreateCard,
-  ProjectsInProgressCard,
   InvoicesDownloadCard,
   InvoiceUpdateCard,
   InvoiceUpdateDirectCard,
@@ -39,9 +36,6 @@ export default function XeroPage() {
             <InvoiceUpdateDirectCard disabled={isSyncing} />
             <TimesheetProcessingCard disabled={isSyncing} />
             <MonthlySnapshotCard disabled={isSyncing} />
-            {/* <ProjectsInProgressCard disabled={isSyncing} />
-            <ContactDownloadCard disabled={isSyncing} />
-            <ProjectCreateCard disabled={isSyncing} /> */}
           </div>
         </div>
       </div>
