@@ -260,6 +260,40 @@ export class XeroTokenManager {
   }
 
   /**
+   * Clears all token data for a user (useful for auth errors)
+   * @param {string} userId - User identifier (typically email)
+   * @returns {Promise<void>} Promise that resolves when clear is complete
+   */
+  async clearUserTokens(userId: string): Promise<void> {
+    if (!userId || typeof userId !== 'string' || !userId.trim()) {
+      console.warn('clearUserTokens called with invalid userId:', userId);
+      return;
+    }
+    
+    try {
+      // Clear from memory store
+      this.memoryTenantStore.delete(userId);
+      
+      if (!(await this.isRedisReady())) {
+        console.warn('Redis not ready, only cleared from memory');
+        return;
+      }
+      
+      // Clear all user-related keys from Redis
+      const keys = [
+        this.getUserKey(userId, 'tenants'),
+        this.getUserKey(userId, 'selected_tenant'),
+        `xero:token:${userId}`
+      ];
+      
+      await this.redis.del(...keys);
+      console.log(`[XeroTokenManager] Cleared all tokens for user ${userId}`);
+    } catch (error) {
+      console.warn('Error clearing user tokens:', (error as Error).message);
+    }
+  }
+
+  /**
    * Store user's token data
    * @param {string} userId - User identifier
    * @param {string} accessToken - Access token

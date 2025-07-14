@@ -81,7 +81,12 @@ interface DirectProcessingResult {
 }
 
 // Extract project code from project name (same logic as in XeroProjectService)
-function extractProjectCode(projectName: string): string {
+function extractProjectCode(projectName: string | undefined | null): string {
+  // Handle undefined or null project names
+  if (!projectName || typeof projectName !== 'string') {
+    return '';
+  }
+  
   // Common patterns for project codes:
   // 1. "NY250388 - USS SAVANNAH (LCS 28)" -> "NY250388"
   // 2. "ED25002 - Titanic" -> "ED25002"

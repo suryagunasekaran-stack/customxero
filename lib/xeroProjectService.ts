@@ -1,6 +1,7 @@
 import { ensureValidToken } from './ensureXeroToken';
 import { trackXeroApiCall } from './xeroApiTracker';
 import { SmartRateLimit } from './smartRateLimit';
+import { createLogger, logApiRequest } from './logger';
 
 export interface XeroProject {
   projectId: string;
@@ -45,6 +46,7 @@ export interface ProjectData {
 }
 
 export class XeroProjectService {
+  private static logger = createLogger('XeroProjectService');
   /**
    * Gets project data directly from Xero API (no caching)
    * @param {string} [status] - Optional status filter (INPROGRESS, CLOSED)
@@ -110,12 +112,13 @@ export class XeroProjectService {
    * @returns {Promise<XeroProject[]>} Array of all projects
    */
   private static async fetchAllProjects(accessToken: string, tenantId: string, status?: string): Promise<XeroProject[]> {
+    const startTime = Date.now();
     const allProjects: XeroProject[] = [];
     let page = 1;
     const pageSize = 100;
     let hasMorePages = true;
 
-    console.log(`[XeroProjectService] Starting to fetch projects (status: ${status || 'all'})...`);
+    this.logger.info({ status: status || 'all' }, 'Starting to fetch projects');
 
     while (hasMorePages) {
       try {
@@ -139,14 +142,21 @@ export class XeroProjectService {
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error(`[XeroProjectService] Error fetching projects page ${page}:`, response.status, errorText);
+          this.logger.error({ 
+            page, 
+            status: response.status, 
+            error: errorText 
+          }, 'Error fetching projects page');
           throw new Error(`Failed to fetch projects page ${page}: ${response.status} ${errorText}`);
         }
 
         const data = await response.json();
         const projects = data.items || [];
         
-        console.log(`[XeroProjectService] Fetched ${projects.length} projects from page ${page}`);
+        this.logger.debug({ 
+          page, 
+          projectCount: projects.length 
+        }, 'Fetched projects from page');
         
         allProjects.push(...projects);
 
@@ -156,17 +166,25 @@ export class XeroProjectService {
 
         // Safety check to prevent infinite loops
         if (page > 50) {
-          console.warn('[XeroProjectService] Reached maximum page limit (50), stopping pagination');
+          this.logger.warn({ page }, 'Reached maximum page limit (50), stopping pagination');
           break;
         }
 
       } catch (error) {
-        console.error(`[XeroProjectService] Error fetching projects page ${page}:`, error);
+        this.logger.error({ 
+          page, 
+          error: (error as Error).message 
+        }, 'Error fetching projects page');
         throw error;
       }
     }
 
-    console.log(`[XeroProjectService] Successfully fetched ${allProjects.length} projects (status: ${status || 'all'})`);
+    this.logger.info({ 
+      projectCount: allProjects.length, 
+      status: status || 'all' 
+    }, 'Successfully fetched all projects');
+    
+    logApiRequest('GET', '/projects', 200, Date.now() - startTime);
     return allProjects;
   }
 
@@ -175,7 +193,12 @@ export class XeroProjectService {
    * @param {string} projectName - Full project name
    * @returns {string} Extracted project code
    */
-  private static extractProjectCode(projectName: string): string {
+  private static extractProjectCode(projectName: string | undefined | null): string {
+    // Handle undefined or null project names
+    if (!projectName || typeof projectName !== 'string') {
+      return '';
+    }
+    
     // Common patterns for project codes:
     // 1. "NY250388 - USS SAVANNAH (LCS 28)" -> "NY250388"
     // 2. "ED25002 - Titanic" -> "ED25002"

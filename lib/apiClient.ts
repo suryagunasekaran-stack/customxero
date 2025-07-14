@@ -92,19 +92,29 @@ export class ApiClient {
           if (attempt === 0 && !this.isRefreshing) {
             this.isRefreshing = true;
             
-            // Force a router refresh which triggers NextAuth to check and refresh token
+            // Try to refresh the session
             if (typeof window !== 'undefined') {
-              const { router } = await import('next/navigation');
-              router.refresh();
-              
-              // Wait a bit for the refresh to complete
-              await new Promise(resolve => setTimeout(resolve, retryDelay));
-              
-              this.isRefreshing = false;
-              this.onRefreshed('refreshed');
-              
-              // Retry the request
-              continue;
+              try {
+                // Try to get a new session from NextAuth
+                const { getSession } = await import('next-auth/react');
+                await getSession();
+                
+                // Wait a bit for the session to update
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                
+                this.isRefreshing = false;
+                this.onRefreshed('refreshed');
+                
+                // Retry the request
+                continue;
+              } catch (refreshError) {
+                console.error('Failed to refresh session:', refreshError);
+                this.isRefreshing = false;
+                this.onRefreshed('failed');
+                // If refresh fails, reload the page as last resort
+                window.location.reload();
+                return response;
+              }
             }
           }
         }

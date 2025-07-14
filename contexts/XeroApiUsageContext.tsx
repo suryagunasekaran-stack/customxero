@@ -164,6 +164,21 @@ export const XeroApiUsageProvider = ({ children }: { children: ReactNode }) => {
   const refreshUsage = useCallback(async () => {
     try {
       const response = await fetch('/api/xero/api-usage');
+      
+      // Check for auth errors
+      if (response.status === 401) {
+        const data = await response.json();
+        if (data.requiresAuth || data.code === 'REFRESH_TOKEN_FAILED') {
+          // Import dynamically to avoid SSR issues
+          const { signOut } = await import('next-auth/react');
+          await signOut({ 
+            callbackUrl: '/auth/error?error=TokenRefreshFailed',
+            redirect: true 
+          });
+          return;
+        }
+      }
+      
       if (response.ok) {
         const serverUsage = await response.json();
         

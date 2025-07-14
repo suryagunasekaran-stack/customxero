@@ -2,7 +2,8 @@
 
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
+import { signOut } from 'next-auth/react';
 
 /**
  * Authentication error content component that displays specific error messages
@@ -12,6 +13,15 @@ import { Suspense } from 'react';
 function AuthErrorContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
+
+  useEffect(() => {
+    // Clear session storage and ensure clean state for token refresh errors
+    if (error === 'TokenRefreshFailed') {
+      sessionStorage.clear();
+      // Ensure we're fully signed out
+      signOut({ redirect: false });
+    }
+  }, [error]);
 
   const errorMessages: Record<string, string> = {
     Configuration: 'There is a problem with the server configuration.',
@@ -24,6 +34,7 @@ function AuthErrorContent() {
     Callback: 'Error in the OAuth callback handler route.',
     OAuthAccountNotLinked: 'This account is already linked with another user.',
     SessionRequired: 'Please sign in to access this page.',
+    TokenRefreshFailed: 'Your session has expired. Please sign in again to continue.',
     Default: 'Unable to sign in.',
   };
 

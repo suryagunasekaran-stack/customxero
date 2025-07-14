@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getXeroApiUsage } from '@/lib/xeroApiTracker';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
+import { createAuthResponse } from '@/lib/authErrorHandler';
 
 export async function GET() {
   try {
@@ -29,6 +30,13 @@ export async function GET() {
     return NextResponse.json(usage);
   } catch (error) {
     console.error('[Xero API Usage Route] Error fetching usage:', error);
+    
+    // Check if this is an auth error
+    const authResponse = createAuthResponse(error);
+    if (authResponse) {
+      return NextResponse.json(authResponse, { status: 401 });
+    }
+    
     return NextResponse.json(
       { error: 'Failed to fetch API usage data' },
       { status: 500 }

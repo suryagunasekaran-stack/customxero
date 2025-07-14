@@ -22,12 +22,16 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
         throw new Error('No authenticated session. Please login.');
     }
     
+    const userEmail = session.user?.email;
+    
     // Check for errors in session
     if (session.error === 'RefreshAccessTokenError' || session.error === 'NoRefreshToken') {
+        // Clear invalid tokens before throwing error
+        if (userEmail) {
+            await xeroTokenManager.clearUserTokens(userEmail);
+        }
         throw new Error('Failed to refresh token. Please re-authenticate.');
     }
-    
-    const userEmail = session.user?.email;
     if (!userEmail) {
         throw new Error('No user email found in session.');
     }

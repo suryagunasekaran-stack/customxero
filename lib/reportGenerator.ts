@@ -21,6 +21,16 @@ export interface ProjectComparisonData {
   matchedProjects?: Array<{ pipedriveProject: any; xeroProject: any; key: string }>;
   pipedriveDisabled?: boolean;
   pipedriveError?: string;
+  rawPipedriveDeals?: any[];
+  rawXeroProjects?: any[];
+  valueDiscrepancies?: Array<{
+    projectName: string;
+    projectKey: string;
+    pipedriveValue: number;
+    xeroValue: number;
+    difference: number;
+    differencePercentage: number;
+  }>;
 }
 
 export class ProfessionalReportGenerator {
@@ -104,10 +114,12 @@ export class ProfessionalReportGenerator {
         ['Sync Status'],
         ['Synchronization Level', this.getSyncStatus(data)],
         ['Action Required', data.onlyInPipedriveCount > 0 || data.onlyInXeroCount > 0 ? 'Yes' : 'No'],
+        ['Value Discrepancies', (data.valueDiscrepancies?.length || 0).toString()],
         [''],
         ['Key Insights'],
         ['Data Source Comparison', 'Pipedrive (CRM) vs Xero (Accounting)'],
-        ['Matching Logic', 'Xero: Extract code and name (e.g., ED255007-vikingpassero)\nPipedrive: For ED projects, extract code and vessel name (e.g., ED242263-ithaki)'],
+        ['Matching Logic', 'Enhanced multi-strategy matching: ED codes, project numbers, fuzzy name matching'],
+        ['Match Quality', data.matchedCount > 0 ? 'Successful matches found' : 'No matches - review naming conventions'],
         ['Last Updated', new Date().toLocaleString()]
       );
     }
@@ -203,11 +215,86 @@ export class ProfessionalReportGenerator {
       XLSX.utils.book_append_sheet(workbook, matchedSheet, 'Matched Projects');
     }
 
-    // Raw Data Sheet
-    const rawData = [
-      ['Raw Analysis Data'],
-      [''],
+    // Value Discrepancies Sheet (if available)
+    if (data.valueDiscrepancies && data.valueDiscrepancies.length > 0) {
+      const discrepanciesData = [
+        ['Value Discrepancies Report', '', '', '', '', ''],
+        ['Projects with financial differences between systems', '', '', '', '', ''],
+        [''],
+        ['Project Name', 'Matching Key', 'Pipedrive Value', 'Xero Value', 'Difference', 'Difference %']
+      ];
+
+      data.valueDiscrepancies.forEach((discrepancy) => {
+        discrepanciesData.push([
+          discrepancy.projectName,
+          discrepancy.projectKey,
+          discrepancy.pipedriveValue.toFixed(2),
+          discrepancy.xeroValue.toFixed(2),
+          discrepancy.difference.toFixed(2),
+          `${discrepancy.differencePercentage.toFixed(1)}%`
+        ]);
+      });
+
+      const discrepanciesSheet = XLSX.utils.aoa_to_sheet(discrepanciesData);
+      XLSX.utils.book_append_sheet(workbook, discrepanciesSheet, 'Value Discrepancies');
+    }
+
+    // Raw Pipedrive Data Sheet
+    if (data.rawPipedriveDeals && data.rawPipedriveDeals.length > 0) {
+      const pipedriveRawData = [
+        ['Raw Pipedrive Deals Data', '', '', '', '', '', ''],
+        ['Complete export of won deals from Pipedrive', '', '', '', '', '', ''],
+        [''],
+        ['Deal ID', 'Title', 'Value', 'Currency', 'Won Time', 'Organization', 'Status']
+      ];
+
+      data.rawPipedriveDeals.forEach((deal) => {
+        pipedriveRawData.push([
+          deal.id || '',
+          deal.title || '',
+          deal.value || 0,
+          deal.currency || 'USD',
+          deal.won_time ? new Date(deal.won_time).toLocaleString() : '',
+          deal.org_name || '',
+          deal.status || ''
+        ]);
+      });
+
+      const pipedriveRawSheet = XLSX.utils.aoa_to_sheet(pipedriveRawData);
+      XLSX.utils.book_append_sheet(workbook, pipedriveRawSheet, 'Raw Pipedrive Data');
+    }
+
+    // Raw Xero Data Sheet
+    if (data.rawXeroProjects && data.rawXeroProjects.length > 0) {
+      const xeroRawData = [
+        ['Raw Xero Projects Data', '', '', '', '', '', '', ''],
+        ['Complete export of projects from Xero', '', '', '', '', '', '', ''],
+        [''],
+        ['Project ID', 'Name', 'Contact Name', 'Status', 'Start Date', 'Total Amount', 'Currency', 'Deadline']
+      ];
+
+      data.rawXeroProjects.forEach((project) => {
+        xeroRawData.push([
+          project.projectId || '',
+          project.name || '',
+          project.contactName || '',
+          project.status || '',
+          project.startDate ? new Date(project.startDate).toLocaleDateString() : '',
+          project.totalAmount?.value || 0,
+          project.totalAmount?.currency || 'USD',
+          project.deadlineDate ? new Date(project.deadlineDate).toLocaleDateString() : 'N/A'
+        ]);
+      });
+
+      const xeroRawSheet = XLSX.utils.aoa_to_sheet(xeroRawData);
+      XLSX.utils.book_append_sheet(workbook, xeroRawSheet, 'Raw Xero Data');
+    }
+
+    // Summary Statistics Sheet
+    const statsData = [
       ['Summary Statistics'],
+      [''],
+      ['Overall Metrics'],
       ['Metric', 'Value'],
       ['Total Projects in Pipedrive', data.onlyInPipedriveCount + data.matchedCount],
       ['Total Projects in Xero', data.onlyInXeroCount + data.matchedCount],
@@ -216,15 +303,21 @@ export class ProfessionalReportGenerator {
       ['Unmatched in Xero', data.onlyInXeroCount],
       ['Match Percentage', `${((data.matchedCount / (data.matchedCount + data.onlyInPipedriveCount + data.onlyInXeroCount)) * 100).toFixed(1)}%`],
       [''],
+      ['Matching Analysis'],
+      ['Projects with Exact Name Match', data.matchedCount],
+      ['Projects Requiring Manual Review', data.onlyInPipedriveCount + data.onlyInXeroCount],
+      ['Value Discrepancies Found', data.valueDiscrepancies?.length || 0],
+      [''],
       ['Report Generation Details'],
       ['Generated At', metadata.generatedAt.toISOString()],
       ['Report Type', metadata.reportType],
       ['Version', metadata.version],
-      ['Tenant', `${metadata.tenantName} (${metadata.tenantId})`]
+      ['Tenant', `${metadata.tenantName} (${metadata.tenantId})`],
+      ['User', `${metadata.generatedBy} (${metadata.userEmail})`]
     ];
 
-    const rawSheet = XLSX.utils.aoa_to_sheet(rawData);
-    XLSX.utils.book_append_sheet(workbook, rawSheet, 'Raw Data');
+    const statsSheet = XLSX.utils.aoa_to_sheet(statsData);
+    XLSX.utils.book_append_sheet(workbook, statsSheet, 'Statistics');
 
     // Generate and save the file
     const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });

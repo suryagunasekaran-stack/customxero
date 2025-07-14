@@ -122,13 +122,17 @@ export async function GET() {
       const projects = allDeals.map((deal: any) => ({
         id: deal.id,
         name: deal.title,
+        title: deal.title, // Add title field for compatibility
         status: deal.status,
         stage_id: deal.stage_id,
         stage_name: stageMap.get(deal.stage_id) || 'Unknown Stage', // Add stage_name
-        // value: deal.value,
-        // currency: deal.currency,
-        // add_time: deal.add_time,
-        // update_time: deal.update_time
+        value: deal.value,
+        currency: deal.currency,
+        org_name: deal.org_name,
+        person_name: deal.person_name,
+        add_time: deal.add_time,
+        update_time: deal.update_time,
+        won_time: deal.won_time
       }));
 
       console.log(`API: Successfully processed a total of ${projects.length} projects from Pipedrive for tenant ${effective_tenant_id} (${tenantConfig.description}).`);

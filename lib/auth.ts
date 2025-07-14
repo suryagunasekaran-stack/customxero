@@ -204,34 +204,37 @@ async function refreshAccessToken(token: XeroJWT): Promise<XeroJWT> {
       }),
     })
 
-    const refreshedTokens: TokenRefreshResponse = await response.json()
+    const refreshedTokens = await response.json()
 
     if (!response.ok) {
       console.error('[Auth] Token refresh failed:', {
         status: response.status,
-        error: refreshedTokens.error,
-        error_description: refreshedTokens.error_description
+        error: refreshedTokens.error || 'Unknown error',
+        error_description: refreshedTokens.error_description || 'No description'
       });
-      throw refreshedTokens
+      throw new Error(refreshedTokens.error || 'Token refresh failed')
     }
 
     console.log('[Auth] Token refreshed successfully');
 
+    // Cast to TokenRefreshResponse after successful response
+    const tokenResponse = refreshedTokens as TokenRefreshResponse;
+
     // Update token with new values
     const updatedToken: XeroJWT = {
       ...token,
-      access_token: refreshedTokens.access_token,
-      expires_at: Math.floor(Date.now() / 1000) + refreshedTokens.expires_in,
-      refresh_token: refreshedTokens.refresh_token ?? token.refresh_token,
+      access_token: tokenResponse.access_token,
+      expires_at: Math.floor(Date.now() / 1000) + tokenResponse.expires_in,
+      refresh_token: tokenResponse.refresh_token ?? token.refresh_token,
       error: undefined // Clear any previous errors
     };
 
     // If we have a new refresh token, update tenants as well
-    if (refreshedTokens.refresh_token && refreshedTokens.refresh_token !== token.refresh_token) {
+    if (tokenResponse.refresh_token && tokenResponse.refresh_token !== token.refresh_token) {
       try {
         const res = await fetch("https://api.xero.com/connections", {
           headers: {
-            Authorization: `Bearer ${refreshedTokens.access_token}`,
+            Authorization: `Bearer ${tokenResponse.access_token}`,
             Accept: "application/json",
           },
         });

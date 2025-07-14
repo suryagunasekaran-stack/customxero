@@ -8,7 +8,8 @@ export interface XeroTenant {
   tenantId: string;
   tenantName: string;
   tenantType: string;
-  createdDateUtc?: string;
+  createdDateUtc: string;
+  updatedDateUtc: string;
 }
 
 /**
@@ -80,6 +81,7 @@ export interface DecodedToken {
   name?: string;
   given_name?: string;
   family_name?: string;
+  preferred_username?: string;
   xero_userid?: string;
   iss?: string;
   aud?: string;
