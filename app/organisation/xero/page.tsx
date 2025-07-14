@@ -31,11 +31,11 @@ export default function XeroPage() {
           <div className="grid gap-6 md:grid-cols-2">
           <SyncProjectCard disabled={false} />
             <ManhourBillingCard disabled={isSyncing} />
-            <InvoicesDownloadCard disabled={isSyncing} />
+            {/* <InvoicesDownloadCard disabled={isSyncing} />
             <InvoiceUpdateCard disabled={isSyncing} />
-            <InvoiceUpdateDirectCard disabled={isSyncing} />
+            <InvoiceUpdateDirectCard disabled={isSyncing} /> */}
             <TimesheetProcessingCard disabled={isSyncing} />
-            <MonthlySnapshotCard disabled={isSyncing} />
+            {/* <MonthlySnapshotCard disabled={isSyncing} /> */}
           </div>
         </div>
       </div>

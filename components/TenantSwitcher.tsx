@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Menu, 
@@ -27,8 +27,14 @@ interface TenantsData {
 
 export default function TenantSwitcher() {
   const router = useRouter();
+  
+  // Memoize the error handler to prevent recreating apiCall
+  const handleError = useCallback((error: Error) => {
+    console.error('Failed to fetch tenants:', error);
+  }, []);
+  
   const { apiCall } = useApiClient({
-    onError: (error) => console.error('Failed to fetch tenants:', error)
+    onError: handleError
   });
   const [tenantsData, setTenantsData] = useState<TenantsData | null>(null);
   const [switching, setSwitching] = useState<string | null>(null);

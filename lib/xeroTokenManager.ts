@@ -47,6 +47,13 @@ export interface UserXeroData {
   selectedTenant: string | null;
 }
 
+export interface TokenData {
+  access_token: string;
+  refresh_token: string;
+  expires_at: number;
+  tenants?: XeroTenant[];
+}
+
 export class XeroTokenManager {
   private static instance: XeroTokenManager;
   private redis: Redis;
@@ -250,6 +257,68 @@ export class XeroTokenManager {
           } catch (error) {
         console.warn('Error deleting user data (non-critical):', (error as Error).message);
       }
+  }
+
+  /**
+   * Store user's token data
+   * @param {string} userId - User identifier
+   * @param {string} accessToken - Access token
+   * @param {string} refreshToken - Refresh token
+   * @param {number} expiresAt - Token expiration timestamp
+   * @param {XeroTenant[]} tenants - Available tenants
+   * @returns {Promise<void>}
+   */
+  async updateToken(
+    userId: string,
+    accessToken: string,
+    refreshToken: string,
+    expiresAt: number,
+    tenants: XeroTenant[]
+  ): Promise<void> {
+    if (!userId || !accessToken || !refreshToken) {
+      console.error('[XeroTokenManager] Invalid token data provided');
+      return;
+    }
+
+    const tokenData: TokenData = {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_at: expiresAt,
+      tenants
+    };
+
+    const key = `xero:token:${userId}`;
+    const ttl = Math.max(0, Math.floor(expiresAt - (Date.now() / 1000)));
+
+    await this.safeRedisOperation(async () => {
+      if (await this.isRedisReady()) {
+        await this.redis.set(key, JSON.stringify(tokenData), 'EX', ttl);
+        console.log(`[XeroTokenManager] Token stored for user ${userId}`);
+      }
+    }, undefined);
+  }
+
+  /**
+   * Get user's token data
+   * @param {string} userId - User identifier
+   * @returns {Promise<TokenData | null>} Token data or null if not found
+   */
+  async getToken(userId: string): Promise<TokenData | null> {
+    if (!userId) {
+      return null;
+    }
+
+    const key = `xero:token:${userId}`;
+
+    return await this.safeRedisOperation(async () => {
+      if (await this.isRedisReady()) {
+        const data = await this.redis.get(key);
+        if (data) {
+          return JSON.parse(data) as TokenData;
+        }
+      }
+      return null;
+    }, null);
   }
 
   /**

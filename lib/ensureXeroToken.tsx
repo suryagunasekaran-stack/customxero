@@ -22,7 +22,20 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
         throw new Error('No authenticated session. Please login.');
     }
     
-    if (!session.accessToken) {
+    // Check for errors in session
+    if (session.error === 'RefreshAccessTokenError' || session.error === 'NoRefreshToken') {
+        throw new Error('Failed to refresh token. Please re-authenticate.');
+    }
+    
+    const userEmail = session.user?.email;
+    if (!userEmail) {
+        throw new Error('No user email found in session.');
+    }
+    
+    // Get token from token manager
+    const tokenData = await xeroTokenManager.getToken(userEmail);
+    
+    if (!tokenData || !tokenData.access_token) {
         throw new Error('No access token found. Please re-authenticate.');
     }
 
@@ -30,18 +43,10 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
     const now = Date.now() / 1000;
     const buffer = 300; // 5 minutes buffer to match auth.ts
     
-    if (session.expiresAt && session.expiresAt <= now + buffer) {
-        if (session.error === 'RefreshAccessTokenError') {
-            throw new Error('Failed to refresh token. Please re-authenticate.');
-        }
+    if (tokenData.expires_at && tokenData.expires_at <= now + buffer) {
         // Token is about to expire or has expired
         // This shouldn't happen if auth.ts is refreshing proactively
         throw new Error('Token expired or expiring soon. Please try again.');
-    }
-    
-    const userEmail = session.user?.email;
-    if (!userEmail || typeof userEmail !== 'string' || !userEmail.trim()) {
-        throw new Error('Invalid user session - no valid email found');
     }
     
     const userId = userEmail.trim();
@@ -59,10 +64,6 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
     
     if (redisTenantId) {
         finalTenantId = redisTenantId;
-    } else if (session.tenantId) {
-        finalTenantId = session.tenantId;
-        // Save it to Redis for consistency
-        await xeroTokenManager.saveSelectedTenant(userId, session.tenantId);
     } else if (availableTenants && availableTenants.length > 0) {
         const defaultTenant = availableTenants.find((t: any) => t.tenantType === 'ORGANISATION') || availableTenants[0];
         finalTenantId = defaultTenant.tenantId;
@@ -78,7 +79,7 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
     }
     
     return {
-        access_token: session.accessToken,
+        access_token: tokenData.access_token,
         effective_tenant_id: finalTenantId,
         user_id: userId,
         available_tenants: availableTenants

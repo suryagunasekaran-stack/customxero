@@ -109,6 +109,11 @@ export const authConfig: NextAuthConfig = {
         return token as XeroJWT
       }
       
+      // If token already has an error, don't try to refresh again
+      if (token.error) {
+        return token as XeroJWT
+      }
+      
       // Access token has expired or will expire soon, try to update it
       return refreshAccessToken(token as XeroJWT)
     },
@@ -120,6 +125,23 @@ export const authConfig: NextAuthConfig = {
       
       // Get tenant data from token
       xeroSession.tenants = xeroToken.tenants || [];
+      
+      // Store the token in cache for access by other parts of the app
+      if (xeroToken.expires_at && xeroToken.access_token && xeroToken.refresh_token) {
+        try {
+          const tokenManager = await getXeroTokenManager();
+          
+          await tokenManager.updateToken(
+            session.user?.email || '',
+            xeroToken.access_token,
+            xeroToken.refresh_token,
+            xeroToken.expires_at,
+            xeroToken.tenants || []
+          );
+        } catch (error) {
+          console.error('[Auth] Failed to store token in cache:', error);
+        }
+      }
       
       // Try to get selected tenant from Redis (with error handling)
       try {
@@ -161,7 +183,11 @@ async function refreshAccessToken(token: XeroJWT): Promise<XeroJWT> {
     
     if (!token.refresh_token) {
       console.error('[Auth] No refresh token available');
-      throw new Error('No refresh token available');
+      // Return the token with an error flag instead of throwing
+      return {
+        ...token,
+        error: 'NoRefreshToken'
+      };
     }
 
     const response = await fetch("https://identity.xero.com/connect/token", {
