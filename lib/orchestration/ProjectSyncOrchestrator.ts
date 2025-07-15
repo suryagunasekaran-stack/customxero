@@ -224,8 +224,20 @@ export class ProjectSyncOrchestrator {
     if (!step) throw new Error(`Step ${stepId} not found`);
 
     try {
-      this.updateStep(stepId, { status: 'running', startTime: new Date() });
+      // Start the step with 0% progress
+      this.updateStep(stepId, { 
+        status: 'running', 
+        startTime: new Date(),
+        progress: 0 
+      });
       this.logger.debug({ stepId, stepName: step.name }, 'Executing sync step');
+      
+      // Update to 50% before executing (to show immediate progress)
+      setTimeout(() => {
+        if (this.session?.steps.find(s => s.id === stepId)?.status === 'running') {
+          this.updateStep(stepId, { progress: 50 });
+        }
+      }, 100);
       
       const result = await executor();
       
@@ -251,6 +263,7 @@ export class ProjectSyncOrchestrator {
         status: 'error',
         error: (error as Error).message,
         endTime: new Date(),
+        progress: 0,
       });
       
       this.logger.error({ 

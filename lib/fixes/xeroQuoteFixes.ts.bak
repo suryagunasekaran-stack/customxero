@@ -1,0 +1,560 @@
+/**
+ * Xero Quote Fix Functions
+ * Handles updating Xero quotes to fix validation issues
+ */
+
+import { ensureValidToken } from '@/lib/ensureXeroToken';
+
+/**
+ * Valid Xero Quote Status Transitions
+ * Maps current status to array of valid next statuses
+ */
+export const XERO_QUOTE_STATUS_TRANSITIONS: Record<string, string[]> = {
+  'DRAFT': ['SENT', 'DELETED'],
+  'SENT': ['ACCEPTED', 'DECLINED', 'DELETED'],
+  'DECLINED': ['SENT', 'DELETED'],
+  'ACCEPTED': ['SENT', 'DELETED', 'INVOICED'],
+  'INVOICED': ['SENT', 'DELETED']
+};
+
+/**
+ * Get the path to transition from current status to target status
+ * Returns array of statuses to transition through
+ */
+export function getStatusTransitionPath(currentStatus: string, targetStatus: string): string[] {
+  // If already at target status, no transition needed
+  if (currentStatus === targetStatus) {
+    return [];
+  }
+  
+  // Direct transition possible
+  if (XERO_QUOTE_STATUS_TRANSITIONS[currentStatus]?.includes(targetStatus)) {
+    return [targetStatus];
+  }
+  
+  // For DRAFT -> ACCEPTED, we need to go through SENT
+  if (currentStatus === 'DRAFT' && targetStatus === 'ACCEPTED') {
+    return ['SENT', 'ACCEPTED'];
+  }
+  
+  // For DECLINED -> ACCEPTED, we need to go through SENT
+  if (currentStatus === 'DECLINED' && targetStatus === 'ACCEPTED') {
+    return ['SENT', 'ACCEPTED'];
+  }
+  
+  // For INVOICED -> ACCEPTED, we need to go through SENT
+  if (currentStatus === 'INVOICED' && targetStatus === 'ACCEPTED') {
+    return ['SENT', 'ACCEPTED'];
+  }
+  
+  // No valid path found
+  return [];
+}
+
+export interface ProductData {
+  name: string;
+  quantity: number;
+  item_price: number;
+  tax?: number;
+  discount_percentage?: number;
+}
+
+export interface XeroLineItem {
+  Description: string;
+  Quantity: number;
+  UnitAmount: number;
+  LineAmount?: number;
+  AccountCode: string;
+  TaxType: string;
+  TaxAmount?: number;
+  DiscountRate?: number;
+  Tracking?: any[];
+}
+
+export interface SyncProductsParams {
+  xeroQuoteId: string;
+  pipedriveProducts: ProductData[];
+  tenantId: string;
+}
+
+/**
+ * Syncs products from Pipedrive to Xero quote
+ * Updates the Xero quote line items to match Pipedrive products
+ */
+export async function syncProductsToXeroQuote({
+  xeroQuoteId,
+  pipedriveProducts,
+  tenantId
+}: SyncProductsParams): Promise<{ success: boolean; error?: string; updatedQuote?: any; warning?: string }> {
+  try {
+    const { access_token } = await ensureValidToken();
+    
+    // Step 1: Get the current quote from Xero
+    console.log(`Fetching Xero quote ${xeroQuoteId} for update...`);
+    
+    const getQuoteUrl = `https://api.xero.com/api.xro/2.0/Quotes/${xeroQuoteId}`;
+    const getResponse = await fetch(getQuoteUrl, {
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${access_token}`,
+        'Xero-tenant-id': tenantId
+      }
+    });
+    
+    if (!getResponse.ok) {
+      const errorText = await getResponse.text();
+      console.error('Failed to fetch quote:', errorText);
+      return { success: false, error: `Failed to fetch quote: ${getResponse.status}` };
+    }
+    
+    const quoteData = await getResponse.json();
+    
+    if (quoteData.Status !== 'OK' || !quoteData.Quotes || quoteData.Quotes.length === 0) {
+      return { success: false, error: 'Quote not found in Xero' };
+    }
+    
+    const currentQuote = quoteData.Quotes[0];
+    const originalStatus = currentQuote.Status;
+    console.log(`Current quote status: ${originalStatus}, Line items: ${currentQuote.LineItems?.length || 0}`);
+    
+    // Check if quote is INVOICED - we cannot modify invoiced quotes
+    if (originalStatus === 'INVOICED') {
+      console.log('Cannot modify INVOICED quote');
+      return { success: false, error: 'Cannot modify a quote that has been invoiced' };
+    }
+    
+    // Step 2: Convert Pipedrive products to Xero line items
+    const newLineItems: XeroLineItem[] = pipedriveProducts.map(product => ({
+      Description: product.name || 'Product',
+      Quantity: product.quantity || 1,
+      UnitAmount: product.item_price || 0,
+      LineAmount: (product.quantity || 1) * (product.item_price || 0),
+      AccountCode: '200', // Default sales account - should be configurable
+      TaxType: 'NONE', // Default - should match your Xero tax settings
+      TaxAmount: 0,
+      DiscountRate: product.discount_percentage || 0,
+      Tracking: []
+    }));
+    
+    // Step 3: Check if we need to change status to allow edits
+    let needsStatusReset = false;
+    let editableStatus = currentQuote.Status;
+    
+    // ACCEPTED and INVOICED quotes need to be changed to SENT to allow edits
+    if (originalStatus === 'ACCEPTED' || originalStatus === 'INVOICED') {
+      console.log(`Quote is ${originalStatus}, changing to SENT to allow edits...`);
+      needsStatusReset = true;
+      editableStatus = 'SENT';
+      
+      const transitionPath = getStatusTransitionPath(originalStatus, 'SENT');
+      
+      if (transitionPath.length === 0 || !transitionPath.includes('SENT')) {
+        // Direct transition to SENT should always be possible from ACCEPTED or INVOICED
+        transitionPath.push('SENT');
+      }
+      
+      for (const nextStatus of transitionPath) {
+        const transitionQuote = {
+          ...currentQuote,
+          Status: nextStatus
+        };
+        
+        // Remove read-only fields
+        delete transitionQuote.QuoteID;
+        delete transitionQuote.UpdatedDateUTC;
+        delete transitionQuote.HasAttachments;
+        delete transitionQuote.IsDeleted;
+        delete transitionQuote.ValidationErrors;
+        
+        const statusChangeResponse = await fetch(getQuoteUrl, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${access_token}`,
+            'Xero-tenant-id': tenantId
+          },
+          body: JSON.stringify({
+            Quotes: [transitionQuote]
+          })
+        });
+        
+        if (!statusChangeResponse.ok) {
+          const errorText = await statusChangeResponse.text();
+          console.error(`Failed to change quote status to ${nextStatus}:`, errorText);
+          return { success: false, error: `Failed to change quote status to ${nextStatus}` };
+        }
+        
+        // Update currentQuote with the response
+        const statusChangeData = await statusChangeResponse.json();
+        if (statusChangeData.Quotes && statusChangeData.Quotes.length > 0) {
+          currentQuote = statusChangeData.Quotes[0];
+        }
+      }
+    }
+    
+    // Step 4: Create updated quote object with new line items
+    const updatedQuote = {
+      ...currentQuote,
+      LineItems: newLineItems,
+      Status: currentQuote.Status, // Keep current status (SENT)
+      // Xero will recalculate these, but we can set them
+      SubTotal: newLineItems.reduce((sum, item) => sum + (item.LineAmount || 0), 0),
+      TotalTax: 0,
+      Total: newLineItems.reduce((sum, item) => sum + (item.LineAmount || 0), 0)
+    };
+    
+    // Remove fields that shouldn't be sent in updates
+    delete updatedQuote.QuoteID;
+    delete updatedQuote.UpdatedDateUTC;
+    delete updatedQuote.HasAttachments;
+    delete updatedQuote.IsDeleted;
+    delete updatedQuote.ValidationErrors;
+    
+    console.log(`Updating quote with ${newLineItems.length} line items...`);
+    
+    // Step 5: Update the quote with new line items
+    const updateUrl = `https://api.xero.com/api.xro/2.0/Quotes/${xeroQuoteId}`;
+    const updateResponse = await fetch(updateUrl, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${access_token}`,
+        'Xero-tenant-id': tenantId
+      },
+      body: JSON.stringify({
+        Quotes: [updatedQuote]
+      })
+    });
+    
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      console.error('Failed to update quote:', errorText);
+      return { success: false, error: `Failed to update quote: ${updateResponse.status}` };
+    }
+    
+    const updateResult = await updateResponse.json();
+    
+    if (updateResult.Status === 'OK' && updateResult.Quotes && updateResult.Quotes.length > 0) {
+      let finalQuote = updateResult.Quotes[0];
+      
+      // Step 6: If we changed status to SENT, change it back to ACCEPTED
+      if (needsStatusReset) {
+        console.log('Changing quote status back to ACCEPTED...');
+        
+        const acceptedQuote = {
+          ...finalQuote,
+          Status: 'ACCEPTED'
+        };
+        
+        // Remove read-only fields
+        delete acceptedQuote.QuoteID;
+        delete acceptedQuote.UpdatedDateUTC;
+        delete acceptedQuote.HasAttachments;
+        delete acceptedQuote.IsDeleted;
+        delete acceptedQuote.ValidationErrors;
+        
+        const finalStatusResponse = await fetch(updateUrl, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${access_token}`,
+            'Xero-tenant-id': tenantId
+          },
+          body: JSON.stringify({
+            Quotes: [acceptedQuote]
+          })
+        });
+        
+        if (!finalStatusResponse.ok) {
+          const errorText = await finalStatusResponse.text();
+          console.error('Failed to change quote back to ACCEPTED:', errorText);
+          // Quote was updated but status couldn't be changed back
+          return { success: true, updatedQuote: finalQuote, warning: 'Quote updated but status could not be changed back to ACCEPTED' };
+        }
+        
+        const finalStatusData = await finalStatusResponse.json();
+        if (finalStatusData.Quotes && finalStatusData.Quotes.length > 0) {
+          finalQuote = finalStatusData.Quotes[0];
+        }
+      }
+      
+      console.log(`Quote updated successfully. New total: ${finalQuote.Total}`);
+      return { success: true, updatedQuote: finalQuote };
+    } else {
+      return { success: false, error: 'Update response invalid' };
+    }
+    
+  } catch (error) {
+    console.error('Error syncing products to Xero:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
+ * Update quote status to ACCEPTED
+ * Handles proper state transitions based on current status
+ */
+export async function acceptXeroQuote({
+  xeroQuoteId,
+  tenantId
+}: {
+  xeroQuoteId: string;
+  tenantId: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { access_token } = await ensureValidToken();
+    
+    // Get current quote
+    const getQuoteUrl = `https://api.xero.com/api.xro/2.0/Quotes/${xeroQuoteId}`;
+    const getResponse = await fetch(getQuoteUrl, {
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${access_token}`,
+        'Xero-tenant-id': tenantId
+      }
+    });
+    
+    if (!getResponse.ok) {
+      return { success: false, error: `Failed to fetch quote: ${getResponse.status}` };
+    }
+    
+    const quoteData = await getResponse.json();
+    let currentQuote = quoteData.Quotes?.[0];
+    
+    if (!currentQuote) {
+      return { success: false, error: 'Quote not found' };
+    }
+    
+    const currentStatus = currentQuote.Status;
+    console.log(`Current quote status: ${currentStatus}`);
+    
+    // Get transition path to ACCEPTED
+    const transitionPath = getStatusTransitionPath(currentStatus, 'ACCEPTED');
+    
+    if (transitionPath.length === 0) {
+      if (currentStatus === 'ACCEPTED') {
+        console.log('Quote is already ACCEPTED');
+        return { success: true };
+      }
+      return { success: false, error: `Cannot transition from ${currentStatus} to ACCEPTED` };
+    }
+    
+    // Apply each status transition in sequence
+    for (const nextStatus of transitionPath) {
+      console.log(`Transitioning quote from ${currentQuote.Status} to ${nextStatus}`);
+      
+      const updatedQuote = {
+        ...currentQuote,
+        Status: nextStatus
+      };
+      
+      // Remove read-only fields
+      delete updatedQuote.QuoteID;
+      delete updatedQuote.UpdatedDateUTC;
+      delete updatedQuote.HasAttachments;
+      delete updatedQuote.IsDeleted;
+      delete updatedQuote.ValidationErrors;
+      
+      const updateResponse = await fetch(getQuoteUrl, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${access_token}`,
+          'Xero-tenant-id': tenantId
+        },
+        body: JSON.stringify({
+          Quotes: [updatedQuote]
+        })
+      });
+      
+      if (!updateResponse.ok) {
+        const errorText = await updateResponse.text();
+        console.error(`Failed to transition to ${nextStatus}:`, errorText);
+        return { success: false, error: `Failed to transition quote to ${nextStatus}` };
+      }
+      
+      const responseData = await updateResponse.json();
+      if (responseData.Quotes && responseData.Quotes.length > 0) {
+        currentQuote = responseData.Quotes[0];
+      }
+    }
+    
+    console.log('Quote successfully transitioned to ACCEPTED');
+    return { success: true };
+    
+  } catch (error) {
+    console.error('Error accepting quote:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
+ * Update quote number to include project code
+ */
+export async function fixQuoteNumber({
+  xeroQuoteId,
+  newQuoteNumber,
+  tenantId
+}: {
+  xeroQuoteId: string;
+  newQuoteNumber: string;
+  tenantId: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { access_token } = await ensureValidToken();
+    
+    // Get current quote
+    const getQuoteUrl = `https://api.xero.com/api.xro/2.0/Quotes/${xeroQuoteId}`;
+    const getResponse = await fetch(getQuoteUrl, {
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${access_token}`,
+        'Xero-tenant-id': tenantId
+      }
+    });
+    
+    if (!getResponse.ok) {
+      return { success: false, error: `Failed to fetch quote: ${getResponse.status}` };
+    }
+    
+    const quoteData = await getResponse.json();
+    const currentQuote = quoteData.Quotes?.[0];
+    
+    if (!currentQuote) {
+      return { success: false, error: 'Quote not found' };
+    }
+    
+    const currentStatus = currentQuote.Status;
+    let needsStatusChange = false;
+    
+    // Check if current status allows editing
+    // INVOICED quotes cannot be edited directly
+    if (currentStatus === 'INVOICED') {
+      console.log('Cannot update quote number for INVOICED quote');
+      return { success: false, error: 'Cannot modify quote number for invoiced quotes' };
+    }
+    
+    // For ACCEPTED quotes, we might need to change to SENT first
+    if (currentStatus === 'ACCEPTED') {
+      console.log('Quote is ACCEPTED, changing to SENT to allow quote number update...');
+      needsStatusChange = true;
+      
+      const sentQuote = {
+        ...currentQuote,
+        Status: 'SENT'
+      };
+      
+      // Remove read-only fields
+      delete sentQuote.QuoteID;
+      delete sentQuote.UpdatedDateUTC;
+      delete sentQuote.HasAttachments;
+      delete sentQuote.IsDeleted;
+      delete sentQuote.ValidationErrors;
+      
+      const statusResponse = await fetch(getQuoteUrl, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${access_token}`,
+          'Xero-tenant-id': tenantId
+        },
+        body: JSON.stringify({
+          Quotes: [sentQuote]
+        })
+      });
+      
+      if (!statusResponse.ok) {
+        const errorText = await statusResponse.text();
+        console.error('Failed to change status to SENT:', errorText);
+        return { success: false, error: 'Failed to change quote status for update' };
+      }
+      
+      const statusData = await statusResponse.json();
+      if (statusData.Quotes && statusData.Quotes.length > 0) {
+        currentQuote = statusData.Quotes[0];
+      }
+    }
+    
+    // Update quote number
+    const updatedQuote = {
+      ...currentQuote,
+      QuoteNumber: newQuoteNumber
+    };
+    
+    // Remove read-only fields
+    delete updatedQuote.QuoteID;
+    delete updatedQuote.UpdatedDateUTC;
+    delete updatedQuote.HasAttachments;
+    delete updatedQuote.IsDeleted;
+    delete updatedQuote.ValidationErrors;
+    
+    // Update quote
+    const updateResponse = await fetch(getQuoteUrl, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${access_token}`,
+        'Xero-tenant-id': tenantId
+      },
+      body: JSON.stringify({
+        Quotes: [updatedQuote]
+      })
+    });
+    
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      console.error('Failed to update quote number:', errorText);
+      return { success: false, error: `Failed to update quote number: ${updateResponse.status}` };
+    }
+    
+    // If we changed status to SENT, change it back to ACCEPTED
+    if (needsStatusChange) {
+      console.log('Changing quote status back to ACCEPTED...');
+      
+      const responseData = await updateResponse.json();
+      const updatedQuoteData = responseData.Quotes?.[0] || updatedQuote;
+      
+      const acceptedQuote = {
+        ...updatedQuoteData,
+        Status: 'ACCEPTED'
+      };
+      
+      // Remove read-only fields
+      delete acceptedQuote.QuoteID;
+      delete acceptedQuote.UpdatedDateUTC;
+      delete acceptedQuote.HasAttachments;
+      delete acceptedQuote.IsDeleted;
+      delete acceptedQuote.ValidationErrors;
+      
+      const finalResponse = await fetch(getQuoteUrl, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${access_token}`,
+          'Xero-tenant-id': tenantId
+        },
+        body: JSON.stringify({
+          Quotes: [acceptedQuote]
+        })
+      });
+      
+      if (!finalResponse.ok) {
+        // Quote number was updated but status couldn't be changed back
+        return { success: true, error: 'Quote number updated but status could not be restored to ACCEPTED' };
+      }
+    }
+    
+    return { success: true };
+    
+  } catch (error) {
+    console.error('Error updating quote number:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}

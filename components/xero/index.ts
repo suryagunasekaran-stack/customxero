@@ -1,4 +1,5 @@
 export { default as SyncProjectCard } from './SyncProjectCard';
+export { default as ProjectSyncCard } from './ProjectSyncCard';
 export { default as ManhourBillingCard } from './ManhourBillingCard';
 export { default as TimesheetProcessingCard } from './TimesheetProcessingCardRefactored';
 export { default as MonthlySnapshotCard } from './MonthlySnapshotCard';

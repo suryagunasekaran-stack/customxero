@@ -212,11 +212,18 @@ export default function SyncProjectCardV2({ disabled = false }: SyncProjectCardV
   }, []);
 
   useEffect(() => {
-    // Set up progress callback
+    // Set up progress callback with proper state update
     orchestrator.setProgressCallback(() => {
-      setSyncSession(current => {
-        if (!current) return null;
-        return { ...orchestrator.getSession()! };
+      setSyncSession(() => {
+        const session = orchestrator.getSession();
+        if (!session) return null;
+        
+        // Create a new session object to trigger re-render
+        return {
+          ...session,
+          steps: [...session.steps], // Create new array reference
+          summary: session.summary ? { ...session.summary } : undefined
+        };
       });
     });
     
@@ -266,12 +273,29 @@ export default function SyncProjectCardV2({ disabled = false }: SyncProjectCardV
       console.log(`Total Deals: ${data.totalDeals}`);
       console.log('Grouped by prefix:', data.groupedByPrefix);
       
+      // Show validation stats
+      if (data.validationStats) {
+        console.log('\nValidation Statistics:');
+        console.log(`  Total Won Deals: ${data.validationStats.totalWonDeals}`);
+        console.log(`  Fully Synced: ${data.validationStats.fullySynced} ✅`);
+        console.log(`  With Issues: ${data.validationStats.withIssues} ❌`);
+        console.log(`    - Missing Xero Quote: ${data.validationStats.missingXeroQuote}`);
+        console.log(`    - Invalid Xero Quote: ${data.validationStats.invalidXeroQuote}`);
+        console.log(`    - Not Accepted: ${data.validationStats.notAcceptedQuotes}`);
+        console.log(`    - Value Mismatch: ${data.validationStats.valueMismatches}`);
+      }
+      
       // Log first 5 deals to browser console
-      console.log('\nFirst 5 deals with matching keys:');
+      console.log('\nFirst 5 deals:');
       data.deals.slice(0, 5).forEach((deal: any, index: number) => {
-        console.log(`${index + 1}. "${deal.title}"`);
+        console.log(`${index + 1}. "${deal.title}" - ${deal.isFullySynced ? '✅' : '❌'}`);
         console.log(`   Key: ${deal.matchingKey}`);
         console.log(`   Value: ${deal.value} ${deal.currency}`);
+        console.log(`   Xero Quote: ${deal.xeroQuoteId || 'MISSING'}`);
+        console.log(`   Products: ${deal.productsCount || 0} items, Total: ${deal.productsTotal}`);
+        if (deal.validationIssues && deal.validationIssues.length > 0) {
+          console.log(`   Issues: ${deal.validationIssues.join(', ')}`);
+        }
       });
       
     } catch (error) {

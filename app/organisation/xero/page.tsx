@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useSyncProjectV2 } from '../../../hooks/useSyncProjectV2';
-import SyncProjectCardV2 from '../../../components/xero/SyncProjectCardV2';
+import ProjectSyncCardWithFixesV2 from '../../../components/xero/ProjectSyncCardWithFixesV2';
 import {
   ManhourBillingCard,
   TimesheetProcessingCard,
@@ -31,11 +31,8 @@ export default function XeroPageV2Example() {
         </div>
 
         <div className="space-y-8">
-          {/* Featured Section - New Sync Card */}
-          <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">Project Synchronization</h2>
-            <SyncProjectCardV2 disabled={false} />
-          </div>
+          {/* Project Sync Card with Fixes - Only shown for BSENI tenant */}
+          <ProjectSyncCardWithFixesV2 disabled={false} />
 
           {/* Other Tools Grid */}
           <div>
