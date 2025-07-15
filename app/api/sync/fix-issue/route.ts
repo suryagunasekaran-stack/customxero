@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { syncProductsToXeroQuote, acceptXeroQuote, fixQuoteNumber } from '@/lib/fixes/xeroQuoteFixesV2';
-import { updatePipedriveOrganization, syncProductsToPipedrive } from '@/lib/fixes/pipedriveFixes';
+import { syncProductsToPipedrive } from '@/lib/fixes/pipedriveFixes';
 
 export async function POST(request: NextRequest) {
   try {
@@ -146,39 +146,13 @@ export async function POST(request: NextRequest) {
           }, { status: 500 });
         }
         
-      case 'CUSTOMER_NAME_MISMATCH':
-        // Update Pipedrive organization name from Xero
-        if (!dealData?.org_id || !dealData?.xeroQuote?.Contact?.Name) {
-          return NextResponse.json({ 
-            error: 'Missing organization ID or Xero contact name' 
-          }, { status: 400 });
-        }
-        
-        const orgUpdateResult = await updatePipedriveOrganization({
-          dealId: dealId,
-          orgId: dealData.org_id,
-          newOrgName: dealData.xeroQuote.Contact.Name,
-          apiKey: process.env.PIPEDRIVE_KEY!,
-          companyDomain: 'bseni'
-        });
-        
-        if (orgUpdateResult.success) {
-          return NextResponse.json({ 
-            success: true,
-            message: 'Organization name updated from Xero'
-          });
-        } else {
-          return NextResponse.json({ 
-            error: orgUpdateResult.error || 'Failed to update organization' 
-          }, { status: 500 });
-        }
-        
       // These require manual intervention
       case 'TITLE_INCOMPLETE':
       case 'VESSEL_NAME_INVALID':
       case 'DEAL_ORG_MISSING':
       case 'CURRENCY_MISMATCH':
       case 'NO_PRODUCTS':
+      case 'CUSTOMER_NAME_MISMATCH':
         return NextResponse.json({ 
           error: `${issueCode} requires manual intervention` 
         }, { status: 501 });

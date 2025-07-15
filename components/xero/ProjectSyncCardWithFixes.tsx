@@ -146,55 +146,6 @@ export default function ProjectSyncCardWithFixes({ disabled = false }: ProjectSy
     }
   }, [progressSteps]);
 
-  const handleFixAll = useCallback(async () => {
-    if (!validationData?.deals) return;
-    
-    setIsFixingAll(true);
-    setFixProgress([]);
-    
-    // Collect all fixable issues
-    const fixableTasks: Array<{dealId: string, issueCode: string, dealData: any}> = [];
-    
-    validationData.deals.forEach((deal: any) => {
-      if (deal.validationIssues) {
-        deal.validationIssues
-          .filter((issue: any) => issue.fixable)
-          .forEach((issue: any) => {
-            fixableTasks.push({
-              dealId: deal.id,
-              issueCode: issue.code,
-              dealData: deal
-            });
-          });
-      }
-    });
-    
-    console.log(`Starting bulk fix for ${fixableTasks.length} issues...`);
-    
-    // Process fixes in batches to avoid overwhelming the server
-    const batchSize = 5;
-    for (let i = 0; i < fixableTasks.length; i += batchSize) {
-      const batch = fixableTasks.slice(i, i + batchSize);
-      
-      await Promise.all(batch.map(async (task) => {
-        try {
-          await handleFixIssue(task.dealId, task.issueCode, task.dealData, true);
-        } catch (error) {
-          console.error(`Failed to fix ${task.issueCode} for deal ${task.dealId}:`, error);
-        }
-      }));
-      
-      // Small delay between batches
-      if (i + batchSize < fixableTasks.length) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    
-    setIsFixingAll(false);
-    
-    // Note: Refresh will be triggered manually after this completes
-  }, [validationData, handleFixIssue]);
-
   const handleFixIssue = useCallback(async (dealId: string, issueCode: string, dealData: any, isBulkFix: boolean = false) => {
     if (!isBulkFix) {
       setIsFixing(true);
@@ -267,6 +218,55 @@ export default function ProjectSyncCardWithFixes({ disabled = false }: ProjectSy
       }
     }
   }, [handleProjectSync]);
+
+  const handleFixAll = useCallback(async () => {
+    if (!validationData?.deals) return;
+    
+    setIsFixingAll(true);
+    setFixProgress([]);
+    
+    // Collect all fixable issues
+    const fixableTasks: Array<{dealId: string, issueCode: string, dealData: any}> = [];
+    
+    validationData.deals.forEach((deal: any) => {
+      if (deal.validationIssues) {
+        deal.validationIssues
+          .filter((issue: any) => issue.fixable)
+          .forEach((issue: any) => {
+            fixableTasks.push({
+              dealId: deal.id,
+              issueCode: issue.code,
+              dealData: deal
+            });
+          });
+      }
+    });
+    
+    console.log(`Starting bulk fix for ${fixableTasks.length} issues...`);
+    
+    // Process fixes in batches to avoid overwhelming the server
+    const batchSize = 5;
+    for (let i = 0; i < fixableTasks.length; i += batchSize) {
+      const batch = fixableTasks.slice(i, i + batchSize);
+      
+      await Promise.all(batch.map(async (task) => {
+        try {
+          await handleFixIssue(task.dealId, task.issueCode, task.dealData, true);
+        } catch (error) {
+          console.error(`Failed to fix ${task.issueCode} for deal ${task.dealId}:`, error);
+        }
+      }));
+      
+      // Small delay between batches
+      if (i + batchSize < fixableTasks.length) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    setIsFixingAll(false);
+    
+    // Note: Refresh will be triggered manually after this completes
+  }, [validationData, handleFixIssue]);
 
   const handleDownloadReport = useCallback(() => {
     if (!validationData) return;

@@ -6,6 +6,18 @@ import {
   generateValidationStats,
   ValidationContext 
 } from '@/lib/validation/dealValidationRules';
+import { 
+  validateQuotesAgainstDeals, 
+  findDuplicateQuotes,
+  QuoteValidationContext 
+} from '@/lib/validation/quoteValidationRules';
+import {
+  validateProjectsAgainstQuotes,
+  XeroProject
+} from '@/lib/validation/projectValidationRules';
+import {
+  validatePipeline3Invoices
+} from '@/lib/validation/invoiceValidationRules';
 
 // Tenant-specific Pipedrive configuration
 const TENANT_PIPEDRIVE_CONFIG = {
@@ -353,7 +365,7 @@ export async function GET() {
           detail: 'Analyzing validation results'
         });
         
-        const validationStats = generateValidationStats(validatedDeals);
+        const baseValidationStats = generateValidationStats(validatedDeals);
         
         // Add Xero quote totals calculation
         const acceptedQuotesTotal = validatedDeals
@@ -362,9 +374,12 @@ export async function GET() {
         
         const dealsTotal = validatedDeals.reduce((sum, d) => sum + d.value, 0);
         
-        validationStats.acceptedQuotesTotal = acceptedQuotesTotal;
-        validationStats.dealsTotal = dealsTotal;
-        validationStats.totalsMismatch = Math.abs(dealsTotal - acceptedQuotesTotal) > 0.01;
+        const validationStats = {
+          ...baseValidationStats,
+          acceptedQuotesTotal,
+          dealsTotal,
+          totalsMismatch: Math.abs(dealsTotal - acceptedQuotesTotal) > 0.01
+        };
         
         const issuesCount = validationStats.withErrors;
         sendProgress({ 
@@ -396,7 +411,295 @@ export async function GET() {
           detail: 'Validation report ready'
         });
         
-        // Send final result
+        // Phase 2: Validate Pipeline 3 Deals Invoices
+        sendProgress({ 
+          type: 'progress', 
+          step: 'phase2_fetch', 
+          status: 'running',
+          detail: 'Fetching Pipeline 3 deals for invoice validation'
+        });
+        
+        let phase2InvoiceValidationResult = null;
+        
+        try {
+          // Fetch Pipeline 3 deals
+          let pipeline3Deals: any[] = [];
+          let moreItemsInCollection = true;
+          let cursor: string | null = null;
+          
+          while (moreItemsInCollection) {
+            const url = new URL(`https://${companyDomain}.pipedrive.com/api/v2/deals`);
+            url.searchParams.append('limit', '100');
+            url.searchParams.append('status', 'won');
+            url.searchParams.append('pipeline_id', '3'); // Pipeline 3
+            if (cursor) {
+              url.searchParams.append('cursor', cursor);
+            }
+            
+            const response = await fetch(url.toString(), {
+              headers: {
+                'Accept': 'application/json',
+                'x-api-token': apiKey
+              }
+            });
+            
+            if (!response.ok) {
+              console.error('Failed to fetch Pipeline 3 deals');
+              break;
+            }
+            
+            const data = await response.json();
+            const pageDeals = data.data || [];
+            pipeline3Deals = pipeline3Deals.concat(pageDeals);
+            
+            if (data.additional_data?.pagination?.next_cursor) {
+              cursor = data.additional_data.pagination.next_cursor;
+            } else {
+              moreItemsInCollection = false;
+            }
+          }
+          
+          sendProgress({ 
+            type: 'progress', 
+            step: 'phase2_fetch', 
+            status: 'completed',
+            detail: `Found ${pipeline3Deals.length} Pipeline 3 deals`
+          });
+          
+          // Fetch deal details and validate invoices
+          sendProgress({ 
+            type: 'progress', 
+            step: 'phase2_validate', 
+            status: 'running',
+            detail: 'Validating deals against Xero invoices'
+          });
+          
+          // Get full deal details with custom fields
+          const detailedDeals = [];
+          for (const deal of pipeline3Deals) {
+            try {
+              const dealDetailsUrl = new URL(`https://${companyDomain}.pipedrive.com/api/v2/deals/${deal.id}`);
+              const dealDetailsResponse = await fetch(dealDetailsUrl.toString(), {
+                headers: {
+                  'Accept': 'application/json',
+                  'x-api-token': apiKey
+                }
+              });
+              
+              if (dealDetailsResponse.ok) {
+                const dealDetails = await dealDetailsResponse.json();
+                const fullDeal = dealDetails.data;
+                
+                // Add org name if available
+                if (deal.org_id && orgMap.has(deal.org_id)) {
+                  fullDeal.org_name = orgMap.get(deal.org_id);
+                }
+                
+                detailedDeals.push(fullDeal);
+              }
+            } catch (error) {
+              console.error(`Error fetching deal ${deal.id} details:`, error);
+            }
+          }
+          
+          // Validate invoices
+          const invoiceFieldKey = 'c599cab3902b6c84c1f9e2689f308a4369fffe7d'; // Invoice ID field
+          phase2InvoiceValidationResult = await validatePipeline3Invoices(
+            detailedDeals,
+            invoiceFieldKey,
+            access_token,
+            effective_tenant_id
+          );
+          
+          sendProgress({ 
+            type: 'progress', 
+            step: 'phase2_validate', 
+            status: 'completed',
+            detail: `Validated ${phase2InvoiceValidationResult.deals.length} deals`
+          });
+          
+        } catch (phase2Error) {
+          console.error('Phase 2 invoice validation error:', phase2Error);
+          sendProgress({ 
+            type: 'progress', 
+            step: 'phase2_validate', 
+            status: 'error',
+            detail: 'Error during Phase 2 invoice validation'
+          });
+        }
+        
+        // Phase 3: Validate Xero Quotes against Pipedrive Deals
+        sendProgress({ 
+          type: 'progress', 
+          step: 'phase3_fetch', 
+          status: 'running',
+          detail: 'Fetching all accepted Xero quotes'
+        });
+        
+        let allXeroQuotes = [];
+        let phase3ValidationResult = null;
+        let duplicateQuotes = null;
+        
+        try {
+          // Fetch all accepted quotes from Xero
+          const quotesUrl = 'https://api.xero.com/api.xro/2.0/Quotes?Status=ACCEPTED';
+          const xeroQuotesResponse = await fetch(quotesUrl, {
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': `Bearer ${access_token}`,
+              'Xero-tenant-id': effective_tenant_id
+            }
+          });
+          
+          if (xeroQuotesResponse.ok) {
+            const xeroQuotesData = await xeroQuotesResponse.json();
+            if (xeroQuotesData.Status === 'OK' && xeroQuotesData.Quotes) {
+              allXeroQuotes = xeroQuotesData.Quotes;
+              
+              sendProgress({ 
+                type: 'progress', 
+                step: 'phase2_fetch', 
+                status: 'completed',
+                detail: `Found ${allXeroQuotes.length} accepted quotes in Xero`
+              });
+              
+              // Phase 2 validation
+              sendProgress({ 
+                type: 'progress', 
+                step: 'phase2_validate', 
+                status: 'running',
+                detail: 'Comparing Xero quotes with Pipedrive deals'
+              });
+              
+              const phase2Context: QuoteValidationContext = {
+                xeroQuotes: allXeroQuotes,
+                pipedriveDeals: validatedDeals, // Use validated deals from Phase 1 which includes all deal details
+                tenantId: effective_tenant_id
+              };
+              
+              phase3ValidationResult = validateQuotesAgainstDeals(phase2Context);
+              duplicateQuotes = findDuplicateQuotes(phase3ValidationResult.quotes);
+              
+              sendProgress({ 
+                type: 'progress', 
+                step: 'phase2_validate', 
+                status: 'completed',
+                detail: `Validated ${phase3ValidationResult.quotes.length} quotes`
+              });
+            }
+          } else {
+            console.error('Failed to fetch Xero quotes:', await xeroQuotesResponse.text());
+            sendProgress({ 
+              type: 'progress', 
+              step: 'phase2_fetch', 
+              status: 'error',
+              detail: 'Failed to fetch Xero quotes'
+            });
+          }
+        } catch (phase2Error) {
+          console.error('Phase 2 validation error:', phase2Error);
+          sendProgress({ 
+            type: 'progress', 
+            step: 'phase2_validate', 
+            status: 'error',
+            detail: 'Error during Phase 2 validation'
+          });
+        }
+        
+        // Phase 4: Validate Xero Projects
+        let phase4ValidationResult = null;
+        
+        if (phase3ValidationResult) {
+          sendProgress({ 
+            type: 'progress', 
+            step: 'phase4_fetch', 
+            status: 'running',
+            detail: 'Fetching Xero projects'
+          });
+          
+          try {
+            // Fetch all INPROGRESS projects with pagination
+            let allProjects: XeroProject[] = [];
+            let page = 1;
+            let hasMorePages = true;
+            
+            while (hasMorePages) {
+              const projectsUrl = `https://api.xero.com/projects.xro/2.0/Projects?states=INPROGRESS&page=${page}&pageSize=100`;
+              const projectsResponse = await fetch(projectsUrl, {
+                headers: {
+                  'Accept': 'application/json',
+                  'Authorization': `Bearer ${access_token}`,
+                  'Xero-tenant-id': effective_tenant_id
+                }
+              });
+              
+              if (projectsResponse.ok) {
+                const projectsData = await projectsResponse.json();
+                if (projectsData.items) {
+                  allProjects = allProjects.concat(projectsData.items);
+                  
+                  // Check if there are more pages
+                  if (projectsData.pagination && 
+                      projectsData.pagination.page < projectsData.pagination.pageCount) {
+                    page++;
+                    sendProgress({ 
+                      type: 'progress', 
+                      step: 'phase4_fetch', 
+                      status: 'running',
+                      detail: `Fetching projects page ${page}...`
+                    });
+                  } else {
+                    hasMorePages = false;
+                  }
+                } else {
+                  hasMorePages = false;
+                }
+              } else {
+                console.error('Failed to fetch Xero projects:', await projectsResponse.text());
+                hasMorePages = false;
+              }
+            }
+            
+            sendProgress({ 
+              type: 'progress', 
+              step: 'phase4_fetch', 
+              status: 'completed',
+              detail: `Found ${allProjects.length} in-progress projects`
+            });
+            
+            // Phase 3 validation
+            sendProgress({ 
+              type: 'progress', 
+              step: 'phase4_validate', 
+              status: 'running',
+              detail: 'Validating projects against quotes and deals'
+            });
+            
+            phase4ValidationResult = validateProjectsAgainstQuotes(
+              allProjects,
+              phase3ValidationResult.quotes,
+              validatedDeals
+            );
+            
+            sendProgress({ 
+              type: 'progress', 
+              step: 'phase4_validate', 
+              status: 'completed',
+              detail: `Validated ${phase4ValidationResult.projects.length} projects`
+            });
+            
+          } catch (phase4Error) {
+            console.error('Phase 4 validation error:', phase4Error);
+            sendProgress({ 
+              type: 'progress', 
+              step: 'phase4_validate', 
+              status: 'error',
+              detail: 'Error during Phase 4 validation'
+            });
+          }
+        }
+        
+        // Send final result with all phases
         sendProgress({
           type: 'complete',
           data: {
@@ -406,7 +709,24 @@ export async function GET() {
             totalDeals: validatedDeals.length,
             validationStats,
             groupedByPrefix,
-            deals: validatedDeals
+            deals: validatedDeals,
+            // Phase 2 results
+            phase2: phase2InvoiceValidationResult,
+            phase3: phase3ValidationResult ? {
+              quotes: phase3ValidationResult.quotes,
+              stats: phase3ValidationResult.stats,
+              duplicateQuotes: Array.from(duplicateQuotes?.entries() || []).map(([dealId, quotes]) => ({
+                dealId,
+                quotes: quotes.map(q => ({
+                  quoteId: q.quoteId,
+                  quoteNumber: q.quoteNumber,
+                  total: q.total,
+                  currency: q.currency
+                }))
+              }))
+            } : null,
+            // Phase 4 results
+            phase4: phase4ValidationResult
           }
         });
         

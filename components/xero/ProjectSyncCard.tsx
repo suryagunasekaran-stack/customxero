@@ -370,7 +370,7 @@ export default function ProjectSyncCard({ disabled = false }: ProjectSyncCardPro
                       .sort(([,a], [,b]) => (b as number) - (a as number))
                       .slice(0, 5)
                       .map(([code, count]) => (
-                        <div key={code}>• {count} {code.toLowerCase().replace(/_/g, ' ')}</div>
+                        <div key={code}>• {count as number} {code.toLowerCase().replace(/_/g, ' ')}</div>
                       ))
                     }
                   </div>

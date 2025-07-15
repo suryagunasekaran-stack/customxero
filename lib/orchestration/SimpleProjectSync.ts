@@ -98,7 +98,7 @@ export class SimpleProjectSync {
   /**
    * Process Pipedrive deals and generate matching keys
    */
-  async processPipedriveDeals(): Promise<void> {
+  async processPipedriveDeals(): Promise<any[]> {
     console.log('\n=== PROCESSING PIPEDRIVE DEALS ===');
     
     const deals = await this.fetchPipedriveWonDeals();

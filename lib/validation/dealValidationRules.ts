@@ -69,8 +69,8 @@ export const titleValidationRule: ValidationRule = {
     
     const [, projectCode, vesselName] = match;
     
-    // Check if vessel name is valid
-    if (!vesselName || vesselName.trim() === '' || vesselName.toUpperCase() === 'NA') {
+    // Check if vessel name is valid (allowing 'NA' as a valid vessel name)
+    if (!vesselName || vesselName.trim() === '') {
       issues.push({
         code: 'VESSEL_NAME_INVALID',
         severity: 'error',
@@ -285,8 +285,8 @@ export const customerValidationRule: ValidationRule = {
           field: 'org_name',
           currentValue: deal.org_name,
           expectedValue: xeroQuote.Contact.Name,
-          fixable: true,
-          fixAction: 'Update Pipedrive organization name from Xero contact'
+          fixable: false,
+          fixAction: 'Verify organization names match between systems'
         });
       }
     }

@@ -6,7 +6,7 @@
 import { ensureValidToken } from '../ensureXeroToken';
 
 // Valid Xero Quote Status Transitions
-export const XERO_QUOTE_STATUS_TRANSITIONS = {
+export const XERO_QUOTE_STATUS_TRANSITIONS: Record<string, string[]> = {
   'DRAFT': ['SENT', 'DELETED'],
   'SENT': ['ACCEPTED', 'DECLINED', 'DELETED'],
   'DECLINED': ['SENT', 'DELETED'],
