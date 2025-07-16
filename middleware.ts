@@ -2,88 +2,95 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 
-// Middleware runs in Edge Runtime - cannot use Node.js-only features like Redis
 export async function middleware(request: NextRequest) {
-  // Get the pathname
   const pathname = request.nextUrl.pathname;
   
-  // Skip middleware for auth routes
-  if (pathname.startsWith('/api/auth/')) {
+  // Skip middleware for auth routes and static files
+  if (
+    pathname.startsWith('/api/auth/') ||
+    pathname.startsWith('/_next') ||
+    pathname.includes('.') // static files
+  ) {
     return NextResponse.next();
   }
   
-  // For API routes, check authentication
-  if (pathname.startsWith('/api/')) {
+  // Check if this is a protected route
+  const isProtectedRoute = 
+    pathname.startsWith('/organisation') ||
+    pathname.startsWith('/api/tenants') ||
+    pathname.startsWith('/api/xero') ||
+    pathname.startsWith('/api/pipedrive') ||
+    pathname.startsWith('/api/projects-inprogress');
+  
+  if (!isProtectedRoute) {
+    return NextResponse.next();
+  }
+  
+  try {
+    // Try to get the token
     const token = await getToken({ 
       req: request,
-      secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
-      secureCookie: process.env.NODE_ENV === 'production',
+      secret: process.env.NEXTAUTH_SECRET,
     });
     
-    if (!token) {
+    // Also check for session cookies as fallback
+    const sessionCookie = 
+      request.cookies.get('next-auth.session-token') || 
+      request.cookies.get('__Secure-next-auth.session-token');
+    
+    // Debug logging for /organisation/xero
+    if (pathname === '/organisation/xero') {
+      console.log('[Middleware] Debug info:');
+      console.log('- Token exists:', !!token);
+      console.log('- Session cookie exists:', !!sessionCookie);
+      console.log('- All cookies:', request.cookies.getAll().map(c => ({ name: c.name, value: c.value ? 'exists' : 'empty' })));
+      console.log('- URL:', request.url);
+    }
+    
+    // Allow access if either token or session cookie exists
+    if (token || sessionCookie) {
+      // Check for token errors if token exists
+      if (token && (token.error === 'RefreshAccessTokenError' || token.error === 'NoRefreshToken')) {
+        const response = NextResponse.redirect(new URL('/', request.url));
+        response.cookies.delete('next-auth.session-token');
+        response.cookies.delete('__Secure-next-auth.session-token');
+        return response;
+      }
+      
+      return NextResponse.next();
+    }
+    
+    // No authentication found, redirect to login
+    if (pathname.startsWith('/api/')) {
       return NextResponse.json(
         { error: 'Unauthorized', message: 'Authentication required' },
         { status: 401 }
       );
+    } else {
+      const url = new URL('/', request.url);
+      url.searchParams.set('callbackUrl', request.url);
+      return NextResponse.redirect(url, { status: 307 });
+    }
+  } catch (error) {
+    console.error('[Middleware] Error:', error);
+    // If there's an error, check for session cookie as last resort
+    const sessionCookie = 
+      request.cookies.get('next-auth.session-token') || 
+      request.cookies.get('__Secure-next-auth.session-token');
+    
+    if (sessionCookie) {
+      return NextResponse.next();
     }
     
-    // Check for token errors
-    if (token.error === 'RefreshAccessTokenError' || token.error === 'NoRefreshToken') {
-      return NextResponse.json(
-        { error: 'Token expired', message: 'Please re-authenticate' },
-        { status: 401 }
-      );
-    }
-    
-    return NextResponse.next();
-  }
-  
-  // For page routes, redirect to login if not authenticated
-  const token = await getToken({ 
-    req: request,
-    secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
-    secureCookie: process.env.NODE_ENV === 'production',
-    cookieName: process.env.NODE_ENV === 'production' 
-      ? '__Secure-next-auth.session-token'
-      : 'next-auth.session-token',
-  });
-  
-  // Debug logging in production
-  if (process.env.NODE_ENV === 'production' && pathname === '/organisation/xero') {
-    console.log('[Middleware] Checking auth for /organisation/xero');
-    console.log('[Middleware] Token exists:', !!token);
-    console.log('[Middleware] Cookies:', request.cookies.getAll().map(c => c.name));
-  }
-  
-  if (!token) {
-    // Redirect to login page with callback URL
+    // Redirect to login on error
     const url = new URL('/', request.url);
     url.searchParams.set('callbackUrl', request.url);
     return NextResponse.redirect(url, { status: 307 });
   }
-  
-  // Check for token errors that require re-authentication
-  if (token.error === 'RefreshAccessTokenError' || token.error === 'NoRefreshToken') {
-    // Clear the session and redirect to login
-    const response = NextResponse.redirect(new URL('/', request.url));
-    // Clear both possible cookie names
-    response.cookies.delete('next-auth.session-token');
-    response.cookies.delete('__Secure-next-auth.session-token');
-    response.cookies.delete('next-auth.callback-url');
-    response.cookies.delete('__Secure-next-auth.callback-url');
-    return response;
-  }
-  
-  // Allow the request to continue
-  return NextResponse.next();
 }
 
 export const config = {
   matcher: [
-    "/organisation/:path*",
-    "/api/tenants/:path*", 
-    "/api/xero/:path*",
-    "/api/pipedrive/:path*",
-    "/api/projects-inprogress/:path*"
+    "/((?!_next/static|_next/image|favicon.ico).*)",
   ]
 }
