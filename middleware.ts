@@ -7,11 +7,17 @@ export async function middleware(request: NextRequest) {
   // Get the pathname
   const pathname = request.nextUrl.pathname;
   
+  // Skip middleware for auth routes
+  if (pathname.startsWith('/api/auth/')) {
+    return NextResponse.next();
+  }
+  
   // For API routes, check authentication
   if (pathname.startsWith('/api/')) {
     const token = await getToken({ 
       req: request,
-      secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
+      secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+      secureCookie: process.env.NODE_ENV === 'production',
     });
     
     if (!token) {
@@ -35,14 +41,25 @@ export async function middleware(request: NextRequest) {
   // For page routes, redirect to login if not authenticated
   const token = await getToken({ 
     req: request,
-    secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
+    secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+    secureCookie: process.env.NODE_ENV === 'production',
+    cookieName: process.env.NODE_ENV === 'production' 
+      ? '__Secure-next-auth.session-token'
+      : 'next-auth.session-token',
   });
+  
+  // Debug logging in production
+  if (process.env.NODE_ENV === 'production' && pathname === '/organisation/xero') {
+    console.log('[Middleware] Checking auth for /organisation/xero');
+    console.log('[Middleware] Token exists:', !!token);
+    console.log('[Middleware] Cookies:', request.cookies.getAll().map(c => c.name));
+  }
   
   if (!token) {
     // Redirect to login page with callback URL
     const url = new URL('/', request.url);
     url.searchParams.set('callbackUrl', request.url);
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(url, { status: 307 });
   }
   
   // Check for token errors that require re-authentication
