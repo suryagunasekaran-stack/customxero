@@ -155,7 +155,7 @@ async function getActiveXeroProjects(accessToken: string, tenantId: string): Pro
     }
   });
 
-  await trackXeroApiCall(response.headers, tenantId);
+  await trackXeroApiCall(tenantId);
   SmartRateLimit.updateFromHeaders(response.headers);
 
   if (!response.ok) {
@@ -173,7 +173,7 @@ async function getActiveXeroProjects(accessToken: string, tenantId: string): Pro
     }
   });
 
-  await trackXeroApiCall(orgResponse.headers, tenantId);
+  await trackXeroApiCall(tenantId);
   
   let tenantName = 'Unknown';
   if (orgResponse.ok) {
@@ -208,7 +208,7 @@ async function getProjectTasks(projectId: string, accessToken: string, tenantId:
     }
   });
 
-  await trackXeroApiCall(response.headers, tenantId);
+  await trackXeroApiCall(tenantId);
   SmartRateLimit.updateFromHeaders(response.headers);
 
   if (!response.ok) {
@@ -287,7 +287,7 @@ async function createOrUpdateTask(
         body: JSON.stringify(taskPayload)
       });
 
-      await trackXeroApiCall(response.headers, tenantId);
+      await trackXeroApiCall(tenantId);
       SmartRateLimit.updateFromHeaders(response.headers);
 
       if (response.ok) {
@@ -310,7 +310,7 @@ async function createOrUpdateTask(
         body: JSON.stringify(taskPayload)
       });
 
-      await trackXeroApiCall(response.headers, tenantId);
+      await trackXeroApiCall(tenantId);
       SmartRateLimit.updateFromHeaders(response.headers);
 
       if (response.ok) {

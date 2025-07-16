@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await trackXeroApiCall(res.headers, tokenData.effective_tenant_id);
+      await trackXeroApiCall(tokenData.effective_tenant_id);
       SmartRateLimit.updateFromHeaders(res.headers);
 
       if (!res.ok) {
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        await trackXeroApiCall(detailRes.headers, tokenData.effective_tenant_id);
+        await trackXeroApiCall(tokenData.effective_tenant_id);
         SmartRateLimit.updateFromHeaders(detailRes.headers);
 
         if (!detailRes.ok) {
@@ -242,7 +242,7 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify(updatePayload)
       });
 
-      await trackXeroApiCall(updateRes.headers, tokenData.effective_tenant_id);
+      await trackXeroApiCall(tokenData.effective_tenant_id);
       SmartRateLimit.updateFromHeaders(updateRes.headers);
 
       const responseData = await updateRes.json();

@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     });
     
     // Track API usage
-    await trackXeroApiCall(updateRes.headers, tokenData.effective_tenant_id);
+    await trackXeroApiCall(tokenData.effective_tenant_id);
     
     const responseData = await updateRes.json();
     

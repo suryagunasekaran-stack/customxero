@@ -21,7 +21,7 @@ export async function GET() {
         }
         
         // Track API call with actual rate limit data from Xero response headers
-        await trackXeroApiCall(res.headers, effective_tenant_id);
+        await trackXeroApiCall(effective_tenant_id);
 
         const data = await res.json();
         return NextResponse.json(data);

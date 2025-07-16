@@ -112,7 +112,9 @@ export const authConfig: NextAuthConfig = {
       
       xeroSession.error = xeroToken.error;
       xeroSession.tenants = xeroToken.tenants || [];
-      xeroSession.accessToken = xeroToken.access_token;
+      if (xeroToken.access_token) {
+        xeroSession.accessToken = xeroToken.access_token;
+      }
       xeroSession.tenantId = xeroToken.tenants?.[0]?.tenantId;
       
       return xeroSession

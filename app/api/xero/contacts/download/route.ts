@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       }
     });
 
-    await trackXeroApiCall(response.headers, effective_tenant_id);
+    await trackXeroApiCall(effective_tenant_id);
     SmartRateLimit.updateFromHeaders(response.headers);
 
     if (!response.ok) {

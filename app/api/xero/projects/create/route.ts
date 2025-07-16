@@ -246,7 +246,7 @@ export async function POST(request: NextRequest) {
           body: JSON.stringify(xeroProject)
         });
 
-        await trackXeroApiCall(response.headers, effective_tenant_id);
+        await trackXeroApiCall(effective_tenant_id);
         SmartRateLimit.updateFromHeaders(response.headers);
 
         if (!response.ok) {
@@ -457,7 +457,7 @@ async function createStandardTasks(
         body: JSON.stringify(taskPayload)
       });
 
-      await trackXeroApiCall(response.headers, tenantId);
+      await trackXeroApiCall(tenantId);
       SmartRateLimit.updateFromHeaders(response.headers);
 
       if (response.ok) {

@@ -125,7 +125,7 @@ export async function GET() {
               body: JSON.stringify(taskPayload)
             });
 
-            await trackXeroApiCall(response.headers, effective_tenant_id);
+            await trackXeroApiCall(effective_tenant_id);
             SmartRateLimit.updateFromHeaders(response.headers);
             
             if (response.ok) {

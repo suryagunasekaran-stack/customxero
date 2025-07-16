@@ -201,7 +201,7 @@ async function createAndUpdateTasks(
             }
           });
         
-          await trackXeroApiCall(tasksResponse.headers, tenantId);
+          await trackXeroApiCall(tenantId);
           SmartRateLimit.updateFromHeaders(tasksResponse.headers);
           
           // If we get rate limited, wait and retry
@@ -336,7 +336,7 @@ async function createAndUpdateTasks(
                   body: JSON.stringify(taskPayload)
                 });
                 
-                await trackXeroApiCall(updateResponse.headers, tenantId);
+                await trackXeroApiCall(tenantId);
                 SmartRateLimit.updateFromHeaders(updateResponse.headers);
                 
                 if (updateResponse.ok) {
@@ -387,7 +387,7 @@ async function createAndUpdateTasks(
                    body: JSON.stringify(taskPayload)
                  });
                 
-                await trackXeroApiCall(createResponse.headers, tenantId);
+                await trackXeroApiCall(tenantId);
                 SmartRateLimit.updateFromHeaders(createResponse.headers);
                 
                 // If we get rate limited, wait and retry

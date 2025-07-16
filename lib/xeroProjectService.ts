@@ -137,7 +137,7 @@ export class XeroProjectService {
           }
         });
 
-        await trackXeroApiCall(response.headers, tenantId);
+        await trackXeroApiCall(tenantId);
         SmartRateLimit.updateFromHeaders(response.headers);
 
         if (!response.ok) {

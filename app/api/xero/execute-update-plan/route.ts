@@ -124,7 +124,7 @@ async function fetchProjectTasks(projectId: string, accessToken: string, tenantI
   });
 
   // Track API usage
-  await trackXeroApiCall(response.headers, tenantId);
+  await trackXeroApiCall(tenantId);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch tasks for project ${projectId}: ${response.status} ${response.statusText}`);
@@ -149,7 +149,7 @@ async function updateTask(projectId: string, taskId: string, updateData: any, ac
   });
 
   // Track API usage
-  await trackXeroApiCall(response.headers, tenantId);
+  await trackXeroApiCall(tenantId);
 
   if (!response.ok) {
     const errorText = await response.text();

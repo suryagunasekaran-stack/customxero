@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
         },
       });
 
-      await trackXeroApiCall(res.headers, tokenData.effective_tenant_id);
+      await trackXeroApiCall(tokenData.effective_tenant_id);
       SmartRateLimit.updateFromHeaders(res.headers);
 
       if (!res.ok) {
