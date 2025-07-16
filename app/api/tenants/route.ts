@@ -51,8 +51,11 @@ export async function GET() {
     }
     
     return NextResponse.json({
-      tenants,
+      availableTenants: tenants,
       selectedTenant,
+      hasMultipleTenants: tenants.length > 1,
+      // Keep 'tenants' for backward compatibility
+      tenants,
     });
   } catch (error) {
     console.error('[Tenants GET] Error:', error);

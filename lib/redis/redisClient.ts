@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import { parseRedisUrl } from './parseRedisUrl';
 
 /**
  * Redis connection configuration optimized for serverless environments
@@ -29,18 +30,50 @@ const REDIS_CONFIG = {
  * @returns {Promise<Redis>} Connected Redis client instance
  */
 export async function createRedisConnection(): Promise<Redis> {
-  const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
+  const redisUrl = process.env.REDIS_URL;
   
-  const redis = new Redis(redisUrl, REDIS_CONFIG);
+  let redis: Redis;
   
-  // Wait for connection to be established
   try {
-    await redis.connect();
+    // Parse Redis URL to handle various formats safely
+    const connectionOptions = parseRedisUrl(redisUrl);
+    
+    // Create Redis instance with parsed options
+    redis = new Redis({
+      ...connectionOptions,
+      ...REDIS_CONFIG,
+      // Add event handlers to catch connection issues
+      connectionName: 'xero-auth',
+      family: 4, // Force IPv4 to avoid IPv6 issues
+    });
+    
+    // Add error handler before connecting
+    redis.on('error', (err) => {
+      console.error('[Redis] Connection error:', err.message);
+    });
+    
+    // Connect explicitly with timeout
+    await Promise.race([
+      redis.connect(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Redis connection timeout')), 5000)
+      )
+    ]);
+    
+    // Verify connection with ping
+    await redis.ping();
+    
     return redis;
   } catch (error) {
     console.error('[Redis] Connection failed:', error);
-    // Close the connection attempt
-    redis.disconnect();
+    // Close the connection attempt if it exists
+    if (redis!) {
+      try {
+        redis.disconnect();
+      } catch (disconnectError) {
+        // Ignore disconnect errors
+      }
+    }
     throw new Error('Failed to connect to Redis');
   }
 }
@@ -61,7 +94,16 @@ export async function withRedis<T>(
     redis = await createRedisConnection();
     return await operation(redis);
   } catch (error) {
-    console.error('[Redis] Operation failed:', error);
+    // Log more details about the error
+    if (error instanceof Error) {
+      console.error('[Redis] Operation failed:', error.message);
+      // Check for specific ioredis errors
+      if (error.message.includes('charCodeAt')) {
+        console.error('[Redis] Possible connection string issue. Check REDIS_URL format.');
+      }
+    } else {
+      console.error('[Redis] Operation failed:', error);
+    }
     throw error;
   } finally {
     // Always close the connection to prevent connection leaks in serverless
@@ -69,8 +111,14 @@ export async function withRedis<T>(
       try {
         await redis.quit();
       } catch (quitError) {
-        // Force disconnect if quit fails
-        redis.disconnect();
+        console.warn('[Redis] Failed to quit gracefully:', quitError);
+        try {
+          // Force disconnect if quit fails
+          redis.disconnect();
+        } catch (disconnectError) {
+          // Ignore disconnect errors
+          console.warn('[Redis] Failed to disconnect:', disconnectError);
+        }
       }
     }
   }
