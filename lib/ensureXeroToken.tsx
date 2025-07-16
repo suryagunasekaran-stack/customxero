@@ -1,6 +1,6 @@
 // lib/ensureXeroToken.ts
 import { auth } from '@/lib/auth';
-import { xeroTokenManager } from '@/lib/xeroTokenManager';
+import { XeroTokenStore } from '@/lib/redis/xeroTokenStore';
 
 export interface ValidTokenData {
     access_token: string;
@@ -12,6 +12,7 @@ export interface ValidTokenData {
 /**
  * Ensures a valid Xero authentication token and resolves tenant selection
  * Validates session, checks token expiry, and determines effective tenant ID
+ * Now uses the serverless-compatible XeroTokenStore
  * @returns {Promise<ValidTokenData>} Object containing access token, tenant ID, and available tenants
  * @throws {Error} When authentication is invalid, token expired, or no tenant available
  */
@@ -28,7 +29,7 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
     if (session.error === 'RefreshAccessTokenError' || session.error === 'NoRefreshToken') {
         // Clear invalid tokens before throwing error
         if (userEmail) {
-            await xeroTokenManager.clearUserTokens(userEmail);
+            await XeroTokenStore.clearUserTokens(userEmail);
         }
         throw new Error('Failed to refresh token. Please re-authenticate.');
     }
@@ -36,8 +37,8 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
         throw new Error('No user email found in session.');
     }
     
-    // Get token from token manager
-    const tokenData = await xeroTokenManager.getToken(userEmail);
+    // Get token from token store
+    const tokenData = await XeroTokenStore.getToken(userEmail);
     
     if (!tokenData || !tokenData.access_token) {
         throw new Error('No access token found. Please re-authenticate.');
@@ -58,11 +59,11 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
     // Get available tenants from session or storage
     let availableTenants = session.tenants || [];
     if (!availableTenants || availableTenants.length === 0) {
-        availableTenants = await xeroTokenManager.getUserTenants(userId) || [];
+        availableTenants = await XeroTokenStore.getUserTenants(userId) || [];
     }
     
     // ALWAYS check Redis first for the selected tenant to get the latest value
-    const redisTenantId = await xeroTokenManager.getSelectedTenant(userId);
+    const redisTenantId = await XeroTokenStore.getSelectedTenant(userId);
     
     let finalTenantId: string;
     
@@ -71,13 +72,13 @@ export async function ensureValidToken(): Promise<ValidTokenData> {
     } else if (availableTenants && availableTenants.length > 0) {
         const defaultTenant = availableTenants.find((t: any) => t.tenantType === 'ORGANISATION') || availableTenants[0];
         finalTenantId = defaultTenant.tenantId;
-        await xeroTokenManager.saveSelectedTenant(userId, defaultTenant.tenantId);
+        await XeroTokenStore.saveSelectedTenant(userId, defaultTenant.tenantId);
     } else {
         throw new Error('No tenant ID available. Please select a tenant.');
     }
     
     // Validate the selected tenant exists in available tenants
-    const selectedTenantInfo = availableTenants?.find(t => t.tenantId === finalTenantId);
+    const selectedTenantInfo = availableTenants?.find((t: any) => t.tenantId === finalTenantId);
     if (!selectedTenantInfo) {
         throw new Error(`Selected tenant ${finalTenantId} is not available. Please reselect a tenant.`);
     }

@@ -8,15 +8,16 @@ import type {
   TokenRefreshResponse,
   XeroTenant 
 } from "@/types/auth.types"
+import { withDistributedLockRetry } from "./redis/redisClient"
 
 /**
- * Dynamically imports xeroTokenManager to avoid edge runtime issues
- * Only used in session callback where edge runtime is not a concern
- * @returns {Promise<XeroTokenManager>} The xeroTokenManager instance
+ * Dynamically imports XeroTokenStore to avoid edge runtime issues
+ * The Redis client is not compatible with edge runtime
+ * @returns {Promise<typeof import('./redis/xeroTokenStore').XeroTokenStore>} The XeroTokenStore class
  */
-const getXeroTokenManager = async () => {
-  const { xeroTokenManager } = await import('./xeroTokenManager');
-  return xeroTokenManager;
+const getXeroTokenStore = async () => {
+  const { XeroTokenStore } = await import('./redis/xeroTokenStore');
+  return XeroTokenStore;
 };
 
 export const authConfig: NextAuthConfig = {
@@ -115,7 +116,22 @@ export const authConfig: NextAuthConfig = {
       }
       
       // Access token has expired or will expire soon, try to update it
-      return refreshAccessToken(token as XeroJWT)
+      // Use distributed lock to prevent concurrent refreshes
+      try {
+        const userId = token.email || token.sub || 'unknown';
+        return await withDistributedLockRetry(
+          `token-refresh:${userId}`,
+          15, // 15 second lock TTL
+          async () => refreshAccessToken(token as XeroJWT),
+          1, // Only 1 retry
+          2000 // 2 second delay
+        );
+      } catch (lockError) {
+        console.error('[Auth] Failed to acquire refresh lock:', lockError);
+        // If we can't get the lock, another process is refreshing
+        // Return current token and let the next request try again
+        return token as XeroJWT;
+      }
     },
     async session({ session, token }): Promise<XeroSession> {
       const xeroToken = token as XeroJWT;
@@ -129,9 +145,9 @@ export const authConfig: NextAuthConfig = {
       // Store the token in cache for access by other parts of the app
       if (xeroToken.expires_at && xeroToken.access_token && xeroToken.refresh_token) {
         try {
-          const tokenManager = await getXeroTokenManager();
+          const TokenStore = await getXeroTokenStore();
           
-          await tokenManager.updateToken(
+          await TokenStore.updateToken(
             session.user?.email || '',
             xeroToken.access_token,
             xeroToken.refresh_token,
@@ -146,14 +162,15 @@ export const authConfig: NextAuthConfig = {
       // Try to get selected tenant from Redis (with error handling)
       try {
         if (session.user?.email && typeof session.user.email === 'string' && session.user.email.trim()) {
-          const xeroTokenManager = await getXeroTokenManager();
-          const selectedTenant = await xeroTokenManager.getSelectedTenant(session.user.email);
+          const TokenStore = await getXeroTokenStore();
+          const selectedTenant = await TokenStore.getSelectedTenant(session.user.email);
           if (selectedTenant) {
             session.tenantId = selectedTenant;
           }
         }
       } catch (error) {
         // Continue with token tenant if Redis fails
+        console.warn('[Auth] Failed to get selected tenant:', error);
       }
       
       return xeroSession
@@ -257,4 +274,4 @@ async function refreshAccessToken(token: XeroJWT): Promise<XeroJWT> {
   }
 }
 
-export const { handlers, signIn, signOut, auth } = NextAuth(authConfig) 
+export const { handlers, signIn, signOut, auth } = NextAuth(authConfig)

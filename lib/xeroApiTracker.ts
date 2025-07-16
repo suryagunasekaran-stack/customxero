@@ -1,22 +1,4 @@
-import Redis from 'ioredis';
-
-// Initialize Redis client for server-side API tracking with proper error handling
-const redis = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
-  maxRetriesPerRequest: 3,
-  enableOfflineQueue: false,
-  connectTimeout: 10000,
-  commandTimeout: 5000,
-  lazyConnect: true,
-});
-
-// Add error handling for Redis connection
-redis.on('error', (err) => {
-  console.error('Redis API Tracker connection error:', err.message);
-});
-
-redis.on('connect', () => {
-  console.log('Redis API Tracker connected successfully');
-});
+import { withRedis, withRedisFallback } from './redis/redisClient';
 
 const XERO_API_USAGE_KEY_PREFIX = 'xero_api_usage';
 const XERO_DAILY_LIMIT = 5000;
@@ -35,314 +17,132 @@ function getUsageKey(tenantId: string): string {
   return `${XERO_API_USAGE_KEY_PREFIX}:${tenantId.trim()}`;
 }
 
+export interface XeroApiUsage {
+  daily: {
+    count: number;
+    resetAt: Date;
+  };
+  perMinute: {
+    count: number;
+    resetAt: Date;
+  };
+}
+
 /**
- * Checks if Redis connection is ready for operations
- * @returns {Promise<boolean>} True if Redis is ready, false otherwise
+ * Tracks Xero API calls and enforces rate limits (5000/day, 60/minute)
+ * Now uses serverless-compatible Redis connections
+ * @param {string} tenantId - Xero tenant ID for tracking
+ * @returns {Promise<void>} Resolves if within limits
+ * @throws {Error} When rate limit is exceeded or Redis operation fails
  */
-async function isRedisReady(): Promise<boolean> {
-  try {
-    return redis.status === 'ready' || redis.status === 'connect';
-  } catch (error) {
-    return false;
+export async function trackXeroApiCall(tenantId: string): Promise<void> {
+  if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
+    console.warn('trackXeroApiCall called with invalid tenantId:', tenantId);
+    throw new Error('Invalid tenantId provided');
   }
+
+  const key = getUsageKey(tenantId);
+  const now = new Date();
+  const todayKey = `${key}:daily:${now.toISOString().split('T')[0]}`;
+  const minuteKey = `${key}:minute:${now.toISOString().slice(0, 16)}`;
+
+  await withRedis(async (redis) => {
+    // Use pipeline for atomic operations
+    const pipeline = redis.pipeline();
+    
+    // Increment daily counter with 24-hour expiry
+    pipeline.incr(todayKey);
+    pipeline.expire(todayKey, 86400); // 24 hours
+    
+    // Increment minute counter with 60-second expiry
+    pipeline.incr(minuteKey);
+    pipeline.expire(minuteKey, 60);
+    
+    const results = await pipeline.exec();
+    
+    if (!results || results.some(r => r[0] !== null)) {
+      throw new Error('Failed to track API usage');
+    }
+    
+    const dailyCount = results[0][1] as number;
+    const minuteCount = results[2][1] as number;
+    
+    // Check rate limits
+    if (dailyCount > XERO_DAILY_LIMIT) {
+      throw new Error(`Xero API daily limit exceeded (${XERO_DAILY_LIMIT}/day)`);
+    }
+    
+    if (minuteCount > XERO_MINUTE_LIMIT) {
+      throw new Error(`Xero API rate limit exceeded (${XERO_MINUTE_LIMIT}/minute)`);
+    }
+  });
 }
 
 /**
- * Safely executes Redis operations with fallback handling for API usage tracking
- * @template T
- * @param {() => Promise<T>} operation - The Redis operation to execute
- * @param {T} fallback - Fallback value if Redis operation fails
- * @returns {Promise<T>} Operation result or fallback value
+ * Retrieves current API usage statistics for a tenant
+ * Useful for monitoring and displaying usage to users
+ * @param {string} tenantId - Xero tenant ID
+ * @returns {Promise<XeroApiUsage>} Usage statistics with counts and reset times
  */
-async function safeRedisOperation<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
-  try {
-    if (!(await isRedisReady())) {
-      console.warn('Redis API Tracker not ready, using fallback value');
-      return fallback;
-    }
-    return await operation();
-  } catch (error) {
-    console.warn('Redis API Tracker operation failed, using fallback:', (error as Error).message);
-    return fallback;
-  }
-}
-
-export interface XeroApiUsageData {
-  dailyLimit: number;
-  usedToday: number;
-  remainingToday: number;
-  minuteLimit: number;
-  usedThisMinute: number;
-  remainingThisMinute: number;
-  lastUpdated: string; // ISO string
-  resetTime: string; // ISO string
-  lastMinuteReset: string; // ISO string for minute tracking
-}
-
-/**
- * Tracks Xero API usage from actual response headers (preferred method)
- * Uses authoritative rate limit data from Xero's X-DayLimit-Remaining and X-MinLimit-Remaining headers
- * @param {Headers} responseHeaders - HTTP response headers from Xero API call
- * @param {string} tenantId - Xero tenant ID to track usage for
- * @returns {Promise<void>} Promise that resolves when tracking is complete
- */
-export async function trackXeroApiCallFromHeaders(responseHeaders: Headers, tenantId: string): Promise<void> {
-  try {
-    // Validate tenantId
-    if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
-      console.warn('[Xero API Tracker] trackXeroApiCallFromHeaders called with invalid tenantId:', tenantId);
-      return;
-    }
-    
-    const now = new Date();
-    
-    // Parse actual rate limit data from Xero response headers
-    // Xero uses X-DayLimit-Remaining and X-MinLimit-Remaining
-    const remainingDaily = parseInt(responseHeaders.get('X-DayLimit-Remaining') || '5000');
-    const remainingMinute = parseInt(responseHeaders.get('X-MinLimit-Remaining') || '60');
-    
-    // Use standard limits (5000 daily, 60 per minute)
-    const dailyLimit = 5000;
-    const minuteLimit = 60;
-    
-    console.log(`[Xero API Tracker] Found Xero rate limit headers:`);
-    console.log(`  X-DayLimit-Remaining: ${responseHeaders.get('X-DayLimit-Remaining')} (parsed: ${remainingDaily})`);
-    console.log(`  X-MinLimit-Remaining: ${responseHeaders.get('X-MinLimit-Remaining')} (parsed: ${remainingMinute})`);
-    
-    // Validate that we got reasonable values
-    if (isNaN(remainingDaily) || isNaN(remainingMinute)) {
-      console.log('[Xero API Tracker] Invalid header values, falling back to manual tracking');
-      throw new Error('Invalid rate limit header values');
-    }
-    
-    // Calculate used calls
-    const usedToday = dailyLimit - remainingDaily;
-    const usedThisMinute = minuteLimit - remainingMinute;
-    
-    // Calculate reset time (midnight UTC)
-    const resetTime = new Date();
-    resetTime.setUTCHours(24, 0, 0, 0);
-    
-    const usage: XeroApiUsageData = {
-      dailyLimit: dailyLimit,
-      usedToday: usedToday,
-      remainingToday: remainingDaily,
-      minuteLimit: minuteLimit,
-      usedThisMinute: usedThisMinute,
-      remainingThisMinute: remainingMinute,
-      lastUpdated: now.toISOString(),
-      resetTime: resetTime.toISOString(),
-      lastMinuteReset: now.toISOString()
+export async function getXeroApiUsage(tenantId: string): Promise<XeroApiUsage> {
+  if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
+    console.warn('getXeroApiUsage called with invalid tenantId:', tenantId);
+    return {
+      daily: { count: 0, resetAt: new Date() },
+      perMinute: { count: 0, resetAt: new Date() }
     };
-    
-    // Save the authoritative usage data from Xero using safe Redis operations
-    await safeRedisOperation(async () => {
-      await redis.set(getUsageKey(tenantId), JSON.stringify(usage), 'EX', 25 * 60 * 60);
-    }, undefined);
-    
-    console.log(`[Xero API Tracker] API usage from headers - Daily: ${usedToday}/${dailyLimit} (${remainingDaily} remaining), Minute: ${usedThisMinute}/${minuteLimit} (${remainingMinute} remaining)`);
-  } catch (error) {
-    console.error('[Xero API Tracker] Failed to track API call from headers:', error);
-    // Fallback to manual tracking
-    await trackXeroApiCallManual(tenantId);
   }
-}
 
-/**
- * Manual API usage tracking when response headers are not available
- * Implements time-based counter management with automatic resets
- * @param {string} tenantId - Xero tenant ID to track usage for
- * @returns {Promise<void>} Promise that resolves when tracking is complete
- */
-export async function trackXeroApiCallManual(tenantId: string): Promise<void> {
-  try {
-    // Validate tenantId
-    if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
-      console.warn('[Xero API Tracker] trackXeroApiCallManual called with invalid tenantId:', tenantId);
-      return;
-    }
-    
-    const now = new Date();
-    const currentMinute = Math.floor(now.getTime() / 60000);
-    
-    // Get current usage data using safe Redis operations
-    const existingData = await safeRedisOperation(async () => {
-      return await redis.get(getUsageKey(tenantId));
-    }, null);
-    let usage: XeroApiUsageData;
-    
-    if (existingData) {
-      usage = JSON.parse(existingData);
-      
-      // Check if we need to reset daily counters (new day)
-      const lastDate = new Date(usage.lastUpdated);
-      const hasResetDaily = now.getUTCDate() !== lastDate.getUTCDate() || 
-                           now.getUTCMonth() !== lastDate.getUTCMonth() || 
-                           now.getUTCFullYear() !== lastDate.getUTCFullYear();
-      
-      // Check if we need to reset minute counters
-      const lastMinute = Math.floor(new Date(usage.lastMinuteReset).getTime() / 60000);
-      const hasResetMinute = currentMinute !== lastMinute;
-      
-      if (hasResetDaily) {
-        // Reset daily and minute counters
-        const resetTime = new Date();
-        resetTime.setUTCHours(24, 0, 0, 0);
-        
-        usage = {
-          dailyLimit: XERO_DAILY_LIMIT,
-          usedToday: 1,
-          remainingToday: XERO_DAILY_LIMIT - 1,
-          minuteLimit: XERO_MINUTE_LIMIT,
-          usedThisMinute: 1,
-          remainingThisMinute: XERO_MINUTE_LIMIT - 1,
-          lastUpdated: now.toISOString(),
-          resetTime: resetTime.toISOString(),
-          lastMinuteReset: now.toISOString()
-        };
-      } else if (hasResetMinute) {
-        // Reset only minute counters
-        usage = {
-          ...usage,
-          usedToday: usage.usedToday + 1,
-          remainingToday: Math.max(0, usage.remainingToday - 1),
-          usedThisMinute: 1,
-          remainingThisMinute: XERO_MINUTE_LIMIT - 1,
-          lastUpdated: now.toISOString(),
-          lastMinuteReset: now.toISOString()
-        };
-      } else {
-        // Increment both daily and minute counters
-        usage = {
-          ...usage,
-          usedToday: usage.usedToday + 1,
-          remainingToday: Math.max(0, usage.remainingToday - 1),
-          usedThisMinute: usage.usedThisMinute + 1,
-          remainingThisMinute: Math.max(0, usage.remainingThisMinute - 1),
-          lastUpdated: now.toISOString()
-        };
+  const key = getUsageKey(tenantId);
+  const now = new Date();
+  const todayKey = `${key}:daily:${now.toISOString().split('T')[0]}`;
+  const minuteKey = `${key}:minute:${now.toISOString().slice(0, 16)}`;
+
+  return withRedisFallback(async (redis) => {
+    const [dailyCount, minuteCount] = await Promise.all([
+      redis.get(todayKey),
+      redis.get(minuteKey)
+    ]);
+
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const endOfMinute = new Date();
+    endOfMinute.setSeconds(59, 999);
+
+    return {
+      daily: {
+        count: parseInt(dailyCount || '0', 10),
+        resetAt: endOfDay
+      },
+      perMinute: {
+        count: parseInt(minuteCount || '0', 10),
+        resetAt: endOfMinute
       }
-    } else {
-      // Initialize usage data
-      const resetTime = new Date();
-      resetTime.setUTCHours(24, 0, 0, 0);
-      
-      usage = {
-        dailyLimit: XERO_DAILY_LIMIT,
-        usedToday: 1,
-        remainingToday: XERO_DAILY_LIMIT - 1,
-        minuteLimit: XERO_MINUTE_LIMIT,
-        usedThisMinute: 1,
-        remainingThisMinute: XERO_MINUTE_LIMIT - 1,
-        lastUpdated: now.toISOString(),
-        resetTime: resetTime.toISOString(),
-        lastMinuteReset: now.toISOString()
-      };
-    }
-    
-    // Save updated usage data with TTL of 25 hours (to ensure cleanup) using safe Redis operations
-    await safeRedisOperation(async () => {
-      await redis.set(getUsageKey(tenantId), JSON.stringify(usage), 'EX', 25 * 60 * 60);
-    }, undefined);
-    
-    console.log(`[Xero API Tracker] Manual API call tracked for tenant ${tenantId}. Daily: ${usage.usedToday}/${usage.dailyLimit}, Minute: ${usage.usedThisMinute}/${usage.minuteLimit}`);
-  } catch (error) {
-    console.error('[Xero API Tracker] Failed to track API call manually:', error);
-    // Don't throw error to avoid breaking the main API call
-  }
+    };
+  }, {
+    daily: { count: 0, resetAt: new Date() },
+    perMinute: { count: 0, resetAt: new Date() }
+  });
 }
 
 /**
- * Convenience function for tracking API calls with automatic fallback strategy
- * Attempts header-based tracking first, falls back to manual tracking
- * @param {Headers | undefined} responseHeaders - Optional HTTP response headers from Xero API
- * @param {string} tenantId - Xero tenant ID to track usage for
- * @returns {Promise<void>} Promise that resolves when tracking is complete
+ * Checks if API call would exceed rate limits without incrementing
+ * Useful for pre-flight checks before making expensive operations
+ * @param {string} tenantId - Xero tenant ID
+ * @returns {Promise<boolean>} True if call would be within limits
  */
-export async function trackXeroApiCall(responseHeaders: Headers | undefined, tenantId: string): Promise<void> {
-  if (responseHeaders) {
-    await trackXeroApiCallFromHeaders(responseHeaders, tenantId);
-  } else {
-    await trackXeroApiCallManual(tenantId);
+export async function checkXeroApiLimit(tenantId: string): Promise<boolean> {
+  if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
+    console.warn('checkXeroApiLimit called with invalid tenantId:', tenantId);
+    return true; // Allow if we can't check
   }
-}
 
-/**
- * Retrieves current API usage statistics for a tenant with automatic reset handling
- * Automatically resets counters when daily or minute windows have expired
- * @param {string} tenantId - Xero tenant ID to get usage statistics for
- * @returns {Promise<XeroApiUsageData | null>} Usage data object or null if not found
- */
-export async function getXeroApiUsage(tenantId: string): Promise<XeroApiUsageData | null> {
   try {
-    // Validate tenantId
-    if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
-      console.warn('[Xero API Tracker] getXeroApiUsage called with invalid tenantId:', tenantId);
-      return null;
-    }
-    
-    const existingData = await safeRedisOperation(async () => {
-      return await redis.get(getUsageKey(tenantId));
-    }, null);
-    if (existingData) {
-      const usage = JSON.parse(existingData);
-      
-      // Check if data needs reset
-      const now = new Date();
-      const lastDate = new Date(usage.lastUpdated);
-      const hasResetDaily = now.getUTCDate() !== lastDate.getUTCDate() || 
-                           now.getUTCMonth() !== lastDate.getUTCMonth() || 
-                           now.getUTCFullYear() !== lastDate.getUTCFullYear();
-      
-      const currentMinute = Math.floor(now.getTime() / 60000);
-      const lastMinute = Math.floor(new Date(usage.lastMinuteReset).getTime() / 60000);
-      const hasResetMinute = currentMinute !== lastMinute;
-      
-      if (hasResetDaily) {
-        // Reset daily counters
-        const resetTime = new Date();
-        resetTime.setUTCHours(24, 0, 0, 0);
-        
-        const resetUsage = {
-          dailyLimit: XERO_DAILY_LIMIT,
-          usedToday: 0,
-          remainingToday: XERO_DAILY_LIMIT,
-          minuteLimit: XERO_MINUTE_LIMIT,
-          usedThisMinute: hasResetMinute ? 0 : usage.usedThisMinute,
-          remainingThisMinute: hasResetMinute ? XERO_MINUTE_LIMIT : usage.remainingThisMinute,
-          lastUpdated: now.toISOString(),
-          resetTime: resetTime.toISOString(),
-          lastMinuteReset: hasResetMinute ? now.toISOString() : usage.lastMinuteReset
-        };
-        
-        // Save the reset data using safe Redis operations
-        await safeRedisOperation(async () => {
-          await redis.set(getUsageKey(tenantId), JSON.stringify(resetUsage), 'EX', 25 * 60 * 60);
-        }, undefined);
-        return resetUsage;
-      } else if (hasResetMinute) {
-        // Reset minute counters
-        const resetUsage = {
-          ...usage,
-          usedThisMinute: 0,
-          remainingThisMinute: XERO_MINUTE_LIMIT,
-          lastUpdated: now.toISOString(),
-          lastMinuteReset: now.toISOString()
-        };
-        
-        // Save the reset data using safe Redis operations
-        await safeRedisOperation(async () => {
-          await redis.set(getUsageKey(tenantId), JSON.stringify(resetUsage), 'EX', 25 * 60 * 60);
-        }, undefined);
-        return resetUsage;
-      }
-      
-      return usage;
-    }
-    
-    return null;
+    const usage = await getXeroApiUsage(tenantId);
+    return usage.daily.count < XERO_DAILY_LIMIT && usage.perMinute.count < XERO_MINUTE_LIMIT;
   } catch (error) {
-    console.error('[Xero API Tracker] Failed to get API usage:', error);
-    return null;
+    console.error('Error checking API limits:', error);
+    return true; // Allow if Redis is down
   }
-} 
+}

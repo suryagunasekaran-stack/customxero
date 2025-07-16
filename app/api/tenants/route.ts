@@ -1,147 +1,146 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { xeroTokenManager } from '@/lib/xeroTokenManager';
+import { XeroTokenStore } from '@/lib/redis/xeroTokenStore';
 
 /**
- * GET /api/tenants - Returns available Xero tenants and current selection
- * Retrieves tenant data from session and Redis storage with fallback handling
- * @returns {Promise<Response>} JSON response with tenant data or error
+ * GET /api/tenants - Retrieves user's available Xero tenants and current selection
+ * Used by TenantSelector component to populate the tenant dropdown
+ * @returns {NextResponse} JSON response with tenants array and selected tenant ID
  */
 export async function GET() {
+  console.log('[Tenants GET] Fetching tenants list');
+  
   try {
     const session = await auth();
     
-    if (!session) {
+    if (!session || !session.user?.email) {
+      console.error('[Tenants GET] No authenticated session found');
       return NextResponse.json({ 
-        error: 'Not authenticated' 
+        error: 'Unauthorized', 
+        message: 'No authenticated session found' 
       }, { status: 401 });
     }
-
-    const userEmail = session.user?.email;
-    if (!userEmail || typeof userEmail !== 'string' || !userEmail.trim()) {
-      console.error('[Tenants GET] Invalid user email:', userEmail);
-      return NextResponse.json({ 
-        error: 'Invalid user session - no valid email found' 
-      }, { status: 400 });
-    }
-
-    const userId = userEmail.trim();
     
-    // First check if tenants are in the session
-    let tenants = session.tenants;
-    let selectedTenant = session.tenantId;
+    const userId = session.user.email.trim();
+    console.log('[Tenants GET] User:', userId);
+    
+    // Get tenants from session or storage
+    let tenants = session.tenants || [];
     
     // If not in session, try to get from storage
     if (!tenants || tenants.length === 0) {
-      const storedTenants = await xeroTokenManager.getUserTenants(userId);
+      const storedTenants = await XeroTokenStore.getUserTenants(userId);
       if (storedTenants) {
         tenants = storedTenants;
       }
     }
     
     // Always get selected tenant from Redis to ensure latest value
-    const storedSelectedTenant = await xeroTokenManager.getSelectedTenant(userId);
-    if (storedSelectedTenant) {
-      selectedTenant = storedSelectedTenant;
+    const storedSelectedTenant = await XeroTokenStore.getSelectedTenant(userId);
+    let selectedTenant = storedSelectedTenant;
+    
+    console.log('[Tenants GET] Found tenants:', tenants.length);
+    console.log('[Tenants GET] Selected tenant from storage:', storedSelectedTenant);
+    
+    // If no selected tenant but tenants available, select default
+    if (!selectedTenant && tenants.length > 0) {
+      const defaultTenant = tenants.find((t: any) => t.tenantType === 'ORGANISATION') || tenants[0];
+      selectedTenant = defaultTenant.tenantId;
+      console.log('[Tenants GET] No selected tenant, using default:', selectedTenant);
+      await XeroTokenStore.saveSelectedTenant(userId, defaultTenant.tenantId);
     }
     
-    console.log('[Tenants GET] User:', userId, 'Selected tenant from Redis:', storedSelectedTenant, 'Session tenant:', session.tenantId);
-
-    if (!tenants || tenants.length === 0) {
-      return NextResponse.json({ 
-        error: 'No tenants available. Please re-authenticate with Xero.' 
-      }, { status: 404 });
-    }
-
     return NextResponse.json({
-      availableTenants: tenants,
+      tenants,
       selectedTenant,
-      hasMultipleTenants: tenants.length > 1
     });
   } catch (error) {
-    console.error('[Tenants API] Error fetching tenants:', error);
+    console.error('[Tenants GET] Error:', error);
     return NextResponse.json({ 
-      error: 'Failed to fetch tenants' 
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error occurred'
     }, { status: 500 });
   }
 }
 
 /**
- * POST /api/tenants - Sets the selected tenant for the current user
- * Validates tenant ID and saves selection to Redis storage
- * @param {Request} request - HTTP request with tenantId in JSON body
- * @returns {Promise<Response>} JSON response with success status or error
+ * POST /api/tenants - Updates the user's selected Xero tenant
+ * Stores the selection in Redis for persistence across sessions
+ * @param {Request} request - Contains tenantId in JSON body
+ * @returns {NextResponse} Confirmation of tenant selection
  */
 export async function POST(request: Request) {
+  console.log('[Tenants POST] ===== TENANT SELECTION REQUEST =====');
+  
   try {
     const session = await auth();
     
-    if (!session) {
+    if (!session || !session.user?.email) {
+      console.error('[Tenants POST] No authenticated session found');
       return NextResponse.json({ 
-        error: 'Not authenticated' 
+        error: 'Unauthorized',
+        message: 'No authenticated session found'
       }, { status: 401 });
     }
-
-    const userEmail = session.user?.email;
-    if (!userEmail || typeof userEmail !== 'string' || !userEmail.trim()) {
-      console.error('[Tenants POST] Invalid user email:', userEmail);
+    
+    const userId = session.user.email.trim();
+    console.log('[Tenants POST] User:', userId);
+    
+    const body = await request.json();
+    const { tenantId } = body;
+    
+    if (!tenantId || typeof tenantId !== 'string') {
+      console.error('[Tenants POST] Invalid tenant ID provided:', tenantId);
       return NextResponse.json({ 
-        error: 'Invalid user session - no valid email found' 
+        error: 'Bad Request',
+        message: 'Invalid tenant ID provided'
       }, { status: 400 });
     }
-
-    const userId = userEmail.trim();
-    const { tenantId } = await request.json();
-
-    console.log('[Tenants POST] User:', userId, 'Switching to tenant:', tenantId);
-
-    if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
-      return NextResponse.json({ 
-        error: 'Tenant ID is required and must be a valid string' 
-      }, { status: 400 });
-    }
-
+    
     const cleanTenantId = tenantId.trim();
-
+    console.log('[Tenants POST] Requested tenant ID:', cleanTenantId);
+    
     // Verify the tenant exists in available tenants
-    const availableTenants = session.tenants || await xeroTokenManager.getUserTenants(userId) || [];
+    const availableTenants = session.tenants || await XeroTokenStore.getUserTenants(userId) || [];
     if (!availableTenants.find((t: any) => t.tenantId === cleanTenantId)) {
       console.error('[Tenants POST] Invalid tenant ID:', cleanTenantId, 'Available:', availableTenants.map((t: any) => t.tenantId));
       return NextResponse.json({ 
-        error: 'Invalid tenant ID' 
+        error: 'Bad Request',
+        message: 'Invalid tenant ID - tenant not found in available tenants'
       }, { status: 400 });
     }
-
-    console.log('[Tenants POST] 🔄 SWITCHING TENANT:');
+    
+    // Save to Redis (serverless-compatible)
+    console.log('[Tenants POST] 🔄 Attempting to save tenant:', cleanTenantId);
     console.log('[Tenants POST]   User:', userId);
-    console.log('[Tenants POST]   From tenant:', session.tenantId);
-    console.log('[Tenants POST]   To tenant:', cleanTenantId);
     console.log('[Tenants POST]   Tenant name:', availableTenants.find((t: any) => t.tenantId === cleanTenantId)?.tenantName);
     
-    await xeroTokenManager.saveSelectedTenant(userId, cleanTenantId);
+    await XeroTokenStore.saveSelectedTenant(userId, cleanTenantId);
     console.log('[Tenants POST] ✅ Successfully saved tenant:', cleanTenantId, 'for user:', userId);
 
     // Verify it was saved
-    const verifyTenant = await xeroTokenManager.getSelectedTenant(userId);
+    const verifyTenant = await XeroTokenStore.getSelectedTenant(userId);
     console.log('[Tenants POST] 🔍 Verification - saved tenant:', verifyTenant);
     
     if (verifyTenant !== cleanTenantId) {
-        console.error('[Tenants POST] 🚨 CRITICAL: Tenant save verification failed!');
-        console.error('[Tenants POST]   Expected:', cleanTenantId);
-        console.error('[Tenants POST]   Actual:', verifyTenant);
-        return NextResponse.json({ 
-          error: 'Failed to save tenant selection' 
-        }, { status: 500 });
+      console.error('[Tenants POST] ❌ Verification failed! Expected:', cleanTenantId, 'Got:', verifyTenant);
+      return NextResponse.json({ 
+        error: 'Internal Server Error',
+        message: 'Failed to verify tenant selection'
+      }, { status: 500 });
     }
-
+    
+    console.log('[Tenants POST] ===== TENANT SELECTION COMPLETE =====');
     return NextResponse.json({ 
       success: true, 
-      selectedTenant: cleanTenantId 
+      tenantId: cleanTenantId,
+      message: 'Tenant selection saved successfully'
     });
   } catch (error) {
-    console.error('[Tenants API] Error setting selected tenant:', error);
+    console.error('[Tenants POST] Error saving tenant selection:', error);
     return NextResponse.json({ 
-      error: 'Failed to set selected tenant' 
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Failed to save tenant selection'
     }, { status: 500 });
   }
-} 
+}
