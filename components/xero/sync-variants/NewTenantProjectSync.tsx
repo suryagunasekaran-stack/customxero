@@ -22,7 +22,7 @@ export default function NewTenantProjectSync({ disabled = false }: NewTenantProj
   const [validationResults, setValidationResults] = useState<any>(null);
 
   const runValidation = useCallback(async () => {
-    if (!sessionData?.user?.accessToken) {
+    if (!sessionData?.accessToken) {
       setError('No valid session. Please re-authenticate.');
       return;
     }
@@ -36,7 +36,7 @@ export default function NewTenantProjectSync({ disabled = false }: NewTenantProj
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionData.user.accessToken}`,
+          'Authorization': `Bearer ${sessionData.accessToken}`,
         },
         body: JSON.stringify({
           tenantId: 'new-tenant-id',

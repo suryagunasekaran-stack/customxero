@@ -6,7 +6,7 @@ import { bseniValidation } from './tenants/bseni';
 import { newTenantValidation } from './tenants/newTenant';
 
 // Map tenant IDs to their validation handlers
-const tenantHandlers = {
+const tenantHandlers: Record<string, typeof bseniValidation> = {
   '6dd39ea4-e6a6-4993-a37a-21482ccf8d22': bseniValidation,
   'new-tenant-id': newTenantValidation,
   // Add more tenants here

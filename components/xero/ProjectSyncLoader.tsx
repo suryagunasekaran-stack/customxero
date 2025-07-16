@@ -6,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import { FunctionCardProps } from './types';
 
 // Lazy load tenant-specific components
-const tenantComponents = {
+const tenantComponents: Record<string, React.ComponentType<FunctionCardProps>> = {
   // BSENI tenant - current implementation
   '6dd39ea4-e6a6-4993-a37a-21482ccf8d22': dynamic(() => import('./ProjectSyncCard'), {
     loading: () => <div className="animate-pulse bg-gray-200 h-64 rounded-lg" />
