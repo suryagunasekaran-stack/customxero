@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { CloudArrowUpIcon, DocumentIcon } from '@heroicons/react/24/outline';
+import { upload } from '@vercel/blob/client';
 
 interface BlobUploadCardProps {
   disabled?: boolean;
@@ -20,23 +21,17 @@ export default function BlobUploadCard({ disabled = false, onUploadSuccess }: Bl
     setUploadProgress(0);
 
     try {
-      // Create FormData and append file
-      const formData = new FormData();
-      formData.append('file', file);
-
-      // Upload to our API route
-      const response = await fetch(`/api/blob/upload?filename=${encodeURIComponent(file.name)}`, {
-        method: 'POST',
-        body: file,
+      // Use Vercel Blob client-side upload for large files
+      const blob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/blob/upload-url',
+        onUploadProgress: (progressEvent) => {
+          const progress = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+          setUploadProgress(progress);
+        },
       });
 
-      if (!response.ok) {
-        throw new Error('Upload failed');
-      }
-
-      const blob = await response.json();
       onUploadSuccess?.(blob);
-      setUploadProgress(100);
       
       // Reset progress after success
       setTimeout(() => {
@@ -132,7 +127,7 @@ export default function BlobUploadCard({ disabled = false, onUploadSuccess }: Bl
             {isUploading ? 'Uploading...' : 'Click to upload or drag and drop'}
           </p>
           <p className="text-xs text-gray-500 mt-1">
-            Any file type, up to 10MB
+            Excel files (.xlsx, .xls), up to 50MB
           </p>
         </div>
 
