@@ -527,6 +527,9 @@ function generateProcessingReport(
   return { filename, content: csvLines.join('\n') };
 }
 
+export const runtime = 'nodejs';
+export const maxDuration = 60; // 60 seconds for Vercel Pro
+
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
   console.log('[API] Starting timesheet processing');
