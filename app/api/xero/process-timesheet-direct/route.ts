@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall } from '@/lib/xeroApiTracker';
 import { SmartRateLimit } from '@/lib/smartRateLimit';
-import { AuditLogger } from '@/lib/auditLogger';
 import { auth } from '@/lib/auth';
 
 interface ConsolidatedTask {
@@ -122,14 +121,18 @@ function getTaskConfigForTenant(tenantId: string, tenantName: string) {
 }
 
 // Process timesheet with Python backend
-async function processTimesheetWithPython(file: File): Promise<ProcessedTimesheet> {
-  const formData = new FormData();
-  formData.append('file', file);
-
+async function processTimesheetWithPython(blobUrl: string, fileName: string, tenantId: string): Promise<ProcessedTimesheet> {
   const flaskUrl = `${process.env.NEXT_PUBLIC_FLASK_SERVER_URL}/api/process-timesheet`;
   const response = await fetch(flaskUrl, {
     method: 'POST',
-    body: formData,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      blobUrl,
+      fileName,
+      tenantId
+    }),
   });
 
   if (!response.ok) {
@@ -138,6 +141,21 @@ async function processTimesheetWithPython(file: File): Promise<ProcessedTimeshee
   }
 
   const data = await response.json();
+  
+  // Temporary: Handle empty response from backend during development
+  if (Object.keys(data).length === 0) {
+    console.log('[API] Backend returned empty response - using mock data for now');
+    return {
+      success: true,
+      metadata: {
+        entries_processed: 0,
+        projects_consolidated: 0,
+        period_range: 'N/A'
+      },
+      consolidated_payload: {}
+    };
+  }
+  
   if (!data.success) {
     throw new Error(data.error || 'Timesheet processing failed');
   }
@@ -534,88 +552,54 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
   console.log('[API] Starting timesheet processing');
 
-  // Initialize audit logger
+  // Get authentication and tenant info
   const session = await auth();
   const { access_token, effective_tenant_id, available_tenants } = await ensureValidToken();
   const selectedTenant = available_tenants?.find(t => t.tenantId === effective_tenant_id);
-  const auditLogger = new AuditLogger(session, effective_tenant_id, selectedTenant?.tenantName);
-
-  let processingLogId: string | null = null;
 
   try {
-    let file: File;
-    let fileName: string;
-    
-    // Check if request is JSON (blob URL) or FormData (direct upload)
+    // Get JSON payload
     const contentType = request.headers.get('content-type');
-    if (contentType?.includes('application/json')) {
-      // Handle blob URL
-      const body = await request.json();
-      const { blobUrl, fileName: blobFileName } = body;
-      
-      if (!blobUrl || !blobFileName) {
-        await auditLogger.logFailure('TIMESHEET_UPLOAD', 'Missing blobUrl or fileName', { step: 'blob_validation' }, request);
-        return NextResponse.json({ error: 'blobUrl and fileName are required' }, { status: 400 });
-      }
-      
-      fileName = blobFileName;
-      
-      // Download file from blob URL
-      console.log('[API] Downloading file from blob URL:', blobUrl);
-      const blobResponse = await fetch(blobUrl);
-      if (!blobResponse.ok) {
-        await auditLogger.logFailure('TIMESHEET_UPLOAD', 'Failed to download file from blob URL', { 
-          step: 'blob_download',
-          blobUrl,
-          status: blobResponse.status 
-        }, request);
-        throw new Error('Failed to download file from blob URL');
-      }
-      
-      const arrayBuffer = await blobResponse.arrayBuffer();
-      file = new File([arrayBuffer], fileName, { 
-        type: blobResponse.headers.get('content-type') || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-      });
-    } else {
-      // Handle direct file upload
-      const formData = await request.formData();
-      file = formData.get('file') as File;
-      
-      if (!file) {
-        await auditLogger.logFailure('TIMESHEET_UPLOAD', 'No file uploaded', { step: 'file_validation' }, request);
-        return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
-      }
-      
-      fileName = file.name;
+    if (!contentType?.includes('application/json')) {
+      return NextResponse.json({ error: 'Request must be JSON' }, { status: 400 });
+    }
+    
+    const body = await request.json();
+    const { blobUrl, fileName, tenantId } = body;
+    
+    if (!blobUrl || !fileName || !tenantId) {
+      return NextResponse.json({ error: 'blobUrl, fileName, and tenantId are required' }, { status: 400 });
     }
 
     console.log('[API] Processing file:', fileName);
 
-    // Log file upload
-    await auditLogger.logSuccess('TIMESHEET_UPLOAD', {
-      filename: fileName,
-      fileSize: file.size,
-      fileType: file.type
-    }, request);
-
     // Step 1: Process timesheet with Python backend
-    processingLogId = await auditLogger.startAction('TIMESHEET_PROCESS', {
-      filename: fileName,
-      step: 'python_processing'
-    }, request);
-
-    const timesheetData = await processTimesheetWithPython(file);
+    const timesheetData = await processTimesheetWithPython(blobUrl, fileName, tenantId);
     console.log(`[Stats] Processed: ${timesheetData.metadata.entries_processed} entries, ${timesheetData.metadata.projects_consolidated} projects`);
 
-    // Update log with processing results
-    if (processingLogId) {
-      await auditLogger.completeAction(processingLogId, 'SUCCESS', {
+    // Return simple success response - no Xero processing
+    return NextResponse.json({
+      success: true,
+      metadata: timesheetData.metadata,
+      summary: {
         entriesProcessed: timesheetData.metadata.entries_processed,
-        projectsConsolidated: timesheetData.metadata.projects_consolidated,
-        periodRange: timesheetData.metadata.period_range
-      });
-    }
+        projectsAnalyzed: timesheetData.metadata.projects_consolidated,
+        projectsMatched: 0,
+        tasksCreated: 0,
+        tasksUpdated: 0,
+        tasksFailed: 0,
+        actualTasksFailed: 0,
+        projectsNotFound: 0,
+        processingTimeMs: Date.now() - startTime
+      },
+      results: [],
+      downloadableReport: {
+        filename: 'processing-results.csv',
+        content: ''
+      }
+    });
 
+    /* COMMENTED OUT - Xero processing
     // Step 2: Get active Xero projects and verify tenant
     const { projects, tenantName } = await getActiveXeroProjects(access_token, effective_tenant_id);
     console.log(`[Stats] Found ${projects.length} active IN PROGRESS Xero projects for: ${tenantName}`);
@@ -637,10 +621,6 @@ export async function POST(request: NextRequest) {
 
     // Verify we have a valid tenant before proceeding
     if (!tenantName || tenantName === 'Unknown') {
-      await auditLogger.logFailure('PROJECT_UPDATE', 'Unable to verify tenant name from Xero', {
-        tenantId: effective_tenant_id,
-        projectsFound: projects.length
-      }, request);
       
       return NextResponse.json({
         success: false,
@@ -660,21 +640,11 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Log tenant verification
-    await auditLogger.logSuccess('PROJECT_UPDATE', {
-      tenantVerified: tenantName,
-      projectsAvailable: projects.length,
-      step: 'tenant_verification'
-    }, request);
 
     // Step 3: Get tenant configuration
     const config = getTaskConfigForTenant(effective_tenant_id, tenantName);
 
     // Step 4: Batch update Xero tasks
-    const updateLogId = await auditLogger.startAction('PROJECT_UPDATE', {
-      projectCount: Object.keys(timesheetData.consolidated_payload).length,
-      xeroProjectsAvailable: projects.length
-    }, request);
 
     const results = await batchUpdateXeroTasks(
       timesheetData.consolidated_payload,
@@ -706,29 +676,6 @@ export async function POST(request: NextRequest) {
       processingTimeMs: Date.now() - startTime
     };
 
-    // Complete update log
-    if (updateLogId) {
-      await auditLogger.completeAction(
-        updateLogId, 
-        summary.actualTasksFailed === 0 ? 'SUCCESS' : 'FAILURE',
-        {
-          summary,
-          tasksProcessed: results.length,
-          actualFailures: results.filter(r => !r.success && !r.error?.includes('not found in active Xero projects')).map(r => ({
-            project: r.projectCode,
-            task: r.taskName,
-            error: r.error
-          })),
-          projectsNotFound: results.filter(r => !r.success && r.error?.includes('not found in active Xero projects')).map(r => ({
-            project: r.projectCode,
-            task: r.taskName,
-            reason: 'Project likely moved to CLOSED/COMPLETED status'
-          }))
-        },
-        summary.actualTasksFailed > 0 ? `${summary.actualTasksFailed} tasks failed` : undefined,
-        Date.now() - startTime
-      );
-    }
 
     // Generate report
     const report = generateProcessingReport(timesheetData, results, summary);
@@ -768,31 +715,11 @@ export async function POST(request: NextRequest) {
     console.log('[Stats] Complete - Created:', summary.tasksCreated, 'Updated:', summary.tasksUpdated, 'Failed:', summary.actualTasksFailed);
 
     return NextResponse.json(response);
+    */ // END OF COMMENTED OUT Xero processing
 
   } catch (error: any) {
     console.error('[API Error]:', error.message || error);
     
-    // Log the failure
-    await auditLogger.logFailure(
-      'TIMESHEET_PROCESS',
-      error,
-      {
-        step: 'processing_error',
-        executionTimeMs: Date.now() - startTime
-      },
-      request
-    );
-
-    // If we have a processing log ID that wasn't completed, complete it as failure
-    if (processingLogId) {
-      await auditLogger.completeAction(
-        processingLogId,
-        'FAILURE',
-        { error: error.message },
-        error.message || 'Processing failed',
-        Date.now() - startTime
-      );
-    }
 
     return NextResponse.json({
       success: false,

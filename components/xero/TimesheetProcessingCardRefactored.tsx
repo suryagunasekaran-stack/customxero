@@ -8,7 +8,7 @@ import BlobBrowserCard from './BlobBrowserCard';
 import ProcessingStepsDisplay from './timesheet/ProcessingStepsDisplay';
 import ProcessingResults from './timesheet/ProcessingResults';
 import { TimesheetProcessingController } from '../../lib/timesheet/TimesheetProcessingController';
-import { ProcessingStatus, ProcessingStep, DirectProcessingResult, FilePreview, TenantInfo, PROCESSING_STEPS } from '../../lib/timesheet/types';
+import { ProcessingStatus, ProcessingStep, DirectProcessingResult, FilePreview, TenantInfo } from '../../lib/timesheet/types';
 import { ReportService } from '../../lib/timesheet/services/ReportService';
 
 interface TimesheetProcessingCardProps {
@@ -64,7 +64,7 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
       const response = await fetch('/api/test-tenant');
       const tenantData = await response.json();
       
-      if (!tenantData.tenantId) {
+      if (!tenantData.effectiveTenantId) {
         setError('No tenant selected');
         return;
       }
@@ -72,8 +72,8 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
       setSelectedBlobUrl(blobUrl);
       setSelectedFileName(fileName);
       setTenantInfo({
-        tenantId: tenantData.tenantId,
-        tenantName: tenantData.tenantName || 'Unknown Tenant'
+        tenantId: tenantData.effectiveTenantId,
+        tenantName: tenantData.selectedTenantName || tenantData.xeroOrgName || 'Unknown Tenant'
       });
       setFilePreview({
         fileName: fileName,
@@ -96,11 +96,15 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
     setStartTime(Date.now());
     setStatus('processing');
     
-    // Initialize processing steps
-    const steps = PROCESSING_STEPS.map(step => ({
-      ...step,
-      status: 'pending' as const
-    }));
+    // Initialize processing steps - only show file processing
+    const steps: ProcessingStep[] = [
+      {
+        id: 'upload',
+        title: 'Processing Timesheet',
+        description: 'Sending timesheet to backend for processing',
+        status: 'pending' as const
+      }
+    ];
     setProcessingSteps(steps);
     setCurrentStepIndex(0);
 
@@ -125,8 +129,8 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
         });
       };
 
-      // Step 1: File Download
-      updateStep('upload', 'current', 'Downloading file from blob storage');
+      // Step 1: Send file to backend
+      updateStep('upload', 'current', 'Sending file to backend for processing');
       
       // Call the backend API with the blob URL
       const response = await fetch('/api/xero/process-timesheet-direct', {
@@ -141,36 +145,35 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
         })
       });
 
-      updateStep('upload', 'completed', 'File downloaded successfully');
-      
-      // Simulate other steps based on backend processing
-      updateStep('parse', 'current', 'Processing timesheet data');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      updateStep('parse', 'completed', 'Data processed successfully');
-      
-      updateStep('tenant', 'current', 'Verifying Xero connection');
-      await new Promise(resolve => setTimeout(resolve, 800));
-      updateStep('tenant', 'completed', 'Connection verified');
-      
-      updateStep('match', 'current', 'Matching projects');
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      updateStep('match', 'completed', 'Projects matched');
-      
-      updateStep('update', 'current', 'Updating tasks in Xero');
-      
       if (!response.ok) {
-        updateStep('update', 'error', 'Failed to update tasks');
+        updateStep('upload', 'error', 'Failed to process timesheet');
         throw new Error('Processing failed');
       }
 
       const result = await response.json();
       
-      updateStep('update', 'completed', `${result.summary.tasksCreated + result.summary.tasksUpdated} tasks processed`);
-      updateStep('report', 'current', 'Generating report');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      updateStep('report', 'completed', 'Report generated');
+      updateStep('upload', 'completed', 'Timesheet processed successfully');
       
-      setResults(result);
+      // Set simple results
+      setResults({
+        success: true,
+        summary: {
+          entriesProcessed: result.metadata?.entries_processed || 0,
+          projectsAnalyzed: result.metadata?.projects_consolidated || 0,
+          projectsMatched: 0,
+          tasksCreated: 0,
+          tasksUpdated: 0,
+          tasksFailed: 0,
+          actualTasksFailed: 0,
+          projectsNotFound: 0,
+          processingTimeMs: Date.now() - (startTime || 0)
+        },
+        results: [],
+        downloadableReport: {
+          filename: 'processing-results.csv',
+          content: ''
+        }
+      });
       setStatus('complete');
     } catch (err: any) {
       setError(err.message);

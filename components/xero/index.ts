@@ -16,5 +16,6 @@ export { default as TenantConfirmationModal } from './TenantConfirmationModal';
 export { default as ProcessingStatusModal } from './ProcessingStatusModal';
 export { default as BlobUploadCard } from './BlobUploadCard';
 export { default as BlobBrowserCard } from './BlobBrowserCard';
+export { default as ProjectsSyncButton } from './ProjectsSyncButton';
 
 export * from './types'; 
