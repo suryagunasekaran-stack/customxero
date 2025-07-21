@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSyncProjectV2 } from '../../../hooks/useSyncProjectV2';
 import ProjectSyncCardWithFixesV2 from '../../../components/xero/ProjectSyncCardWithFixesV2';
+import ProjectSyncValidationTenantEA67107E from '../../../components/xero/ProjectSyncValidationTenantEA67107E';
 import {
   ManhourBillingCard,
   TimesheetProcessingCard,
@@ -21,6 +22,24 @@ import MonthlySnapshotCard from '../../../components/xero/MonthlySnapshotCard';
 export default function XeroPageV2Example() {
   // Use the new hook for better integration
   const { isAnalyzing, isRunning } = useSyncProjectV2();
+  const [currentTenantId, setCurrentTenantId] = useState<string>('');
+
+  useEffect(() => {
+    // Fetch current tenant info
+    const fetchTenantInfo = async () => {
+      try {
+        const response = await fetch('/api/tenants');
+        if (response.ok) {
+          const tenantData = await response.json();
+          setCurrentTenantId(tenantData.selectedTenant || '');
+        }
+      } catch (error) {
+        console.error('Failed to fetch tenant info:', error);
+      }
+    };
+    
+    fetchTenantInfo();
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -31,8 +50,13 @@ export default function XeroPageV2Example() {
         </div>
 
         <div className="space-y-8">
-          {/* Project Sync Card with Fixes - Only shown for BSENI tenant */}
-          <ProjectSyncCardWithFixesV2 disabled={false} />
+          {/* Project Sync Card - Show different component based on tenant */}
+          {currentTenantId === '6dd39ea4-e6a6-4993-a37a-21482ccf8d22' && (
+            <ProjectSyncCardWithFixesV2 disabled={false} />
+          )}
+          {currentTenantId === 'ea67107e-c352-40a9-a8b8-24d81ae3fc85' && (
+            <ProjectSyncValidationTenantEA67107E disabled={false} />
+          )}
 
           {/* Other Tools Grid */}
           <div>
