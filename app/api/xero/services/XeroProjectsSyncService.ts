@@ -84,8 +84,7 @@ export class XeroProjectsSyncService {
               projectCode: this.extractProjectCode(project.name),
               totalTasks: tasks.length,
               totalProjectValue: this.calculateTotalProjectValue(projectWithTasks),
-              syncStatus: 'synced',
-              validationIssues: validationIssues.length > 0 ? validationIssues : undefined
+              syncStatus: 'synced'
             },
             { upsert: true }
           );

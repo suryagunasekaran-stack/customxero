@@ -267,15 +267,15 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
     try {
       // Filter out changes for closed projects
       const closedProjectIds = new Set(
-        processingResponse.closed_projects_with_changes?.map(p => p.projectId) || []
+        processingResponse.closed_projects_with_changes?.map((p: any) => p.projectId) || []
       );
       
       const updates = processingResponse.changes.updates.filter(
-        update => !closedProjectIds.has(update.projectId)
+        (update: any) => !closedProjectIds.has(update.projectId)
       );
       
       const creates = processingResponse.changes.creates.filter(
-        create => !closedProjectIds.has(create.projectId)
+        (create: any) => !closedProjectIds.has(create.projectId)
       );
 
       const response = await fetch('/api/xero/apply-updates', {
