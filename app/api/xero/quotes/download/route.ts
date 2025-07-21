@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall } from '@/lib/xeroApiTracker';
-import { SmartRateLimit } from '@/lib/smartRateLimit';
+import { waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from '@/lib/xeroApiTracker';
 import { auth } from '@/lib/auth';
 import { AuditLogger } from '@/lib/auditLogger';
 import * as XLSX from 'xlsx';
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
       action: 'DOWNLOAD_ACCEPTED_QUOTES'
     });
     
-    await SmartRateLimit.waitIfNeeded();
+    await waitForXeroRateLimit(effective_tenant_id);
     
     const url = 'https://api.xero.com/api.xro/2.0/Quotes?Status=ACCEPTED';
     const response = await fetch(url, {
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     });
 
     await trackXeroApiCall(effective_tenant_id);
-    SmartRateLimit.updateFromHeaders(response.headers);
+    await updateXeroRateLimitFromHeaders(response.headers, effective_tenant_id);
 
     if (!response.ok) {
       const errorText = await response.text();

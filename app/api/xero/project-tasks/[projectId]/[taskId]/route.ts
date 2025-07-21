@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall } from '@/lib/xeroApiTracker';
-import { SmartRateLimit } from '@/lib/smartRateLimit';
+import { waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from '@/lib/xeroApiTracker';
 import { auth } from '@/lib/auth';
 import { AuditLogger } from '@/lib/auditLogger';
 
@@ -36,7 +36,7 @@ export async function DELETE(
       taskId
     });
     
-    await SmartRateLimit.waitIfNeeded();
+    await waitForXeroRateLimit(effective_tenant_id);
     
     const url = `https://api.xero.com/projects.xro/2.0/projects/${projectId}/tasks/${taskId}`;
     const response = await fetch(url, {
@@ -49,7 +49,7 @@ export async function DELETE(
     });
 
     await trackXeroApiCall(effective_tenant_id);
-    SmartRateLimit.updateFromHeaders(response.headers);
+    await updateXeroRateLimitFromHeaders(response.headers, effective_tenant_id);
 
     if (!response.ok) {
       const errorText = await response.text();

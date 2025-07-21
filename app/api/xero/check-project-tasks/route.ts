@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { XeroProjectService } from '@/lib/xeroProjectService';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall } from '@/lib/xeroApiTracker';
-import { SmartRateLimit } from '@/lib/smartRateLimit';
+import { waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from '@/lib/xeroApiTracker';
 
 const REQUIRED_TASKS = ['Manhour', 'Overtime', 'Supply Labour', 'Transport'];
 
@@ -103,7 +103,7 @@ export async function GET() {
         
         for (const taskName of missingRequiredTasks) {
           try {
-            await SmartRateLimit.waitIfNeeded();
+            await waitForXeroRateLimit(effective_tenant_id);
             
             const runTimestamp = Date.now();
             const idempotencyKey = `standardize-${project.projectId}-${taskName.replace(/\s+/g, '-').toLowerCase()}-${timestamp}-${runTimestamp}`;
@@ -126,7 +126,7 @@ export async function GET() {
             });
 
             await trackXeroApiCall(effective_tenant_id);
-            SmartRateLimit.updateFromHeaders(response.headers);
+            await updateXeroRateLimitFromHeaders(response.headers, effective_tenant_id);
             
             if (response.ok) {
               report.createdTasks.push({

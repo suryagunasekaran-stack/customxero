@@ -1,6 +1,6 @@
 import { ensureValidToken } from './ensureXeroToken';
 import { trackXeroApiCall } from './xeroApiTracker';
-import { SmartRateLimit } from './smartRateLimit';
+import { waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from './xeroApiTracker';
 import { createLogger, logApiRequest } from './logger';
 
 export interface XeroProject {
@@ -122,7 +122,7 @@ export class XeroProjectService {
 
     while (hasMorePages) {
       try {
-        await SmartRateLimit.waitIfNeeded();
+        await waitForXeroRateLimit(tenantId);
         
         let url = `https://api.xero.com/projects.xro/2.0/Projects?page=${page}&pageSize=${pageSize}`;
         if (status) {
@@ -138,7 +138,7 @@ export class XeroProjectService {
         });
 
         await trackXeroApiCall(tenantId);
-        SmartRateLimit.updateFromHeaders(response.headers);
+        await updateXeroRateLimitFromHeaders(response.headers, tenantId);
 
         if (!response.ok) {
           const errorText = await response.text();

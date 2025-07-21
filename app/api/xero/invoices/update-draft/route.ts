@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall } from '@/lib/xeroApiTracker';
-import { SmartRateLimit } from '@/lib/smartRateLimit';
+import { waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from '@/lib/xeroApiTracker';
 
 interface UpdateLineItem {
   "*InvoiceNumber": string;
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       // Fetch only DRAFT invoices of type ACCREC (sales invoices)
       const url = `https://api.xero.com/api.xro/2.0/Invoices?where=Type%3D%22ACCREC%22%20AND%20Status%3D%22DRAFT%22&page=${page}&pageSize=${pageSize}`;
       
-      await SmartRateLimit.waitIfNeeded();
+      await waitForXeroRateLimit(tokenData.effective_tenant_id);
       
       const res = await fetch(url, {
         headers: {
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       });
 
       await trackXeroApiCall(tokenData.effective_tenant_id);
-      SmartRateLimit.updateFromHeaders(res.headers);
+      await updateXeroRateLimitFromHeaders(res.headers, tokenData.effective_tenant_id);
 
       if (!res.ok) {
         const errorData = await res.json();
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
         // Fetch full invoice details including line items
         const invoiceDetailUrl = `https://api.xero.com/api.xro/2.0/Invoices/${invoice.InvoiceID}`;
         
-        await SmartRateLimit.waitIfNeeded();
+        await waitForXeroRateLimit(tokenData.effective_tenant_id);
         
         const detailRes = await fetch(invoiceDetailUrl, {
           headers: {
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
         });
 
         await trackXeroApiCall(tokenData.effective_tenant_id);
-        SmartRateLimit.updateFromHeaders(detailRes.headers);
+        await updateXeroRateLimitFromHeaders(detailRes.headers, tokenData.effective_tenant_id);
 
         if (!detailRes.ok) {
           console.error(`[Invoice Update] Failed to fetch details for invoice ${invoice.InvoiceNumber}`);
@@ -229,7 +229,7 @@ export async function POST(request: NextRequest) {
         Invoices: batch
       };
 
-      await SmartRateLimit.waitIfNeeded();
+      await waitForXeroRateLimit(tokenData.effective_tenant_id);
       
       const updateRes = await fetch('https://api.xero.com/api.xro/2.0/Invoices?SummarizeErrors=false', {
         method: 'POST',
@@ -243,7 +243,7 @@ export async function POST(request: NextRequest) {
       });
 
       await trackXeroApiCall(tokenData.effective_tenant_id);
-      SmartRateLimit.updateFromHeaders(updateRes.headers);
+      await updateXeroRateLimitFromHeaders(updateRes.headers, tokenData.effective_tenant_id);
 
       const responseData = await updateRes.json();
       

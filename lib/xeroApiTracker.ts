@@ -3,6 +3,8 @@ import { withRedis, withRedisFallback } from './redis/redisClient';
 const XERO_API_USAGE_KEY_PREFIX = 'xero_api_usage';
 const XERO_DAILY_LIMIT = 5000;
 const XERO_MINUTE_LIMIT = 60;
+const XERO_MINUTE_SAFETY_BUFFER = 5; // Reserve 5 calls per minute as safety
+const XERO_DAILY_SAFETY_BUFFER = 100; // Reserve 100 calls per day as safety
 
 /**
  * Generates tenant-specific Redis key for API usage tracking
@@ -144,5 +146,62 @@ export async function checkXeroApiLimit(tenantId: string): Promise<boolean> {
   } catch (error) {
     console.error('Error checking API limits:', error);
     return true; // Allow if Redis is down
+  }
+}
+
+/**
+ * Waits if necessary before making an API call to respect rate limits
+ * This should be called BEFORE making any Xero API request
+ * @param {string} tenantId - Xero tenant ID
+ * @returns {Promise<void>} Resolves when it's safe to make the API call
+ * @throws {Error} If rate limits cannot be checked or daily limit is exceeded
+ */
+export async function waitForXeroRateLimit(tenantId: string): Promise<void> {
+  if (!tenantId || typeof tenantId !== 'string' || !tenantId.trim()) {
+    throw new Error('Invalid tenantId provided to waitForXeroRateLimit');
+  }
+
+  const usage = await getXeroApiUsage(tenantId);
+  
+  // Check daily limit with safety buffer
+  if (usage.daily.count >= (XERO_DAILY_LIMIT - XERO_DAILY_SAFETY_BUFFER)) {
+    throw new Error(`Xero API daily limit approaching (${usage.daily.count}/${XERO_DAILY_LIMIT}). Stopping to preserve quota.`);
+  }
+  
+  // If we're approaching the minute limit, wait
+  if (usage.perMinute.count >= (XERO_MINUTE_LIMIT - XERO_MINUTE_SAFETY_BUFFER)) {
+    const waitTime = Math.max(0, usage.perMinute.resetAt.getTime() - Date.now());
+    
+    if (waitTime > 0) {
+      console.log(`[Xero Rate Limit] Approaching minute limit (${usage.perMinute.count}/${XERO_MINUTE_LIMIT}), waiting ${Math.ceil(waitTime / 1000)}s`);
+      await new Promise(resolve => setTimeout(resolve, waitTime + 1000)); // Add 1s buffer
+    }
+  }
+  
+  // Add a small delay between calls to avoid bursts
+  const delayMs = usage.perMinute.count > 40 ? 500 : usage.perMinute.count > 20 ? 200 : 100;
+  await new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+/**
+ * Updates rate limit tracking from Xero API response headers
+ * @param {Headers} headers - Response headers from Xero API
+ * @param {string} tenantId - Xero tenant ID
+ */
+export async function updateXeroRateLimitFromHeaders(headers: Headers, tenantId: string): Promise<void> {
+  // Extract rate limit info from headers if available
+  const xeroMinRemaining = headers.get('x-minlimit-remaining');
+  const xeroDayRemaining = headers.get('x-daylimit-remaining');
+  
+  if (xeroMinRemaining !== null || xeroDayRemaining !== null) {
+    console.log(`[Xero Rate Limit] Headers - Minute: ${xeroMinRemaining || 'N/A'}, Day: ${xeroDayRemaining || 'N/A'}`);
+    
+    // If we're getting low on limits, log a warning
+    if (xeroMinRemaining && parseInt(xeroMinRemaining) <= 10) {
+      console.warn(`[Xero Rate Limit] WARNING: Only ${xeroMinRemaining} minute calls remaining!`);
+    }
+    if (xeroDayRemaining && parseInt(xeroDayRemaining) <= 200) {
+      console.warn(`[Xero Rate Limit] WARNING: Only ${xeroDayRemaining} daily calls remaining!`);
+    }
   }
 }

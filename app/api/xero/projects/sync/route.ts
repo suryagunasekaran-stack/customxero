@@ -2,16 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { XeroProjectsSyncService } from '@/app/api/xero/services/XeroProjectsSyncService';
 
 export async function POST(request: NextRequest) {
-  const tenantId = '6dd39ea4-e6a6-4993-a37a-21482ccf8d22';
-  
   try {
-    const { searchParams } = new URL(request.url);
-    const requestedTenantId = searchParams.get('tenantId');
+    // Accept tenant ID from request body
+    const body = await request.json();
+    const tenantId = body.tenantId;
     
-    if (requestedTenantId && requestedTenantId !== tenantId) {
+    if (!tenantId) {
       return NextResponse.json({ 
-        error: 'This endpoint is configured for a specific tenant only' 
-      }, { status: 403 });
+        error: 'Tenant ID is required' 
+      }, { status: 400 });
     }
 
     console.log('[Xero Projects Sync] Starting sync for tenant:', tenantId);
@@ -31,23 +30,20 @@ export async function POST(request: NextRequest) {
     console.error('[Xero Projects Sync] Error:', error);
 
     return NextResponse.json({ 
-      error: error instanceof Error ? error.message : 'Failed to sync projects',
-      tenantId
+      error: error instanceof Error ? error.message : 'Failed to sync projects'
     }, { status: 500 });
   }
 }
 
 export async function GET(request: NextRequest) {
-  const tenantId = '6dd39ea4-e6a6-4993-a37a-21482ccf8d22';
-  
   try {
     const { searchParams } = new URL(request.url);
-    const requestedTenantId = searchParams.get('tenantId');
+    const tenantId = searchParams.get('tenantId');
     
-    if (requestedTenantId && requestedTenantId !== tenantId) {
+    if (!tenantId) {
       return NextResponse.json({ 
-        error: 'This endpoint is configured for a specific tenant only' 
-      }, { status: 403 });
+        error: 'Tenant ID is required' 
+      }, { status: 400 });
     }
 
     const syncInfo = await XeroProjectsSyncService.getLastSyncInfo(tenantId);
@@ -72,8 +68,7 @@ export async function GET(request: NextRequest) {
     console.error('[Xero Projects Sync] Error fetching sync info:', error);
     
     return NextResponse.json({ 
-      error: error instanceof Error ? error.message : 'Failed to fetch sync info',
-      tenantId
+      error: error instanceof Error ? error.message : 'Failed to fetch sync info'
     }, { status: 500 });
   }
 }

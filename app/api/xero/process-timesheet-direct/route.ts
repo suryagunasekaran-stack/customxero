@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
-import { trackXeroApiCall } from '@/lib/xeroApiTracker';
-import { SmartRateLimit } from '@/lib/smartRateLimit';
+import { trackXeroApiCall, waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from '@/lib/xeroApiTracker';
 import { auth } from '@/lib/auth';
 
 interface ConsolidatedTask {
@@ -19,15 +18,66 @@ interface ConsolidatedPayload {
   [projectCode: string]: ConsolidatedTask[];
 }
 
+interface TaskPayload {
+  name: string;
+  rate: {
+    currency: string;
+    value: number;
+  };
+  chargeType: string;
+  estimateMinutes: number;
+}
+
+interface TaskUpdate {
+  projectId: string;
+  taskId: string;
+  payload: TaskPayload;
+}
+
+interface TaskCreate {
+  projectId: string;
+  payload: TaskPayload;
+}
+
 interface ProcessedTimesheet {
   success: boolean;
+  message?: string;
   metadata: {
-    creation_date: string;
+    creation_date?: string;
     period_range: string;
     entries_processed: number;
-    projects_consolidated: number;
+    entries_grouped?: number;
+    projects_consolidated?: number;
+    projects_processed?: number;
+    total_changes?: number;
   };
-  consolidated_payload: ConsolidatedPayload;
+  changes?: {
+    updates: TaskUpdate[];
+    creates: TaskCreate[];
+  };
+  consolidated_payload?: ConsolidatedPayload; // Keep for backward compatibility
+  summary?: {
+    total_projects_processed: number;
+    tasks_to_update: number;
+    tasks_to_create: number;
+    total_changes: number;
+  };
+  cost_verification?: {
+    verification_performed: boolean;
+    calculations_match: boolean;
+    our_total_all_depts_ny_jobs: number;
+    excel_total_all_depts_ny_jobs: number;
+    excel_navy_only_ny_jobs: number;
+    excel_non_navy_ny_jobs: number;
+    difference: number;
+    excel_all_jobs_all_depts: number;
+    discrepancies: Array<{
+      job_code: string;
+      our_calculated: number;
+      excel_total: number;
+      difference: number;
+    }>;
+  };
 }
 
 interface XeroProject {
@@ -174,7 +224,7 @@ async function getActiveXeroProjects(accessToken: string, tenantId: string): Pro
   });
 
   await trackXeroApiCall(tenantId);
-  SmartRateLimit.updateFromHeaders(response.headers);
+  await updateXeroRateLimitFromHeaders(response.headers, tenantId);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch Xero projects: ${response.status}`);
@@ -216,7 +266,7 @@ async function getActiveXeroProjects(accessToken: string, tenantId: string): Pro
 
 // Fetch existing tasks for a project
 async function getProjectTasks(projectId: string, accessToken: string, tenantId: string): Promise<XeroTask[]> {
-  await SmartRateLimit.waitIfNeeded();
+  await waitForXeroRateLimit(tenantId);
   
   const response = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${projectId}/tasks`, {
     headers: {
@@ -227,7 +277,7 @@ async function getProjectTasks(projectId: string, accessToken: string, tenantId:
   });
 
   await trackXeroApiCall(tenantId);
-  SmartRateLimit.updateFromHeaders(response.headers);
+  await updateXeroRateLimitFromHeaders(response.headers, tenantId);
 
   if (!response.ok) {
     throw new Error(`Failed to fetch tasks for project ${projectId}: ${response.status}`);
@@ -279,7 +329,7 @@ async function createOrUpdateTask(
   tenantId: string,
   currency: string
 ): Promise<{ success: boolean; action: string; error?: string }> {
-  await SmartRateLimit.waitIfNeeded();
+  await waitForXeroRateLimit(tenantId);
 
   const taskPayload = {
     name: task.name,
@@ -306,7 +356,7 @@ async function createOrUpdateTask(
       });
 
       await trackXeroApiCall(tenantId);
-      SmartRateLimit.updateFromHeaders(response.headers);
+      await updateXeroRateLimitFromHeaders(response.headers, tenantId);
 
       if (response.ok) {
         return { success: true, action: 'updated' };
@@ -329,7 +379,7 @@ async function createOrUpdateTask(
       });
 
       await trackXeroApiCall(tenantId);
-      SmartRateLimit.updateFromHeaders(response.headers);
+      await updateXeroRateLimitFromHeaders(response.headers, tenantId);
 
       if (response.ok) {
         return { success: true, action: 'created' };
@@ -575,29 +625,33 @@ export async function POST(request: NextRequest) {
 
     // Step 1: Process timesheet with Python backend
     const timesheetData = await processTimesheetWithPython(blobUrl, fileName, tenantId);
-    console.log(`[Stats] Processed: ${timesheetData.metadata.entries_processed} entries, ${timesheetData.metadata.projects_consolidated} projects`);
+    console.log(`[Stats] Processed: ${timesheetData.metadata.entries_processed} entries, ${timesheetData.metadata.projects_processed || timesheetData.metadata.projects_consolidated || 0} projects`);
 
-    // Return simple success response - no Xero processing
-    return NextResponse.json({
-      success: true,
+    // Prepare the response data - pass through all data from Python backend
+    const responseData: any = {
+      success: timesheetData.success,
+      message: timesheetData.message,
       metadata: timesheetData.metadata,
-      summary: {
-        entriesProcessed: timesheetData.metadata.entries_processed,
-        projectsAnalyzed: timesheetData.metadata.projects_consolidated,
-        projectsMatched: 0,
-        tasksCreated: 0,
-        tasksUpdated: 0,
-        tasksFailed: 0,
-        actualTasksFailed: 0,
-        projectsNotFound: 0,
-        processingTimeMs: Date.now() - startTime
-      },
+      // Include the changes data from Python backend
+      changes: timesheetData.changes,
+      // Include the summary from Python backend
+      summary: timesheetData.summary,
+      // Include cost verification if present
+      cost_verification: timesheetData.cost_verification,
+      // Add processing time
+      processingTimeMs: Date.now() - startTime,
+      // Results array for compatibility
       results: [],
       downloadableReport: {
-        filename: 'processing-results.csv',
+        filename: `timesheet-processing-response-${new Date().toISOString().split('T')[0]}.json`,
         content: ''
       }
-    });
+    };
+    
+    // Set the downloadable report content to the full response JSON
+    responseData.downloadableReport.content = JSON.stringify(responseData, null, 2);
+    
+    return NextResponse.json(responseData);
 
     /* COMMENTED OUT - Xero processing
     // Step 2: Get active Xero projects and verify tenant

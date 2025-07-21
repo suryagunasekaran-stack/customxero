@@ -67,7 +67,6 @@ export interface XeroProjectWithTasks extends XeroProjectResponse {
 
 export interface XeroProjectsDocument {
   _id?: string;
-  tenantId: string;
   projectId: string;
   lastSyncedAt: Date;
   projectData: XeroProjectResponse;

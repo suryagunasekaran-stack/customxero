@@ -1,6 +1,5 @@
 import { ensureValidToken } from '@/lib/ensureXeroToken';
-import { trackXeroApiCall } from '@/lib/xeroApiTracker';
-import { SmartRateLimit } from '@/lib/smartRateLimit';
+import { trackXeroApiCall, waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from '@/lib/xeroApiTracker';
 import clientPromise from '@/lib/mongodb';
 import { 
   XeroProjectResponse, 
@@ -13,8 +12,13 @@ import {
 } from '@/types/xero-projects';
 
 export class XeroProjectsSyncService {
-  private static readonly COLLECTION_NAME = 'xeroProjects';
+  private static readonly COLLECTION_PREFIX = 'xeroProjects';
   private static readonly DB_NAME = 'customxero';
+
+  private static getCollectionName(tenantId: string): string {
+    // Use tenant ID as part of collection name for complete data isolation
+    return `${this.COLLECTION_PREFIX}_${tenantId}`;
+  }
 
   static async syncProjectsForTenant(tenantId: string): Promise<XeroProjectsSyncResult> {
     const startTime = Date.now();
@@ -35,7 +39,8 @@ export class XeroProjectsSyncService {
 
       const client = await clientPromise;
       const db = client.db(this.DB_NAME);
-      const collection = db.collection<XeroProjectsDocument>(this.COLLECTION_NAME);
+      const collectionName = this.getCollectionName(tenantId);
+      const collection = db.collection<XeroProjectsDocument>(collectionName);
 
       for (const project of projects) {
         try {
@@ -44,13 +49,34 @@ export class XeroProjectsSyncService {
 
           const projectWithTasks = this.mergeProjectWithTasks(project, tasks);
           
+          // Validate critical task data before storing
+          const validationIssues: string[] = [];
+          tasks.forEach((task, index) => {
+            if (task.rate?.value === 0 && task.chargeType === 'FIXED') {
+              validationIssues.push(`Task "${task.name}" has zero rate value`);
+            }
+            if (!task.taskId) {
+              validationIssues.push(`Task at index ${index} missing taskId`);
+            }
+          });
+          
+          if (validationIssues.length > 0) {
+            console.warn(`[XeroProjectsSyncService] Validation issues for project ${project.projectId} (${project.name}):`, validationIssues);
+          }
+          
+          // Log what we're about to store for specific project
+          if (project.projectId === '951dcd9c-9d36-4079-b151-00399b17efd5') {
+            console.log('[XeroProjectsSyncService] STORING DATA for NY250004:');
+            tasks.forEach(task => {
+              console.log(`  - ${task.name}: rate=${task.rate?.value}, minutes=${task.estimateMinutes}`);
+            });
+          }
+          
           await collection.replaceOne(
             { 
-              tenantId,
               projectId: project.projectId 
             },
             {
-              tenantId,
               projectId: project.projectId,
               lastSyncedAt: new Date(),
               projectData: project,
@@ -58,13 +84,14 @@ export class XeroProjectsSyncService {
               projectCode: this.extractProjectCode(project.name),
               totalTasks: tasks.length,
               totalProjectValue: this.calculateTotalProjectValue(projectWithTasks),
-              syncStatus: 'synced'
+              syncStatus: 'synced',
+              validationIssues: validationIssues.length > 0 ? validationIssues : undefined
             },
             { upsert: true }
           );
 
           projectsSynced++;
-          console.log(`[XeroProjectsSyncService] Successfully synced project ${project.projectId}`);
+          console.log(`[XeroProjectsSyncService] Successfully synced project ${project.projectId} with ${tasks.length} tasks`);
 
         } catch (error) {
           projectsFailed++;
@@ -78,10 +105,10 @@ export class XeroProjectsSyncService {
         }
       }
 
-      await collection.createIndex({ tenantId: 1, projectId: 1 }, { unique: true });
-      await collection.createIndex({ tenantId: 1, 'projectData.name': 1 });
-      await collection.createIndex({ tenantId: 1, projectCode: 1 });
-      await collection.createIndex({ tenantId: 1, 'projectData.status': 1 });
+      await collection.createIndex({ projectId: 1 }, { unique: true });
+      await collection.createIndex({ 'projectData.name': 1 });
+      await collection.createIndex({ projectCode: 1 });
+      await collection.createIndex({ 'projectData.status': 1 });
 
       const syncDuration = Date.now() - startTime;
       
@@ -111,7 +138,8 @@ export class XeroProjectsSyncService {
     let hasMorePages = true;
 
     while (hasMorePages) {
-      await SmartRateLimit.waitIfNeeded();
+      // Wait for rate limit BEFORE making the API call
+      await waitForXeroRateLimit(tenantId);
       
       const url = `https://api.xero.com/projects.xro/2.0/Projects?page=${page}&pageSize=${pageSize}`;
       
@@ -119,12 +147,16 @@ export class XeroProjectsSyncService {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Xero-Tenant-Id': tenantId,
-          'Accept': 'application/json'
-        }
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
+        cache: 'no-store'
       });
 
+      // Track the API call and update rate limit info from headers
       await trackXeroApiCall(tenantId);
-      SmartRateLimit.updateFromHeaders(response.headers);
+      await updateXeroRateLimitFromHeaders(response.headers, tenantId);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -151,7 +183,8 @@ export class XeroProjectsSyncService {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        await SmartRateLimit.waitIfNeeded();
+        // Wait for rate limit BEFORE making the API call
+        await waitForXeroRateLimit(tenantId);
         
         const url = `https://api.xero.com/projects.xro/2.0/Projects/${projectId}/Tasks`;
         
@@ -159,12 +192,16 @@ export class XeroProjectsSyncService {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
             'Xero-Tenant-Id': tenantId,
-            'Accept': 'application/json'
-          }
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          },
+          cache: 'no-store'
         });
 
+        // Track the API call and update rate limit info from headers
         await trackXeroApiCall(tenantId);
-        SmartRateLimit.updateFromHeaders(response.headers);
+        await updateXeroRateLimitFromHeaders(response.headers, tenantId);
 
         if (!response.ok) {
           if (response.status === 404) {
@@ -175,6 +212,15 @@ export class XeroProjectsSyncService {
         }
 
         const data: XeroTasksResponse = await response.json();
+        
+        // Log task details for debugging
+        console.log(`[XeroProjectsSyncService] Fetched ${data.items?.length || 0} tasks for project ${projectId}`);
+        data.items?.forEach(task => {
+          if (task.name === 'Overtime' || task.name === 'External Manpower') {
+            console.log(`[XeroProjectsSyncService] Task: ${task.name}, Rate: ${task.rate?.value}, Minutes: ${task.estimateMinutes}`);
+          }
+        });
+        
         return data.items || [];
         
       } catch (error) {
@@ -233,30 +279,33 @@ export class XeroProjectsSyncService {
   static async getStoredProjects(tenantId: string): Promise<XeroProjectsDocument[]> {
     const client = await clientPromise;
     const db = client.db(this.DB_NAME);
-    const collection = db.collection<XeroProjectsDocument>(this.COLLECTION_NAME);
+    const collectionName = this.getCollectionName(tenantId);
+    const collection = db.collection<XeroProjectsDocument>(collectionName);
     
-    return await collection.find({ tenantId }).toArray();
+    return await collection.find({}).toArray();
   }
 
   static async getProjectByCode(tenantId: string, projectCode: string): Promise<XeroProjectsDocument | null> {
     const client = await clientPromise;
     const db = client.db(this.DB_NAME);
-    const collection = db.collection<XeroProjectsDocument>(this.COLLECTION_NAME);
+    const collectionName = this.getCollectionName(tenantId);
+    const collection = db.collection<XeroProjectsDocument>(collectionName);
     
-    return await collection.findOne({ tenantId, projectCode });
+    return await collection.findOne({ projectCode });
   }
 
   static async getLastSyncInfo(tenantId: string): Promise<{ lastSyncedAt: Date | null; projectCount: number }> {
     const client = await clientPromise;
     const db = client.db(this.DB_NAME);
-    const collection = db.collection<XeroProjectsDocument>(this.COLLECTION_NAME);
+    const collectionName = this.getCollectionName(tenantId);
+    const collection = db.collection<XeroProjectsDocument>(collectionName);
     
     const lastSynced = await collection.findOne(
-      { tenantId },
+      {},
       { sort: { lastSyncedAt: -1 }, projection: { lastSyncedAt: 1 } }
     );
     
-    const projectCount = await collection.countDocuments({ tenantId });
+    const projectCount = await collection.countDocuments({});
     
     return {
       lastSyncedAt: lastSynced?.lastSyncedAt || null,

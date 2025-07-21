@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall } from '@/lib/xeroApiTracker';
-import { SmartRateLimit } from '@/lib/smartRateLimit';
+import { waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from '@/lib/xeroApiTracker';
 import * as XLSX from 'xlsx';
 
 interface XeroProject {
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
     do {
       const url = `https://api.xero.com/projects.xro/2.0/Projects?states=INPROGRESS&page=${currentPage}`;
       
-      await SmartRateLimit.waitIfNeeded();
+      await waitForXeroRateLimit(tokenData.effective_tenant_id);
       
       const res = await fetch(url, {
         headers: {
@@ -101,7 +101,7 @@ export async function GET(request: NextRequest) {
       });
 
       await trackXeroApiCall(tokenData.effective_tenant_id);
-      SmartRateLimit.updateFromHeaders(res.headers);
+      await updateXeroRateLimitFromHeaders(res.headers, tokenData.effective_tenant_id);
 
       if (!res.ok) {
         const errorData = await res.json();

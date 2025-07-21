@@ -7,6 +7,9 @@ import BlobUploadCard from './BlobUploadCard';
 import BlobBrowserCard from './BlobBrowserCard';
 import ProcessingStepsDisplay from './timesheet/ProcessingStepsDisplay';
 import ProcessingResults from './timesheet/ProcessingResults';
+import ProjectsSyncStep from './timesheet/ProjectsSyncStep';
+import XeroUpdatePreview from './timesheet/XeroUpdatePreview';
+import XeroUpdateResults from './timesheet/XeroUpdateResults';
 import { TimesheetProcessingController } from '../../lib/timesheet/TimesheetProcessingController';
 import { ProcessingStatus, ProcessingStep, DirectProcessingResult, FilePreview, TenantInfo } from '../../lib/timesheet/types';
 import { ReportService } from '../../lib/timesheet/services/ReportService';
@@ -31,6 +34,12 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
   const [currentStepIndex, setCurrentStepIndex] = useState(-1);
   const [refreshBlobTrigger, setRefreshBlobTrigger] = useState(0);
   const [showFileSelection, setShowFileSelection] = useState(true);
+  const [currentTenantId, setCurrentTenantId] = useState<string | null>(null);
+  const [syncCompleted, setSyncCompleted] = useState(false);
+  const [showUpdatePreview, setShowUpdatePreview] = useState(false);
+  const [isUpdatingXero, setIsUpdatingXero] = useState(false);
+  const [updateResults, setUpdateResults] = useState<any | null>(null);
+  const [processingResponse, setProcessingResponse] = useState<any | null>(null);
 
   // Controller reference
   const controllerRef = useRef<TimesheetProcessingController | null>(null);
@@ -50,10 +59,30 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
       onTenantInfo: setTenantInfo
     });
 
+    // Fetch current tenant info on mount
+    fetchCurrentTenant();
+
     return () => {
       controllerRef.current?.reset();
     };
   }, []);
+
+  const fetchCurrentTenant = async () => {
+    try {
+      const response = await fetch('/api/test-tenant');
+      const tenantData = await response.json();
+      
+      if (tenantData.effectiveTenantId) {
+        setCurrentTenantId(tenantData.effectiveTenantId);
+        setTenantInfo({
+          tenantId: tenantData.effectiveTenantId,
+          tenantName: tenantData.selectedTenantName || tenantData.xeroOrgName || 'Unknown Tenant'
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching tenant:', err);
+    }
+  };
 
   const handleBlobFileSelect = async (blobUrl: string, fileName: string) => {
     setError(null);
@@ -154,26 +183,47 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
       
       updateStep('upload', 'completed', 'Timesheet processed successfully');
       
-      // Set simple results
-      setResults({
-        success: true,
-        summary: {
-          entriesProcessed: result.metadata?.entries_processed || 0,
-          projectsAnalyzed: result.metadata?.projects_consolidated || 0,
-          projectsMatched: 0,
-          tasksCreated: 0,
-          tasksUpdated: 0,
-          tasksFailed: 0,
-          actualTasksFailed: 0,
-          projectsNotFound: 0,
-          processingTimeMs: Date.now() - (startTime || 0)
-        },
-        results: [],
-        downloadableReport: {
-          filename: 'processing-results.csv',
-          content: ''
-        }
-      });
+      // Process the backend response
+      if (result.success) {
+        // Extract data from the backend response
+        const tasksToUpdate = result.changes?.updates?.length || 0;
+        const tasksToCreate = result.changes?.creates?.length || 0;
+        const totalChanges = result.summary?.total_changes || result.metadata?.total_changes || 0;
+        const closedProjectsCount = result.closed_projects_with_changes?.length || 0;
+        
+        // Create downloadable JSON response
+        const jsonContent = JSON.stringify(result, null, 2);
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        
+        setResults({
+          success: true,
+          summary: {
+            entriesProcessed: result.metadata?.entries_processed || 0,
+            projectsAnalyzed: result.summary?.total_projects_processed || result.metadata?.projects_processed || 0,
+            projectsMatched: result.summary?.total_projects_processed || 0,
+            tasksCreated: tasksToCreate,
+            tasksUpdated: tasksToUpdate,
+            tasksFailed: 0,
+            actualTasksFailed: 0,
+            projectsNotFound: 0,
+            processingTimeMs: 0,
+            closedProjectsAffected: result.summary?.closed_projects_affected || closedProjectsCount
+          },
+          results: [],
+          closedProjectsWithChanges: result.closed_projects_with_changes || [],
+          downloadableReport: {
+            filename: `timesheet-processing-response-${timestamp}.json`,
+            content: jsonContent
+          }
+        });
+        
+        // Store the full response for future use
+        console.log('Timesheet processing response:', result);
+        setProcessingResponse(result);
+      } else {
+        throw new Error(result.message || 'Processing failed');
+      }
+      
       setStatus('complete');
     } catch (err: any) {
       setError(err.message);
@@ -187,9 +237,103 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
   };
 
   const handleDownloadReport = () => {
-    if (results && reportServiceRef.current) {
-      reportServiceRef.current.downloadReport(results.downloadableReport);
+    if (results && results.downloadableReport) {
+      // Download JSON response
+      const blob = new Blob([results.downloadableReport.content], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = results.downloadableReport.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     }
+  };
+
+  const handleShowUpdatePreview = () => {
+    setShowUpdatePreview(true);
+  };
+
+  const handleCancelUpdate = () => {
+    setShowUpdatePreview(false);
+  };
+
+  const handleApplyXeroUpdates = async () => {
+    if (!processingResponse || !currentTenantId) return;
+
+    setIsUpdatingXero(true);
+    
+    try {
+      // Filter out changes for closed projects
+      const closedProjectIds = new Set(
+        processingResponse.closed_projects_with_changes?.map(p => p.projectId) || []
+      );
+      
+      const updates = processingResponse.changes.updates.filter(
+        update => !closedProjectIds.has(update.projectId)
+      );
+      
+      const creates = processingResponse.changes.creates.filter(
+        create => !closedProjectIds.has(create.projectId)
+      );
+
+      const response = await fetch('/api/xero/apply-updates', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tenantId: currentTenantId,
+          updates,
+          creates
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to apply updates to Xero');
+      }
+
+      const result = await response.json();
+      setUpdateResults(result);
+      setShowUpdatePreview(false);
+      
+    } catch (err: any) {
+      setError(err.message);
+      setShowUpdatePreview(false);
+    } finally {
+      setIsUpdatingXero(false);
+    }
+  };
+
+  const handleCloseUpdateResults = () => {
+    setUpdateResults(null);
+    resetProcessor();
+  };
+
+  const handleDownloadUpdateReport = () => {
+    if (!updateResults || !processingResponse) return;
+    
+    // Create comprehensive update report
+    const updateReportContent = JSON.stringify({
+      updateSummary: updateResults,
+      originalChanges: {
+        updates: processingResponse.changes.updates,
+        creates: processingResponse.changes.creates
+      },
+      closedProjectsSkipped: processingResponse.closed_projects_with_changes
+    }, null, 2);
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const blob = new Blob([updateReportContent], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `xero-update-report-${timestamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const resetProcessor = () => {
@@ -204,6 +348,9 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
     setProcessingSteps([]);
     setCurrentStepIndex(-1);
     setShowFileSelection(true);
+    setShowUpdatePreview(false);
+    setUpdateResults(null);
+    setProcessingResponse(null);
     controllerRef.current?.reset();
   };
 
@@ -228,7 +375,7 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
             <div>
               <h2 className="text-xl font-semibold text-gray-900">Timesheet Processing</h2>
               <p className="text-sm text-gray-500 mt-1">
-                Upload timesheet to directly update project costs and generate reports
+                Sync projects, upload timesheet, and update project costs in Xero
               </p>
             </div>
             {getStatusIcon()}
@@ -237,18 +384,40 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
           {/* Content based on status */}
           {status === 'idle' && showFileSelection && (
             <div className="space-y-6">
-              {/* File Upload */}
+              {/* Step 1: Sync Projects */}
               <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-3">Step 1: Upload Timesheet</h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Step 1: Sync Xero Projects</h3>
+                {currentTenantId && tenantInfo ? (
+                  <ProjectsSyncStep
+                    tenantId={currentTenantId}
+                    tenantName={tenantInfo.tenantName}
+                    disabled={disabled}
+                    onSyncComplete={(success, projectCount) => {
+                      setSyncCompleted(true);
+                      if (!success) {
+                        setError('Project sync failed, but you can still proceed');
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <p className="text-sm text-gray-500">Loading tenant information...</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Step 2: File Upload */}
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Step 2: Upload Timesheet</h3>
                 <BlobUploadCard
                   disabled={disabled || loadingTenant}
                   onUploadSuccess={() => setRefreshBlobTrigger(prev => prev + 1)}
                 />
               </div>
 
-              {/* File Browser */}
+              {/* Step 3: File Browser */}
               <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-3">Step 2: Select Timesheet to Process</h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Step 3: Select Timesheet to Process</h3>
                 <BlobBrowserCard
                   disabled={disabled || loadingTenant}
                   refreshTrigger={refreshBlobTrigger}
@@ -277,11 +446,32 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
             />
           )}
 
-          {status === 'complete' && results && (
+          {status === 'complete' && results && !showUpdatePreview && !updateResults && (
             <ProcessingResults
               results={results}
               onReset={resetProcessor}
               onDownloadReport={handleDownloadReport}
+              onProceedToUpdate={handleShowUpdatePreview}
+              showUpdateButton={true}
+            />
+          )}
+
+          {showUpdatePreview && processingResponse && (
+            <XeroUpdatePreview
+              updates={processingResponse.changes.updates || []}
+              creates={processingResponse.changes.creates || []}
+              closedProjectsCount={processingResponse.closed_projects_with_changes?.length || 0}
+              onConfirm={handleApplyXeroUpdates}
+              onCancel={handleCancelUpdate}
+              isUpdating={isUpdatingXero}
+            />
+          )}
+
+          {updateResults && (
+            <XeroUpdateResults
+              results={updateResults}
+              onClose={handleCloseUpdateResults}
+              onDownloadReport={handleDownloadUpdateReport}
             />
           )}
 

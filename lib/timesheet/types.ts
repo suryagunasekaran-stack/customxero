@@ -49,6 +49,15 @@ export interface XeroTask {
   estimateMinutes: number;
 }
 
+export interface ClosedProjectWithChanges {
+  projectId: string;
+  projectCode: string;
+  projectName: string;
+  status: string;
+  tasksToUpdate: number;
+  tasksToCreate: number;
+}
+
 export interface DirectProcessingResult {
   success: boolean;
   summary: {
@@ -61,6 +70,7 @@ export interface DirectProcessingResult {
     actualTasksFailed: number;
     projectsNotFound: number;
     processingTimeMs: number;
+    closedProjectsAffected?: number;
   };
   results: Array<{
     projectCode: string;
@@ -71,6 +81,7 @@ export interface DirectProcessingResult {
     error?: string;
     details?: string;
   }>;
+  closedProjectsWithChanges?: ClosedProjectWithChanges[];
   downloadableReport: {
     filename: string;
     content: string;

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { XeroProjectService } from '@/lib/xeroProjectService';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall } from '@/lib/xeroApiTracker';
-import { SmartRateLimit } from '@/lib/smartRateLimit';
+import { waitForXeroRateLimit, updateXeroRateLimitFromHeaders, getXeroApiUsage } from '@/lib/xeroApiTracker';
 
 interface ConsolidatedTask {
   name: string;
@@ -192,7 +192,7 @@ async function createAndUpdateTasks(
         const maxRetries = 3;
         
         while (retryCount <= maxRetries) {
-          await SmartRateLimit.waitIfNeeded();
+          await waitForXeroRateLimit(tenantId);
           tasksResponse = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/tasks`, {
             headers: {
               'Authorization': `Bearer ${accessToken}`,
@@ -202,7 +202,7 @@ async function createAndUpdateTasks(
           });
         
           await trackXeroApiCall(tenantId);
-          SmartRateLimit.updateFromHeaders(tasksResponse.headers);
+          await updateXeroRateLimitFromHeaders(tasksResponse.headers, tenantId);
           
           // If we get rate limited, wait and retry
           if (tasksResponse.status === 429) {
@@ -324,7 +324,7 @@ async function createAndUpdateTasks(
               
               if (needsUpdate) {
                 // Update existing task
-                await SmartRateLimit.waitIfNeeded();
+                await waitForXeroRateLimit(tenantId);
                 const updateResponse = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/tasks/${existingTask.taskId}`, {
                   method: 'PUT',
                   headers: {
@@ -337,7 +337,7 @@ async function createAndUpdateTasks(
                 });
                 
                 await trackXeroApiCall(tenantId);
-                SmartRateLimit.updateFromHeaders(updateResponse.headers);
+                await updateXeroRateLimitFromHeaders(updateResponse.headers, tenantId);
                 
                 if (updateResponse.ok) {
                   results.push({
@@ -374,7 +374,7 @@ async function createAndUpdateTasks(
                const createMaxRetries = 3;
                
                while (createRetryCount <= createMaxRetries) {
-                 await SmartRateLimit.waitIfNeeded();
+                 await waitForXeroRateLimit(tenantId);
                  createResponse = await fetch(`https://api.xero.com/projects.xro/2.0/projects/${project.projectId}/tasks`, {
                    method: 'POST',
                    headers: {
@@ -388,7 +388,7 @@ async function createAndUpdateTasks(
                  });
                 
                 await trackXeroApiCall(tenantId);
-                SmartRateLimit.updateFromHeaders(createResponse.headers);
+                await updateXeroRateLimitFromHeaders(createResponse.headers, tenantId);
                 
                 // If we get rate limited, wait and retry
                 if (createResponse.status === 429) {
@@ -657,7 +657,8 @@ export async function POST(request: NextRequest) {
     const currentTenant = projectData.tenantName;
     
     // Track API calls
-    apiCallsStart = SmartRateLimit.getRemainingCalls();
+    const usageStart = await getXeroApiUsage(effective_tenant_id);
+    apiCallsStart = 5000 - usageStart.daily.count; // 5000 is Xero's daily limit
     
     // Step 1: Create/update tasks with correct values in one go
     const taskResults = await createAndUpdateTasks(
@@ -676,7 +677,8 @@ export async function POST(request: NextRequest) {
     const overallSuccess = failedTaskCount === 0;
     
     // Calculate statistics
-    const totalApiCalls = apiCallsStart - SmartRateLimit.getRemainingCalls();
+    const usageEnd = await getXeroApiUsage(effective_tenant_id);
+    const totalApiCalls = usageEnd.daily.count - usageStart.daily.count;
     const processingTimeMs = Date.now() - startTime;
     
     // Generate comprehensive report

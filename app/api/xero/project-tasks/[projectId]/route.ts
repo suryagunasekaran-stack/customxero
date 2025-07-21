@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall } from '@/lib/xeroApiTracker';
-import { SmartRateLimit } from '@/lib/smartRateLimit';
+import { waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from '@/lib/xeroApiTracker';
 
 /**
  * GET /api/xero/project-tasks/[projectId] - Fetch tasks for a specific project
@@ -21,7 +21,7 @@ export async function GET(
 
     const { access_token, effective_tenant_id } = await ensureValidToken();
     
-    await SmartRateLimit.waitIfNeeded();
+    await waitForXeroRateLimit(effective_tenant_id);
     
     const url = `https://api.xero.com/projects.xro/2.0/Projects/${projectId}/Tasks`;
     const response = await fetch(url, {
@@ -33,7 +33,7 @@ export async function GET(
     });
 
     await trackXeroApiCall(effective_tenant_id);
-    SmartRateLimit.updateFromHeaders(response.headers);
+    await updateXeroRateLimitFromHeaders(response.headers, effective_tenant_id);
 
     if (!response.ok) {
       if (response.status === 404) {

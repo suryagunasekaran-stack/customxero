@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall } from '@/lib/xeroApiTracker';
-import { SmartRateLimit } from '@/lib/smartRateLimit';
+import { waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from '@/lib/xeroApiTracker';
 import { auth } from '@/lib/auth';
 import { AuditLogger } from '@/lib/auditLogger';
 import { randomUUID } from 'crypto';
@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
       const project = body.projects[i];
       
       try {
-        await SmartRateLimit.waitIfNeeded();
+        await waitForXeroRateLimit(effective_tenant_id);
         
         // Generate unique idempotency key for each project to prevent duplicates
         const idempotencyKey = randomUUID();
@@ -247,7 +247,7 @@ export async function POST(request: NextRequest) {
         });
 
         await trackXeroApiCall(effective_tenant_id);
-        SmartRateLimit.updateFromHeaders(response.headers);
+        await updateXeroRateLimitFromHeaders(response.headers, effective_tenant_id);
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -433,7 +433,7 @@ async function createStandardTasks(
 
   for (const taskName of STANDARD_TASKS) {
     try {
-      await SmartRateLimit.waitIfNeeded();
+      await waitForXeroRateLimit(tenantId);
 
       const runTimestamp = Date.now();
       const idempotencyKey = `create-project-task-${projectId}-${taskName.replace(/\s+/g, '-').toLowerCase()}-${timestamp}-${runTimestamp}`;
@@ -458,7 +458,7 @@ async function createStandardTasks(
       });
 
       await trackXeroApiCall(tenantId);
-      SmartRateLimit.updateFromHeaders(response.headers);
+      await updateXeroRateLimitFromHeaders(response.headers, tenantId);
 
       if (response.ok) {
         taskResults.push({

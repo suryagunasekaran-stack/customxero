@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall } from '@/lib/xeroApiTracker';
-import { SmartRateLimit } from '@/lib/smartRateLimit';
+import { waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from '@/lib/xeroApiTracker';
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Apply rate limiting
-    await SmartRateLimit.waitIfNeeded();
+    await waitForXeroRateLimit(tokenData.effective_tenant_id);
     
     // Send directly to Xero API
     const updateRes = await fetch('https://api.xero.com/api.xro/2.0/Invoices?SummarizeErrors=false', {
@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
     
     // Track API usage
     await trackXeroApiCall(tokenData.effective_tenant_id);
+    await updateXeroRateLimitFromHeaders(updateRes.headers, tokenData.effective_tenant_id);
     
     const responseData = await updateRes.json();
     
