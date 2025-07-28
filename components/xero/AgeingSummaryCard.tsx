@@ -245,35 +245,33 @@ export default function AgeingSummaryCard({ disabled = false }: AgeingSummaryCar
         </div>
 
         {/* Step Indicator */}
-        {step !== 'fetch-projects' && (
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-xs">
-              <span className={`px-2 py-1 rounded-full ${step === 'fetch-projects' ? 'bg-gray-200 text-gray-600' : 'bg-green-100 text-green-800'}`}>
-                1. Fetch Projects
-              </span>
-              <span className="text-gray-400">→</span>
-              <span className={`px-2 py-1 rounded-full ${step === 'fetch-projects' ? 'bg-gray-200 text-gray-600' : step === 'select-file' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
-                2. Select File
-              </span>
-              <span className="text-gray-400">→</span>
-              <span className={`px-2 py-1 rounded-full ${step === 'processing' ? 'bg-blue-100 text-blue-800' : step === 'complete' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
-                3. Process
-              </span>
-              <span className="text-gray-400">→</span>
-              <span className={`px-2 py-1 rounded-full ${step === 'complete' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
-                4. Complete
-              </span>
-            </div>
-            {(step === 'complete' || step === 'select-file') && (
-              <button
-                onClick={handleReset}
-                className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                Start Over
-              </button>
-            )}
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center space-x-2 text-xs">
+            <span className={`px-2 py-1 rounded-full ${step === 'fetch-projects' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
+              1. Fetch Projects
+            </span>
+            <span className="text-gray-400">→</span>
+            <span className={`px-2 py-1 rounded-full ${step === 'select-file' ? 'bg-blue-100 text-blue-800' : step === 'fetch-projects' ? 'bg-gray-200 text-gray-600' : 'bg-green-100 text-green-800'}`}>
+              2. Select File
+            </span>
+            <span className="text-gray-400">→</span>
+            <span className={`px-2 py-1 rounded-full ${step === 'processing' ? 'bg-blue-100 text-blue-800' : step === 'complete' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
+              3. Process
+            </span>
+            <span className="text-gray-400">→</span>
+            <span className={`px-2 py-1 rounded-full ${step === 'complete' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
+              4. Complete
+            </span>
           </div>
-        )}
+          {(step === 'complete' || step === 'select-file') && (
+            <button
+              onClick={handleReset}
+              className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              Start Over
+            </button>
+          )}
+        </div>
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
             <p className="text-sm text-red-600">{error}</p>
