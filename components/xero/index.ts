@@ -18,5 +18,6 @@ export { default as BlobUploadCard } from './BlobUploadCard';
 export { default as BlobBrowserCard } from './BlobBrowserCard';
 export { default as ProjectsSyncButton } from './ProjectsSyncButton';
 export { default as ProjectSyncValidationTenantEA67107E } from './ProjectSyncValidationTenantEA67107E';
+export { default as AgeingSummaryCard } from './AgeingSummaryCard';
 
 export * from './types'; 

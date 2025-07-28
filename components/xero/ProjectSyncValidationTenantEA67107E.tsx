@@ -537,7 +537,7 @@ export default function ProjectSyncValidationTenantEA67107E({ disabled = false }
                                         {result.validationIssues
                                           .sort((a: any, b: any) => {
                                             // Sort by severity: error > warning > info
-                                            const severityOrder = { error: 0, warning: 1, info: 2 };
+                                            const severityOrder: Record<string, number> = { error: 0, warning: 1, info: 2 };
                                             return severityOrder[a.severity] - severityOrder[b.severity];
                                           })
                                           .map((issue: any, idx: number) => (

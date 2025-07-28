@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { validateTenantEA67107EV2, TenantValidationConfig } from '../../../pipedrive/tenant-ea67107e/validation-handler-v2';
+import { validateTenantEA67107EV2, TenantValidationConfig } from '../../../../pipedrive/tenant-ea67107e/validation-handler-v2';
 
 export async function tenantEA67107EValidation(req: NextRequest) {
   try {

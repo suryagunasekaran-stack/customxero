@@ -13,6 +13,7 @@ import {
   InvoiceUpdateDirectCard,
   QuotesDownloadCard
 } from '../../../components/xero';
+import AgeingSummaryCard from '../../../components/xero/AgeingSummaryCard';
 import MonthlySnapshotCard from '../../../components/xero/MonthlySnapshotCard';
 
 /**
@@ -64,6 +65,7 @@ export default function XeroPageV2Example() {
             <div className="grid gap-6 md:grid-cols-2">
               <ManhourBillingCard disabled={isRunning} />
               <TimesheetProcessingCard disabled={isRunning} />
+              <AgeingSummaryCard disabled={isRunning} />
               {/* Uncomment to enable additional features */}
               {/* <InvoicesDownloadCard disabled={isRunning} />
               <InvoiceUpdateCard disabled={isRunning} />
