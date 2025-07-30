@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall, waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from '@/lib/xeroApiTracker';
 import { auth } from '@/lib/auth';
+import { ExcelReportService } from '@/lib/timesheet/services/ExcelReportService';
 
 interface ConsolidatedTask {
   name: string;
@@ -627,6 +628,32 @@ export async function POST(request: NextRequest) {
     const timesheetData = await processTimesheetWithPython(blobUrl, fileName, tenantId);
     console.log(`[Stats] Processed: ${timesheetData.metadata.entries_processed} entries, ${timesheetData.metadata.projects_processed || timesheetData.metadata.projects_consolidated || 0} projects`);
 
+    // Create mock results for Excel report (since we're not processing with Xero yet)
+    const mockResults: any[] = [];
+    
+    // Generate Excel report
+    const excelReportService = new ExcelReportService();
+    const excelBuffer = excelReportService.generateTimesheetReport({
+      metadata: timesheetData.metadata,
+      summary: {
+        entriesProcessed: timesheetData.metadata.entries_processed,
+        projectsAnalyzed: timesheetData.metadata.projects_processed || timesheetData.metadata.projects_consolidated || 0,
+        projectsMatched: 0,
+        tasksCreated: 0,
+        tasksUpdated: 0,
+        tasksFailed: 0,
+        actualTasksFailed: 0,
+        projectsNotFound: 0,
+        processingTimeMs: Date.now() - startTime
+      },
+      results: mockResults,
+      costVerification: timesheetData.cost_verification,
+      changes: timesheetData.changes
+    });
+    
+    // Convert buffer to base64 for download
+    const excelBase64 = excelBuffer.toString('base64');
+    
     // Prepare the response data - pass through all data from Python backend
     const responseData: any = {
       success: timesheetData.success,
@@ -643,17 +670,24 @@ export async function POST(request: NextRequest) {
       // Results array for compatibility
       results: [],
       downloadableReport: {
-        filename: `timesheet-processing-response-${new Date().toISOString().split('T')[0]}.json`,
-        content: ''
+        filename: excelReportService.generateReportFilename(),
+        content: excelBase64,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       }
     };
-    
-    // Set the downloadable report content to the full response JSON
-    responseData.downloadableReport.content = JSON.stringify(responseData, null, 2);
     
     return NextResponse.json(responseData);
 
     /* COMMENTED OUT - Xero processing
+    // When re-enabling Xero processing, replace the Excel report generation above with:
+    // const excelBuffer = excelReportService.generateTimesheetReport({
+    //   metadata: timesheetData.metadata,
+    //   summary: summary, // Use the actual summary from Xero processing
+    //   results: results, // Use the actual results from Xero processing
+    //   costVerification: timesheetData.cost_verification,
+    //   changes: timesheetData.changes
+    // });
+    
     // Step 2: Get active Xero projects and verify tenant
     const { projects, tenantName } = await getActiveXeroProjects(access_token, effective_tenant_id);
     console.log(`[Stats] Found ${projects.length} active IN PROGRESS Xero projects for: ${tenantName}`);

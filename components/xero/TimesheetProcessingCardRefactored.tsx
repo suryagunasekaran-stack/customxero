@@ -13,6 +13,7 @@ import XeroUpdateResults from './timesheet/XeroUpdateResults';
 import { TimesheetProcessingController } from '../../lib/timesheet/TimesheetProcessingController';
 import { ProcessingStatus, ProcessingStep, DirectProcessingResult, FilePreview, TenantInfo } from '../../lib/timesheet/types';
 import { ReportService } from '../../lib/timesheet/services/ReportService';
+import { ExcelReportService } from '../../lib/timesheet/services/ExcelReportService';
 
 interface TimesheetProcessingCardProps {
   disabled?: boolean;
@@ -238,8 +239,22 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
 
   const handleDownloadReport = () => {
     if (results && results.downloadableReport) {
-      // Download JSON response
-      const blob = new Blob([results.downloadableReport.content], { type: 'application/json' });
+      let blob: Blob;
+      
+      // Check if it's an Excel file based on content type
+      if (results.downloadableReport.contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+        // Excel file - decode from base64
+        const binaryString = atob(results.downloadableReport.content);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        blob = new Blob([bytes], { type: results.downloadableReport.contentType });
+      } else {
+        // Default to JSON
+        blob = new Blob([results.downloadableReport.content], { type: 'application/json' });
+      }
+      
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -314,22 +329,32 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
   const handleDownloadUpdateReport = () => {
     if (!updateResults || !processingResponse) return;
     
-    // Create comprehensive update report
-    const updateReportContent = JSON.stringify({
+    // Create Excel report
+    const excelReportService = new ExcelReportService();
+    const excelBuffer = excelReportService.generateXeroUpdateReport({
       updateSummary: updateResults,
       originalChanges: {
         updates: processingResponse.changes.updates,
         creates: processingResponse.changes.creates
       },
       closedProjectsSkipped: processingResponse.closed_projects_with_changes
-    }, null, 2);
+    });
     
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const blob = new Blob([updateReportContent], { type: 'application/json' });
+    // Convert buffer to base64
+    const base64 = Buffer.from(excelBuffer).toString('base64');
+    
+    // Download Excel file
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `xero-update-report-${timestamp}.json`;
+    a.download = excelReportService.generateReportFilename('xero-update-report');
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -2,9 +2,24 @@
 // Service for handling report generation and downloads
 
 export class ReportService {
-  downloadReport(report: { filename: string; content: string }): void {
+  downloadReport(report: { filename: string; content: string; contentType?: string }): void {
     try {
-      const blob = new Blob([report.content], { type: 'text/csv' });
+      let blob: Blob;
+      
+      // Check if the report has a content type specified
+      if (report.contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+        // Excel file - decode from base64
+        const binaryString = atob(report.content);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        blob = new Blob([bytes], { type: report.contentType });
+      } else {
+        // Default to CSV/text
+        blob = new Blob([report.content], { type: 'text/csv' });
+      }
+      
       const url = URL.createObjectURL(blob);
       
       const link = document.createElement('a');
