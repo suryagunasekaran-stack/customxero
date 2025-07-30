@@ -85,6 +85,7 @@ export interface DirectProcessingResult {
   downloadableReport: {
     filename: string;
     content: string;
+    contentType?: string;
   };
   error?: string;
 }
