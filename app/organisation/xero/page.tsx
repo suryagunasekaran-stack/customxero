@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { TimesheetProcessingCard } from '../../../components/xero';
+import { SyncButton } from '../../../components/xero/SyncButton';
 
 export default function XeroPage() {
   return (
@@ -12,9 +13,29 @@ export default function XeroPage() {
           <p className="mt-2 text-gray-600">Process timesheets and synchronize data with Xero</p>
         </div>
 
-        <div className="flex justify-center">
-          <div className="w-full max-w-4xl">
-            <TimesheetProcessingCard disabled={false} />
+        <div className="space-y-8">
+          {/* Pipedrive Validation Section */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">Pipedrive-Xero Validation</h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Validate deal titles, cross-reference quotes and projects between Pipedrive and Xero.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <SyncButton />
+              </div>
+            </div>
+          </div>
+
+          {/* Timesheet Processing Section */}
+          <div className="flex justify-center">
+            <div className="w-full max-w-4xl">
+              <TimesheetProcessingCard disabled={false} />
+            </div>
           </div>
         </div>
       </div>
