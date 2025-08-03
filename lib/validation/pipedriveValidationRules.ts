@@ -233,9 +233,30 @@ export function crossReferenceQuotes(context: PipedriveValidationContext): Quote
   // Log the custom field key we're looking for (only once)
   if (context.pipedriveDeals.length > 0) {
     const firstDeal = context.pipedriveDeals[0];
-    console.log('Looking for Xero Quote ID in field:', customFieldKeys.xeroQuoteId);
-    console.log('Sample deal keys:', Object.keys(firstDeal).filter(k => k.length > 20).slice(0, 5));
-    console.log('Sample deal xeroQuoteId value:', firstDeal[customFieldKeys.xeroQuoteId]);
+    const customFieldKeysInDeal = Object.keys(firstDeal).filter(k => k.length > 20);
+    
+    // Use a proper logger or store in results instead of console.log
+    const debugInfo = {
+      lookingForField: customFieldKeys.xeroQuoteId,
+      sampleDealKeys: customFieldKeysInDeal.slice(0, 5),
+      sampleValue: firstDeal[customFieldKeys.xeroQuoteId],
+      hasQuoteField: customFieldKeys.xeroQuoteId in firstDeal
+    };
+    
+    // Add debug info to first result
+    if (!firstDeal[customFieldKeys.xeroQuoteId]) {
+      results.push({
+        dealId: 0,
+        dealTitle: 'DEBUG INFO',
+        hasQuote: false,
+        issues: [{
+          severity: 'info',
+          code: 'DEBUG_FIELD_INFO',
+          message: `Looking for field: ${customFieldKeys.xeroQuoteId}, Found fields: ${customFieldKeysInDeal.length} custom fields`,
+          metadata: debugInfo
+        }]
+      });
+    }
   }
   
   for (const deal of context.pipedriveDeals) {

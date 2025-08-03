@@ -130,17 +130,31 @@ export function SyncButton() {
         throw new Error('No response body');
       }
       
+      let buffer = '';
+      
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        // Decode with stream option to handle partial UTF-8 sequences
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        
+        // Process complete lines
+        const lines = buffer.split('\n');
+        
+        // Keep the last incomplete line in the buffer
+        buffer = lines.pop() || '';
         
         for (const line of lines) {
+          if (line.trim() === '') continue; // Skip empty lines
+          
           if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6));
+              const jsonStr = line.slice(6).trim();
+              if (!jsonStr) continue; // Skip empty data
+              
+              const data = JSON.parse(jsonStr);
               
               if (data.type === 'progress') {
                 setCurrentStep(data.step);
@@ -156,9 +170,25 @@ export function SyncButton() {
                 setCurrentStep(null);
               }
             } catch (e) {
-              console.error('Failed to parse SSE data:', e);
+              console.error('Failed to parse SSE data:', e, 'Line:', line);
             }
           }
+        }
+      }
+      
+      // Process any remaining buffered data
+      if (buffer.trim() && buffer.startsWith('data: ')) {
+        try {
+          const jsonStr = buffer.slice(6).trim();
+          if (jsonStr) {
+            const data = JSON.parse(jsonStr);
+            if (data.type === 'complete') {
+              setResults(data.data);
+              setCurrentStep(null);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to parse final SSE data:', e);
         }
       }
     } catch (err) {
