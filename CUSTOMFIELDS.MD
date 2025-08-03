@@ -2,7 +2,7 @@
 
 ---
 
-## 🏢 Tenant 1: `ea67107e-c352-40a9-a8b8-24d81ae3fc85`
+## 🏢 Tenant 1: `6dd39ea4-e6a6-4993-a37a-21482ccf8d22`
 
 **🔐 Pipedrive API Key**  
 `a8b760a714bed5f212c1bd13d0ed3bcb2859d001`
@@ -33,7 +33,7 @@
 
 ---
 
-## 🏢 Tenant 2: `6dd39ea4-e6a6-4993-a37a-21482ccf8d22`
+## 🏢 Tenant 2: `ea67107e-c352-40a9-a8b8-24d81ae3fc85`
 
 **🔐 Pipedrive API Key**  
 `3715e2a801d93120c4a461efe8752d841998baf7`

@@ -61,10 +61,10 @@ export interface PipedriveConfig {
  * @since 1.0.0
  */
 export async function resolvePipedriveConfig(tenantId: string): Promise<PipedriveConfig | null> {
-  // Configuration based on CUSTOMFIELDS.md
+  // Configuration based on CUSTOMFIELDS.md (corrected)
   const configs: Record<string, PipedriveConfig> = {
-    // Tenant 1
-    'ea67107e-c352-40a9-a8b8-24d81ae3fc85': {
+    // Tenant 1 (now correctly mapped to 6dd39ea4-e6a6-4993-a37a-21482ccf8d22)
+    '6dd39ea4-e6a6-4993-a37a-21482ccf8d22': {
       apiKey: process.env.PIPEDRIVE_KEY_2 || '',
       companyDomain: 'api', // Standard API domain
       pipelineIds: [2], // Work In Progress pipeline
@@ -86,11 +86,11 @@ export async function resolvePipedriveConfig(tenantId: string): Promise<Pipedriv
       enabled: true,
       tenantName: 'Tenant 1'
     },
-    // Tenant 2 (BSENI)
-    '6dd39ea4-e6a6-4993-a37a-21482ccf8d22': {
+    // Tenant 2 (now correctly mapped to ea67107e-c352-40a9-a8b8-24d81ae3fc85)
+    'ea67107e-c352-40a9-a8b8-24d81ae3fc85': {
       apiKey: process.env.PIPEDRIVE_KEY || '',
       companyDomain: 'bseni',
-      pipelineIds: [2, 3, 4, 5, 6, 7, 8, 9, 16], // All WIP pipelines
+      pipelineIds: [3, 4, 5, 6, 7, 8, 9, 16], // All WIP pipelines (removed pipeline 2)
       customFieldKeys: {
         wopqNumber: '8a3fabdbd16595e1dc83d75327312eba71bbb0a4',
         ipc: '0be49a5ee144f20b90168670b3a3f8f9b18977ae',
@@ -107,7 +107,7 @@ export async function resolvePipedriveConfig(tenantId: string): Promise<Pipedriv
         salesReference: '6ec23a25a64aa044f0e57d1180d2ad8b7bdb43b9'
       },
       enabled: true,
-      tenantName: 'BSENI'
+      tenantName: 'Tenant 2 (BSENI)'
     }
   };
   
@@ -156,10 +156,12 @@ export async function resolvePipedriveConfig(tenantId: string): Promise<Pipedriv
  */
 export function getPipelineNames(tenantId: string): Record<number, string> {
   const pipelineNames: Record<string, Record<number, string>> = {
-    'ea67107e-c352-40a9-a8b8-24d81ae3fc85': {
+    // Tenant 1
+    '6dd39ea4-e6a6-4993-a37a-21482ccf8d22': {
       2: 'Work In Progress'
     },
-    '6dd39ea4-e6a6-4993-a37a-21482ccf8d22': {
+    // Tenant 2 (BSENI)
+    'ea67107e-c352-40a9-a8b8-24d81ae3fc85': {
       3: 'WIP - Engine Recon',
       4: 'WIP - Machine Shop',
       5: 'WIP - Laser Cladding',
