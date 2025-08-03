@@ -25,7 +25,7 @@ export async function GET() {
     console.log('[Tenants GET] User:', userId);
     
     // Get tenants from session or storage
-    let tenants = session.tenants || [];
+    let tenants = (session as any).tenants || [];
     
     // If not in session, try to get from storage
     if (!tenants || tenants.length === 0) {
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
     console.log('[Tenants POST] Requested tenant ID:', cleanTenantId);
     
     // Verify the tenant exists in available tenants
-    const availableTenants = session.tenants || await XeroTokenStore.getUserTenants(userId) || [];
+    const availableTenants = (session as any).tenants || await XeroTokenStore.getUserTenants(userId) || [];
     if (!availableTenants.find((t: any) => t.tenantId === cleanTenantId)) {
       console.error('[Tenants POST] Invalid tenant ID:', cleanTenantId, 'Available:', availableTenants.map((t: any) => t.tenantId));
       return NextResponse.json({ 

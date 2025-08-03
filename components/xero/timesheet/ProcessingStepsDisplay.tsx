@@ -2,8 +2,21 @@
 
 import React from 'react';
 import { CheckIcon, XMarkIcon } from '@heroicons/react/24/solid';
-import ProgressBar from '../../ProgressBar';
 import { ProcessingStep } from '../../../lib/timesheet/types';
+
+// Simple progress bar component
+const ProgressBar = ({ current, total }: { current: number; total: number }) => {
+  const percentage = total > 0 ? (current / total) * 100 : 0;
+  
+  return (
+    <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+      <div 
+        className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+        style={{ width: `${percentage}%` }}
+      />
+    </div>
+  );
+};
 
 interface ProcessingStepsDisplayProps {
   steps: ProcessingStep[];
@@ -147,12 +160,6 @@ export default function ProcessingStepsDisplay({
         <ProgressBar 
           current={steps.filter(s => s.status === 'completed').length}
           total={steps.length}
-          startTime={startTime || undefined}
-          message={
-            currentStepIndex >= 0 && currentStepIndex < steps.length
-              ? steps[currentStepIndex]?.title || 'Processing...'
-              : 'Processing...'
-          }
         />
         
         {startTime && (

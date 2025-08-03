@@ -10,7 +10,6 @@ import { Bars3Icon, BellIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { MagnifyingGlassIcon } from '@heroicons/react/20/solid'
 import { signOut, useSession } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
-import TenantSwitcher from './TenantSwitcher'
 
 /**
  * Utility function to combine CSS class names
@@ -118,9 +117,6 @@ export default function OrganisationHeader() {
                                         {item.name}
                                     </a>
                                 ))}
-                                <div className="ml-4">
-                                    <TenantSwitcher />
-                                </div>
                             </nav>
                         </div>
                     </div>
@@ -166,9 +162,6 @@ export default function OrganisationHeader() {
                                         {item.name}
                                     </a>
                                 ))}
-                                <div className="px-3 py-2 w-full">
-                                    <TenantSwitcher />
-                                </div>
                             </div>
                         </div>
                         <div className="pt-4 pb-2">

@@ -167,7 +167,7 @@ export const authConfig: NextAuthConfig = {
           const TokenStore = await getXeroTokenStore();
           const selectedTenant = await TokenStore.getSelectedTenant(session.user.email);
           if (selectedTenant) {
-            session.tenantId = selectedTenant;
+            (session as any).tenantId = selectedTenant;
           }
         }
       } catch (error) {

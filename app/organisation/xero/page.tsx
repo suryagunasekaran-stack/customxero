@@ -7,14 +7,8 @@ import ProjectSyncValidationTenantEA67107E from '../../../components/xero/Projec
 import {
   ManhourBillingCard,
   TimesheetProcessingCard,
-  ContactUpdateCard,
-  InvoicesDownloadCard,
-  InvoiceUpdateCard,
-  InvoiceUpdateDirectCard,
-  QuotesDownloadCard
+  AgeingSummaryCard
 } from '../../../components/xero';
-import AgeingSummaryCard from '../../../components/xero/AgeingSummaryCard';
-import MonthlySnapshotCard from '../../../components/xero/MonthlySnapshotCard';
 
 /**
  * Example of how to use the new SyncProjectCardV2 component
@@ -22,7 +16,7 @@ import MonthlySnapshotCard from '../../../components/xero/MonthlySnapshotCard';
  */
 export default function XeroPageV2Example() {
   // Use the new hook for better integration
-  const { isAnalyzing, isRunning } = useSyncProjectV2();
+  const { isRunning } = useSyncProjectV2();
   const [currentTenantId, setCurrentTenantId] = useState<string>('');
 
   useEffect(() => {

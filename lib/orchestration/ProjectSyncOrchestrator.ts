@@ -48,7 +48,8 @@ export class ProjectSyncOrchestrator {
       tenantName 
     }, 'Sync session initialized');
     
-    logSyncOperation('initialize', 'session_start', { 
+    logSyncOperation('initialize', { 
+      action: 'session_start',
       sessionId: this.session.id, 
       tenantId, 
       tenantName 
@@ -188,7 +189,8 @@ export class ProjectSyncOrchestrator {
         }
       }, 'Sync workflow completed successfully');
 
-      logSyncOperation('complete', 'session_end', { 
+      logSyncOperation('complete', { 
+        action: 'session_end',
         sessionId: this.session.id,
         status: 'success',
         summary
@@ -207,10 +209,12 @@ export class ProjectSyncOrchestrator {
         error: (error as Error).message 
       }, 'Sync workflow failed');
       
-      logSyncOperation('error', 'session_failed', { 
+      logSyncOperation('error', { 
+        action: 'session_failed',
         sessionId: this.session?.id,
-        error: (error as Error).message
-      }, error as Error);
+        error: (error as Error).message,
+        stack: (error as Error).stack
+      });
       
       throw error;
     }

@@ -184,7 +184,7 @@ export class XeroProjectService {
       status: status || 'all' 
     }, 'Successfully fetched all projects');
     
-    logApiRequest('GET', '/projects', 200, Date.now() - startTime);
+    logApiRequest('GET', '/projects', { status: 200, duration: Date.now() - startTime });
     return allProjects;
   }
 

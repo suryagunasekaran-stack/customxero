@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { Fragment } from 'react';
+import { Dialog, Transition } from '@headlessui/react';
 import { ExclamationTriangleIcon, BuildingOfficeIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
-import PremiumModal, { ModalAction } from '../PremiumModal';
 
 interface TenantConfirmationModalProps {
   isOpen: boolean;
@@ -19,59 +19,80 @@ export default function TenantConfirmationModal({
   onConfirm,
   onCancel
 }: TenantConfirmationModalProps) {
-  const actions: ModalAction[] = [
-    {
-      label: 'Proceed with Processing',
-      onClick: onConfirm,
-      variant: 'primary'
-    },
-    {
-      label: 'Cancel',
-      onClick: onCancel,
-      variant: 'secondary',
-      autoFocus: true
-    }
-  ];
-
   return (
-    <PremiumModal
-      isOpen={isOpen}
-      onClose={onCancel}
-      title="Confirm Timesheet Processing"
-      icon={<ExclamationTriangleIcon className="size-6 text-orange-600" />}
-      iconBgColor="bg-orange-100"
-      actions={actions}
-      maxWidth="md"
-    >
-      <div className="space-y-4">
-        <p className="text-sm text-gray-500">
-          You are about to process a timesheet that will update project tasks and costs in Xero.
-        </p>
-        
-        <div className="space-y-3">
-          <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg text-left">
-            <BuildingOfficeIcon className="w-5 h-5 text-gray-500 flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Organisation</p>
-              <p className="text-sm font-semibold text-gray-900 truncate">{tenantName}</p>
-            </div>
-          </div>
-          
-          <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg text-left">
-            <DocumentTextIcon className="w-5 h-5 text-gray-500 flex-shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">File</p>
-              <p className="text-sm text-gray-900 truncate" title={fileName}>{fileName}</p>
-            </div>
+    <Transition.Root show={isOpen} as={Fragment}>
+      <Dialog as="div" className="relative z-10" onClose={onCancel}>
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+        </Transition.Child>
+
+        <div className="fixed inset-0 z-10 w-screen overflow-y-auto">
+          <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+              enterTo="opacity-100 translate-y-0 sm:scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 translate-y-0 sm:scale-100"
+              leaveTo="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+            >
+              <Dialog.Panel className="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6">
+                <div className="sm:flex sm:items-start">
+                  <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 sm:mx-0 sm:h-10 sm:w-10">
+                    <ExclamationTriangleIcon className="h-6 w-6 text-orange-600" aria-hidden="true" />
+                  </div>
+                  <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
+                    <Dialog.Title as="h3" className="text-base font-semibold leading-6 text-gray-900">
+                      Confirm Timesheet Processing
+                    </Dialog.Title>
+                    <div className="mt-4 space-y-4">
+                      <div className="flex items-start space-x-3">
+                        <BuildingOfficeIcon className="h-5 w-5 text-gray-400 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">Selected Tenant</p>
+                          <p className="text-sm text-gray-600">{tenantName}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start space-x-3">
+                        <DocumentTextIcon className="h-5 w-5 text-gray-400 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">File to Process</p>
+                          <p className="text-sm text-gray-600">{fileName}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                  <button
+                    type="button"
+                    className="inline-flex w-full justify-center rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500 sm:ml-3 sm:w-auto"
+                    onClick={onConfirm}
+                  >
+                    Confirm & Process
+                  </button>
+                  <button
+                    type="button"
+                    className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+                    onClick={onCancel}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </Dialog.Panel>
+            </Transition.Child>
           </div>
         </div>
-        
-        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-left">
-          <p className="text-xs text-amber-800">
-            <strong>Warning:</strong> This will create or update project tasks with new time estimates and billing rates.
-          </p>
-        </div>
-      </div>
-    </PremiumModal>
+      </Dialog>
+    </Transition.Root>
   );
-} 
+}

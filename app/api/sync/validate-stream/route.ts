@@ -715,9 +715,9 @@ export async function GET() {
             phase3: phase3ValidationResult ? {
               quotes: phase3ValidationResult.quotes,
               stats: phase3ValidationResult.stats,
-              duplicateQuotes: Array.from(duplicateQuotes?.entries() || []).map(([dealId, quotes]) => ({
+              duplicateQuotes: Array.from(duplicateQuotes?.entries() || []).map(([dealId, quotes]: [any, any]) => ({
                 dealId,
-                quotes: quotes.map(q => ({
+                quotes: (quotes as any[]).map((q: any) => ({
                   quoteId: q.quoteId,
                   quoteNumber: q.quoteNumber,
                   total: q.total,

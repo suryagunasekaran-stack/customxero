@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     const result = {
       success: true,
       user: session?.user?.email,
-      sessionTenantId: session?.tenantId,
+      sessionTenantId: (session as any)?.tenantId,
       effectiveTenantId: effective_tenant_id,
       selectedTenantName: selectedTenant?.tenantName,
       xeroOrgName: xeroOrgName,

@@ -18,15 +18,15 @@ export async function GET(request: NextRequest) {
     }
     
     const now = Date.now() / 1000;
-    const expiresAt = session.expiresAt || 0;
+    const expiresAt = (session as any).expiresAt || 0;
     const timeUntilExpiry = expiresAt - now;
     
     return NextResponse.json({
       authenticated: true,
       user: session.user?.email,
-      hasAccessToken: !!session.accessToken,
-      hasRefreshToken: !!session.refreshToken,
-      tokenExpiresAt: session.expiresAt ? new Date(session.expiresAt * 1000).toISOString() : null,
+      hasAccessToken: !!(session as any).accessToken,
+      hasRefreshToken: !!(session as any).refreshToken,
+      tokenExpiresAt: expiresAt ? new Date(expiresAt * 1000).toISOString() : null,
       tokenExpiresIn: {
         seconds: Math.floor(timeUntilExpiry),
         minutes: Math.floor(timeUntilExpiry / 60),
@@ -36,9 +36,9 @@ export async function GET(request: NextRequest) {
       },
       isExpired: timeUntilExpiry <= 0,
       willExpireSoon: timeUntilExpiry > 0 && timeUntilExpiry <= 300, // 5 minute buffer
-      error: session.error,
-      tenantId: session.tenantId,
-      tenantsCount: session.tenants?.length || 0
+      error: (session as any).error,
+      tenantId: (session as any).tenantId,
+      tenantsCount: (session as any).tenants?.length || 0
     });
   } catch (error) {
     return NextResponse.json({

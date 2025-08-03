@@ -21,7 +21,7 @@ export default async function OrganisationLayout({ children }: { children: React
         }
 
         // Basic tenant check - just use session data to avoid edge runtime issues
-        const availableTenants = session.tenants || [];
+        const availableTenants = (session as any).tenants || [];
         
         if (!availableTenants || availableTenants.length === 0) {
             // No tenants available, need to re-authenticate
