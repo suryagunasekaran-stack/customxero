@@ -23,7 +23,10 @@ export interface PipedriveDeal {
   stage_order_nr?: number;
   active?: boolean;
   deleted?: boolean;
-  [key: string]: any; // For custom fields
+  is_archived?: boolean;
+  is_deleted?: boolean;
+  custom_fields?: Record<string, any>; // v2 API returns custom fields in this object
+  [key: string]: any; // For v1 API compatibility
 }
 
 export interface DetailedDeal extends PipedriveDeal {
@@ -93,9 +96,10 @@ export interface PipedriveApiResponse<T> {
 export function buildPipedriveApiUrl(
   domain: string,
   endpoint: string,
-  params?: Record<string, string | number | boolean>
+  params?: Record<string, string | number | boolean>,
+  version: string = 'v1'
 ): string {
-  const baseUrl = `https://${domain}.pipedrive.com/api/v1/${endpoint}`;
+  const baseUrl = `https://${domain}.pipedrive.com/api/${version}/${endpoint}`;
   
   if (!params || Object.keys(params).length === 0) {
     return baseUrl;
@@ -153,21 +157,26 @@ export async function fetchPipedriveDealsWithPagination(
   status: 'won' | 'lost' | 'all_not_deleted' = 'won'
 ): Promise<PipedriveDeal[]> {
   const allDeals: PipedriveDeal[] = [];
-  let start = 0;
+  let cursor: string | undefined = undefined;
   const limit = 100;
   let moreItems = true;
   
-  logger.info({ companyDomain, pipelineId, status }, 'Fetching Pipedrive deals');
+  logger.info({ companyDomain, pipelineId, status }, 'Fetching Pipedrive deals using v2 API');
   
   while (moreItems) {
     try {
-      // Don't use filter_id as it's for saved filters, not pipelines
-      const url = buildPipedriveApiUrl(companyDomain, 'deals', {
+      // Use v2 API which includes custom_fields
+      const params: Record<string, any> = {
         api_token: apiKey,
         status,
-        start,
         limit
-      });
+      };
+      
+      if (cursor) {
+        params.cursor = cursor;
+      }
+      
+      const url = buildPipedriveApiUrl(companyDomain, 'deals', params, 'v2');
       
       const response = await fetch(url);
       
@@ -190,32 +199,29 @@ export async function fetchPipedriveDealsWithPagination(
         // Filter by pipeline_id to get only deals from the specified pipeline
         const pipelineDeals = data.data.filter(deal => deal.pipeline_id === pipelineId);
         
-        // Log first deal to see available fields
+        // Log first deal to see available fields and custom_fields
         if (pipelineDeals.length > 0 && allDeals.length === 0) {
           const firstDeal = pipelineDeals[0];
-          const customFields = Object.keys(firstDeal).filter(key => key.length > 20); // Custom fields have long hash keys
           logger.info({ 
             dealId: firstDeal.id,
             title: firstDeal.title || firstDeal.name,
-            customFieldKeys: customFields.slice(0, 10), // Log first 10 custom field keys
-            sampleCustomFieldValues: customFields.slice(0, 3).reduce((acc, key) => {
-              acc[key] = firstDeal[key];
-              return acc;
-            }, {} as Record<string, any>)
-          }, 'Sample deal with custom fields');
+            hasCustomFields: !!firstDeal.custom_fields,
+            customFieldsCount: firstDeal.custom_fields ? Object.keys(firstDeal.custom_fields).length : 0,
+            sampleCustomFields: firstDeal.custom_fields ? 
+              Object.entries(firstDeal.custom_fields).slice(0, 5).reduce((acc, [key, value]) => {
+                acc[key] = value;
+                return acc;
+              }, {} as Record<string, any>) : {}
+          }, 'Sample v2 API deal with custom fields');
         }
         
         allDeals.push(...pipelineDeals);
       }
       
-      // Check pagination
-      if (data.additional_data?.pagination) {
-        moreItems = data.additional_data.pagination.more_items_in_collection;
-        if (moreItems && data.additional_data.pagination.next_start !== undefined) {
-          start = data.additional_data.pagination.next_start;
-        } else {
-          moreItems = false;
-        }
+      // Check pagination for v2 API
+      if (data.additional_data?.next_cursor) {
+        cursor = data.additional_data.next_cursor;
+        moreItems = true;
       } else {
         moreItems = false;
       }
@@ -515,6 +521,12 @@ export async function fetchBatchDealDetails(
  * Extract custom fields from deal object
  */
 function extractCustomFields(deal: PipedriveDeal): Record<string, any> {
+  // v2 API returns custom fields in a dedicated object
+  if (deal.custom_fields) {
+    return deal.custom_fields;
+  }
+  
+  // v1 API includes custom fields as top-level properties
   const customFields: Record<string, any> = {};
   
   // Pipedrive custom fields are included directly in the deal object

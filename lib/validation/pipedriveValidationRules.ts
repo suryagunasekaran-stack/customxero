@@ -233,18 +233,29 @@ export function crossReferenceQuotes(context: PipedriveValidationContext): Quote
   // Log the custom field key we're looking for (only once)
   if (context.pipedriveDeals.length > 0) {
     const firstDeal = context.pipedriveDeals[0];
-    const customFieldKeysInDeal = Object.keys(firstDeal).filter(k => k.length > 20);
+    
+    // Check both v1 (top-level) and v2 (custom_fields object) locations
+    const customFieldsV2 = firstDeal.custom_fields || {};
+    const customFieldKeysInDeal = Object.keys(firstDeal).filter(k => k.length > 20); // v1 API
+    const customFieldKeysInV2 = Object.keys(customFieldsV2); // v2 API
+    
+    // Try to get the value from both locations
+    const xeroQuoteIdValue = firstDeal.custom_fields?.[customFieldKeys.xeroQuoteId] || 
+                            firstDeal[customFieldKeys.xeroQuoteId];
     
     // Use a proper logger or store in results instead of console.log
     const debugInfo = {
       lookingForField: customFieldKeys.xeroQuoteId,
-      sampleDealKeys: customFieldKeysInDeal.slice(0, 5),
-      sampleValue: firstDeal[customFieldKeys.xeroQuoteId],
-      hasQuoteField: customFieldKeys.xeroQuoteId in firstDeal
+      v1CustomFields: customFieldKeysInDeal.slice(0, 5),
+      v2CustomFields: customFieldKeysInV2.slice(0, 5),
+      sampleValue: xeroQuoteIdValue,
+      hasQuoteFieldV1: customFieldKeys.xeroQuoteId in firstDeal,
+      hasQuoteFieldV2: customFieldKeys.xeroQuoteId in customFieldsV2,
+      hasCustomFieldsObject: !!firstDeal.custom_fields
     };
     
     // Add debug info to first result
-    if (!firstDeal[customFieldKeys.xeroQuoteId]) {
+    if (!xeroQuoteIdValue) {
       results.push({
         dealId: 0,
         dealTitle: 'DEBUG INFO',
@@ -252,7 +263,7 @@ export function crossReferenceQuotes(context: PipedriveValidationContext): Quote
         issues: [{
           severity: 'info',
           code: 'DEBUG_FIELD_INFO',
-          message: `Looking for field: ${customFieldKeys.xeroQuoteId}, Found fields: ${customFieldKeysInDeal.length} custom fields`,
+          message: `Looking for field: ${customFieldKeys.xeroQuoteId}, V1 fields: ${customFieldKeysInDeal.length}, V2 fields: ${customFieldKeysInV2.length}`,
           metadata: debugInfo
         }]
       });
@@ -261,7 +272,9 @@ export function crossReferenceQuotes(context: PipedriveValidationContext): Quote
   
   for (const deal of context.pipedriveDeals) {
     const issues: ValidationIssue[] = [];
-    const xeroQuoteId = deal[customFieldKeys.xeroQuoteId];
+    // Try to get the custom field value from both v1 and v2 locations
+    const xeroQuoteId = deal.custom_fields?.[customFieldKeys.xeroQuoteId] || 
+                       deal[customFieldKeys.xeroQuoteId];
     
     // Check if deal has Xero Quote ID
     if (!xeroQuoteId) {
@@ -364,8 +377,9 @@ export function validateRequiredFields(deal: any, tenantConfig: TenantConfig): F
   const validations: FieldValidation[] = [];
   const { customFieldKeys } = tenantConfig;
   
-  // Check vessel name field
-  const vesselName = deal[customFieldKeys.vesselName];
+  // Check vessel name field (try both v1 and v2 locations)
+  const vesselName = deal.custom_fields?.[customFieldKeys.vesselName] || 
+                    deal[customFieldKeys.vesselName];
   validations.push({
     field: 'vesselName',
     value: vesselName,
