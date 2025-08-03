@@ -9,6 +9,7 @@ import {
   PlayIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
+import { ValidationSummary, ValidationIssue } from '@/lib/types/validation';
 
 interface ValidationStep {
   id: string;
@@ -23,44 +24,8 @@ interface ValidationStep {
 interface ValidationResults {
   session: any;
   results?: {
-    summary: {
-      totalDeals: number;
-      totalQuotes: number;
-      totalProjects: number;
-      dealsWithIssues: number;
-      quotesWithIssues: number;
-      projectsWithIssues: number;
-      totalIssues: number;
-      errorCount: number;
-      warningCount: number;
-      infoCount: number;
-      matchedDealsToQuotes: number;
-      matchedDealsToProjects: number;
-      unmatchedDeals: number;
-      unmatchedQuotes: number;
-      unmatchedProjects: number;
-      quotesByStatus: {
-        DRAFT: number;
-        SENT: number;
-        ACCEPTED: number;
-        DECLINED: number;
-        DELETED: number;
-        INVOICED: number;
-      };
-      totalQuoteInProgressValue?: number;
-      quoteCurrency?: string;
-      totalPipedriveWorkInProgressValue?: number;
-      pipedriveCurrency?: string;
-    };
-    issues: Array<{
-      severity: 'error' | 'warning' | 'info';
-      code: string;
-      message: string;
-      dealId?: number;
-      dealTitle?: string;
-      field?: string;
-      suggestedFix?: string;
-    }>;
+    summary: ValidationSummary;
+    issues: ValidationIssue[];
   };
 }
 
@@ -430,13 +395,13 @@ export function SyncButton() {
                       </div>
                       
                       {/* Orphaned Accepted Quotes Info */}
-                      {results.results.summary.orphanedAcceptedQuotes > 0 && (
+                      {(results.results.summary.orphanedAcceptedQuotes ?? 0) > 0 && (
                         <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                           <div className="flex items-start">
                             <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600 mt-0.5 mr-2 flex-shrink-0" />
                             <div className="text-sm">
                               <div className="font-semibold text-yellow-800">
-                                {results.results.summary.orphanedAcceptedQuotes} Accepted Quote{results.results.summary.orphanedAcceptedQuotes > 1 ? 's' : ''} Not in Pipedrive
+                                {results.results.summary.orphanedAcceptedQuotes ?? 0} Accepted Quote{(results.results.summary.orphanedAcceptedQuotes ?? 0) > 1 ? 's' : ''} Not in Pipedrive
                               </div>
                               {results.results.summary.orphanedAcceptedQuotesValue && (
                                 <div className="text-yellow-700 mt-1">
@@ -452,13 +417,13 @@ export function SyncButton() {
                       )}
                       
                       {/* Invalid Quote Format Warning */}
-                      {results.results.summary.acceptedQuotesWithInvalidFormat > 0 && (
+                      {(results.results.summary.acceptedQuotesWithInvalidFormat ?? 0) > 0 && (
                         <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
                           <div className="flex items-start">
                             <XCircleIcon className="h-5 w-5 text-red-600 mt-0.5 mr-2 flex-shrink-0" />
                             <div className="text-sm">
                               <div className="font-semibold text-red-800">
-                                {results.results.summary.acceptedQuotesWithInvalidFormat} Accepted Quote{results.results.summary.acceptedQuotesWithInvalidFormat > 1 ? 's' : ''} with Invalid Format
+                                {results.results.summary.acceptedQuotesWithInvalidFormat ?? 0} Accepted Quote{(results.results.summary.acceptedQuotesWithInvalidFormat ?? 0) > 1 ? 's' : ''} with Invalid Format
                               </div>
                               <div className="text-xs text-red-600 mt-1">
                                 Accepted quotes must follow the format: PROJECTNUMBER-QUNUMBER-VERSION

@@ -56,7 +56,7 @@ export function createProtectedRoute(
       }
 
       // If no tenant in Redis, try to get from session or XeroTokenStore
-      if (!tenantId) {
+      if (!tenantId && userId) {
         // Try to get tenants from XeroTokenStore
         try {
           const { XeroTokenStore } = await import('@/lib/redis/xeroTokenStore');
@@ -75,9 +75,9 @@ export function createProtectedRoute(
               // Save it as selected for next time
               await XeroTokenStore.saveSelectedTenant(userId, tenantId);
             }
-          } else if (session.xeroTenants && session.xeroTenants.length > 0) {
+          } else if ((session as any).xeroTenants && (session as any).xeroTenants.length > 0) {
             // Fallback to session tenants
-            tenantId = session.xeroTenants[0].tenantId;
+            tenantId = (session as any).xeroTenants[0].tenantId;
             console.log(`[Middleware] Using first tenant from session: ${tenantId}`);
           }
         } catch (error) {

@@ -9,11 +9,11 @@ import { logger } from '../logger';
 import type { SyncSession, SyncStep } from './types';
 import type { PipedriveConfig } from '../utils/tenantConfig';
 import type {
-  PipedriveValidationContext,
   ValidationIssue,
   TitleValidationResult,
   QuoteValidationResult
 } from '../validation/pipedriveValidationRules';
+import type { ValidationSummary as ImportedValidationSummary } from '../types/validation';
 import type {
   PipedriveDeal,
   DetailedDeal
@@ -40,7 +40,7 @@ export interface ValidationResult {
   deals: ValidatedDeal[];
   quotes: ValidatedQuote[];
   projects: ValidatedProject[];
-  summary: ValidationSummary;
+  summary: ImportedValidationSummary;
   issues: ValidationIssue[];
 }
 
@@ -79,35 +79,6 @@ export interface ValidatedProject {
   validationIssues: ValidationIssue[];
 }
 
-export interface ValidationSummary {
-  totalDeals: number;
-  totalQuotes: number;
-  totalProjects: number;
-  dealsWithIssues: number;
-  quotesWithIssues: number;
-  projectsWithIssues: number;
-  totalIssues: number;
-  errorCount: number;
-  warningCount: number;
-  infoCount: number;
-  matchedDealsToQuotes: number;
-  matchedDealsToProjects: number;
-  unmatchedDeals: number;
-  unmatchedQuotes: number;
-  unmatchedProjects: number;
-  quotesByStatus: {
-    DRAFT: number;
-    SENT: number;
-    ACCEPTED: number;
-    DECLINED: number;
-    DELETED: number;
-    INVOICED: number;
-  };
-  totalQuoteInProgressValue?: number;
-  quoteCurrency?: string;
-  totalPipedriveWorkInProgressValue?: number;
-  pipedriveCurrency?: string;
-}
 
 /**
  * Orchestrates comprehensive validation workflows for Pipedrive-Xero data synchronization
@@ -679,7 +650,7 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
       !validQuotePattern.test(quote.QuoteNumber || '')
     ).length;
     
-    const summary: ValidationSummary = {
+    const summary: ImportedValidationSummary = {
       totalDeals: deals.length,
       totalQuotes: quotes.length,
       totalProjects: projects.length,

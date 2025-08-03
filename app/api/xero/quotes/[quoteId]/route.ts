@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { quoteId: string } }
+  { params }: { params: Promise<{ quoteId: string }> }
 ) {
   try {
     // Check authentication
@@ -16,7 +16,7 @@ export async function GET(
       );
     }
     
-    const { quoteId } = params;
+    const { quoteId } = await params;
     const tenantId = req.headers.get('x-tenant-id');
     
     if (!tenantId) {

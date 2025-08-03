@@ -60,6 +60,7 @@ export interface PipedriveApiResponse<T> {
       more_items_in_collection: boolean;
       next_start?: number;
     };
+    next_cursor?: string;
   };
   error?: string;
   error_info?: string;

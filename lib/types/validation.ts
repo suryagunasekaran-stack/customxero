@@ -49,6 +49,14 @@ export interface ValidationIssue {
   message: string;
   field?: string;
   suggestedFix?: string;
+  dealId?: number;
+  dealTitle?: string;
+  metadata?: {
+    quoteNumber?: string;
+    contactName?: string;
+    quoteTotal?: number;
+    [key: string]: any;
+  };
 }
 
 export interface ValidationSummary {
@@ -76,7 +84,9 @@ export interface ValidationSummary {
     INVOICED: number;
   };
   totalQuoteInProgressValue?: number;
+  quoteCurrency?: string;
   totalPipedriveWorkInProgressValue?: number;
+  pipedriveCurrency?: string;
   orphanedAcceptedQuotes?: number;
   orphanedAcceptedQuotesValue?: number;
   acceptedQuotesWithInvalidFormat?: number;
