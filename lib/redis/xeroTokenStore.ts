@@ -76,9 +76,29 @@ export class XeroTokenStore {
       return null;
     }
     
-    return withRedisFallback(async (redis) => {
-      return await redis.get(this.getUserKey(userId, 'selected_tenant'));
+    const key = this.getUserKey(userId, 'selected_tenant');
+    console.log(`[TokenStore] Getting selected tenant for ${userId}, key: ${key}`);
+    
+    const result = await withRedisFallback(async (redis) => {
+      // First check if Redis is connected
+      try {
+        await redis.ping();
+        console.log(`[TokenStore] Redis connection confirmed`);
+      } catch (pingError) {
+        console.error(`[TokenStore] Redis ping failed:`, pingError);
+      }
+      
+      const value = await redis.get(key);
+      console.log(`[TokenStore] Redis GET ${key} = ${value || 'null'}`);
+      
+      // Also check what keys exist for this user
+      const allKeys = await redis.keys(`user:${userId}:*`);
+      console.log(`[TokenStore] All keys for user ${userId}:`, allKeys);
+      
+      return value;
     }, null);
+    
+    return result;
   }
 
   /**
@@ -93,16 +113,36 @@ export class XeroTokenStore {
     }
     
     const cleanTenantId = tenantId.trim();
+    const key = this.getUserKey(userId, 'selected_tenant');
+    console.log(`[TokenStore] Saving selected tenant for ${userId}, key: ${key}, value: ${cleanTenantId}`);
     
     await withRedisFallback(async (redis) => {
-      await redis.set(
-        this.getUserKey(userId, 'selected_tenant'),
+      // First check if Redis is connected
+      try {
+        await redis.ping();
+        console.log(`[TokenStore] Redis connection confirmed for save`);
+      } catch (pingError) {
+        console.error(`[TokenStore] Redis ping failed during save:`, pingError);
+      }
+      
+      const result = await redis.set(
+        key,
         cleanTenantId,
         'EX',
         7 * 24 * 60 * 60 // 7 days
       );
-      console.log(`[TokenStore] Saved tenant: ${userId} -> ${cleanTenantId}`);
+      console.log(`[TokenStore] Redis SET ${key} = ${cleanTenantId} (TTL: 7 days) - Result: ${result}`);
+      
+      // Immediately verify the save
+      const verification = await redis.get(key);
+      console.log(`[TokenStore] Immediate verification after save: ${verification}`);
+      
+      if (verification !== cleanTenantId) {
+        console.error(`[TokenStore] Save verification failed! Expected: ${cleanTenantId}, Got: ${verification}`);
+      }
     }, undefined);
+    
+    console.log(`[TokenStore] Saved tenant: ${userId} -> ${cleanTenantId}`);
   }
 
   /**

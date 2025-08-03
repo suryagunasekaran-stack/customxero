@@ -26,7 +26,8 @@ import {
   validatePipedriveDeals,
   validateDealTitles,
   crossReferenceQuotes,
-  generateProjectKey
+  generateProjectKey,
+  type PipedriveValidationContext
 } from '../validation/pipedriveValidationRules';
 
 export interface ValidationSession extends SyncSession {
@@ -94,6 +95,16 @@ export interface ValidationSummary {
   unmatchedDeals: number;
   unmatchedQuotes: number;
   unmatchedProjects: number;
+  quotesByStatus: {
+    DRAFT: number;
+    SENT: number;
+    ACCEPTED: number;
+    DECLINED: number;
+    DELETED: number;
+    INVOICED: number;
+  };
+  totalQuoteInProgressValue?: number;
+  totalPipedriveWorkInProgressValue?: number;
 }
 
 /**
@@ -356,9 +367,15 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
       // Fetch all quotes from Xero
       const quotes = await XeroQuoteService.fetchAllQuotes(tenantId);
       
+      // Check specifically for the quote we're looking for (deal 558)
+      const targetQuoteId = 'f1decff3-ab05-4c0b-a1b6-e419b9c70161';
+      const hasTargetQuote = quotes.some(q => q.QuoteID === targetQuoteId);
+      
       logger.info({ 
         quotesCount: quotes.length,
-        sampleQuotes: quotes.slice(0, 3).map(q => ({
+        hasTargetQuote,
+        targetQuoteId,
+        sampleQuotes: quotes.slice(0, 5).map(q => ({
           QuoteID: q.QuoteID,
           QuoteNumber: q.QuoteNumber,
           Status: q.Status,
@@ -375,14 +392,25 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
   }
   
   /**
-   * Fetch projects from Xero
+   * Fetch projects from Xero (only INPROGRESS)
    */
   private async fetchXeroProjects(tenantId: string): Promise<any[]> {
-    logger.info({ tenantId }, 'Fetching Xero projects');
+    logger.info({ tenantId }, 'Fetching Xero projects (INPROGRESS only)');
     
     try {
+      // Fetch only INPROGRESS projects as per business requirement
       const projectData = await XeroProjectService.getProjectData('INPROGRESS');
-      return projectData.projects || [];
+      
+      // Double-check filter on the client side to ensure we only get INPROGRESS projects
+      const inProgressProjects = projectData.projects?.filter(p => p.status === 'INPROGRESS') || [];
+      
+      logger.info({ 
+        totalProjectsFromAPI: projectData.projects?.length || 0,
+        inProgressProjectsFiltered: inProgressProjects.length,
+        status: 'INPROGRESS'
+      }, 'Fetched and filtered Xero projects');
+      
+      return inProgressProjects;
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Failed to fetch Xero projects');
       return [];
@@ -429,7 +457,8 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
         companyDomain: config.companyDomain,
         pipelineIds: config.pipelineIds,
         customFieldKeys: config.customFieldKeys,
-        enabled: config.enabled
+        enabled: config.enabled,
+        invoiceStageId: config.invoiceStageId
       }
     };
     
@@ -469,6 +498,32 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
       allIssues.push(...qv.issues);
     });
     
+    // Run comprehensive business logic validation (includes orphaned quotes, invoice stage, etc.)
+    const context: PipedriveValidationContext = {
+      pipedriveDeals: deals,
+      xeroQuotes: quotes,
+      xeroProjects: projects,
+      tenantConfig: {
+        tenantId: config.companyDomain,
+        pipedriveApiKey: config.apiKey,
+        companyDomain: config.companyDomain,
+        pipelineIds: config.pipelineIds,
+        customFieldKeys: config.customFieldKeys,
+        enabled: config.enabled,
+        invoiceStageId: config.invoiceStageId
+      }
+    };
+    
+    const businessLogicIssues = validatePipedriveDeals(context);
+    allIssues.push(...businessLogicIssues);
+    
+    logger.info({
+      businessLogicIssues: businessLogicIssues.length,
+      orphanedQuotes: businessLogicIssues.filter(i => i.code === 'ORPHANED_ACCEPTED_QUOTE').length,
+      invalidQuoteFormat: businessLogicIssues.filter(i => i.code === 'ACCEPTED_QUOTE_INVALID_FORMAT').length,
+      invoiceStageIssues: businessLogicIssues.filter(i => i.code?.startsWith('INVOICE_STAGE')).length
+    }, 'Business logic validation completed');
+    
     // Map deals with their validation results
     const validatedDeals: ValidatedDeal[] = deals.map(deal => {
       const titleValidation = titleValidations.find(tv => tv.dealId === deal.id);
@@ -488,6 +543,10 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
         generateProjectKey(p.name) === normalizedKey
       );
       
+      // Extract Xero Quote ID from v2 API structure
+      const xeroQuoteId = deal.custom_fields?.[config.customFieldKeys.xeroQuoteId] || 
+                         deal[config.customFieldKeys.xeroQuoteId];
+      
       return {
         id: deal.id,
         title: deal.title || deal.name || '',
@@ -495,20 +554,22 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
         pipelineId: deal.pipeline_id,
         value: deal.value,
         currency: deal.currency,
-        xeroQuoteId: deal[config.customFieldKeys.xeroQuoteId],
+        xeroQuoteId: xeroQuoteId,
         xeroProjectId: matchedProject?.projectId,
         validationIssues: dealIssues,
         customFields: this.extractCustomFields(deal, config.customFieldKeys),
         matchedProject,
-        matchedQuote: quotes.find(q => q.QuoteID === deal[config.customFieldKeys.xeroQuoteId])
+        matchedQuote: quotes.find(q => q.QuoteID === xeroQuoteId)
       };
     });
     
     // Map quotes with validation
     const validatedQuotes: ValidatedQuote[] = quotes.map(quote => {
-      const matchedDeal = deals.find(d => 
-        d[config.customFieldKeys.xeroQuoteId] === quote.QuoteID
-      );
+      const matchedDeal = deals.find(d => {
+        const quoteId = d.custom_fields?.[config.customFieldKeys.xeroQuoteId] || 
+                        d[config.customFieldKeys.xeroQuoteId];
+        return quoteId === quote.QuoteID;
+      });
       
       return {
         QuoteID: quote.QuoteID,
@@ -548,7 +609,68 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
       };
     });
     
-    // Calculate summary
+    // Calculate summary with better matching statistics
+    const dealsWithQuoteId = validatedDeals.filter(d => d.xeroQuoteId);
+    const dealsWithMatchedQuote = validatedDeals.filter(d => d.matchedQuote);
+    const dealsWithoutQuoteId = validatedDeals.filter(d => !d.xeroQuoteId);
+    
+    // Calculate quotes by status
+    const quotesByStatus = {
+      DRAFT: quotes.filter(q => q.Status === 'DRAFT').length,
+      SENT: quotes.filter(q => q.Status === 'SENT').length,
+      ACCEPTED: quotes.filter(q => q.Status === 'ACCEPTED').length,
+      DECLINED: quotes.filter(q => q.Status === 'DECLINED').length,
+      DELETED: quotes.filter(q => q.Status === 'DELETED').length,
+      INVOICED: quotes.filter(q => q.Status === 'INVOICED').length
+    };
+
+    // Calculate total quote value for "in progress" statuses (DRAFT, SENT, ACCEPTED)
+    const inProgressQuoteStatuses = ['DRAFT', 'SENT', 'ACCEPTED'];
+    const totalQuoteInProgressValue = quotes
+      .filter(q => inProgressQuoteStatuses.includes(q.Status))
+      .reduce((sum, q) => sum + (q.Total || 0), 0);
+
+    // Calculate total Pipedrive work in progress value (sum of all deal values)
+    const totalPipedriveWorkInProgressValue = deals
+      .reduce((sum, d) => sum + (d.value || 0), 0);
+    
+    // Find orphaned accepted quotes (accepted quotes not linked to any deal)
+    const acceptedQuotes = quotes.filter(q => q.Status === 'ACCEPTED');
+    const orphanedAcceptedQuotes = acceptedQuotes.filter(quote => {
+      // Check if quote references a Pipedrive Deal ID
+      let referencedDealId: number | null = null;
+      if (quote.Reference) {
+        const dealIdMatch = quote.Reference.match(/(?:Pipedrive\s+)?Deal\s+I[dD]:\s*(\d+)/i);
+        if (dealIdMatch) {
+          referencedDealId = parseInt(dealIdMatch[1], 10);
+        }
+      }
+      
+      // If quote references a deal, check if that deal exists
+      if (referencedDealId) {
+        const dealExists = deals.some(deal => deal.id === referencedDealId);
+        return !dealExists; // Only orphaned if referenced deal doesn't exist
+      }
+      
+      // Check if any deal references this quote
+      const isLinked = deals.some(deal => {
+        const xeroQuoteId = deal.custom_fields?.[config.customFieldKeys.xeroQuoteId] || 
+                           deal[config.customFieldKeys.xeroQuoteId];
+        return xeroQuoteId === quote.QuoteID || xeroQuoteId === quote.QuoteNumber;
+      });
+      return !isLinked;
+    });
+    
+    const orphanedAcceptedQuotesValue = orphanedAcceptedQuotes
+      .reduce((sum, q) => sum + (q.Total || 0), 0);
+    
+    // Count accepted quotes with invalid format
+    // Valid pattern: PROJECTCODE-QUNUMBER-VERSION (e.g., NY2594-QU22554-1, MES2024-QU123-1-v2)
+    const validQuotePattern = /^[A-Z]+\d+[-]QU\d+[-]\d+(?:[-]v\d+)?$/i;
+    const acceptedQuotesWithInvalidFormat = acceptedQuotes.filter(quote => 
+      !validQuotePattern.test(quote.QuoteNumber || '')
+    ).length;
+    
     const summary: ValidationSummary = {
       totalDeals: deals.length,
       totalQuotes: quotes.length,
@@ -560,11 +682,17 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
       errorCount: allIssues.filter(i => i.severity === 'error').length,
       warningCount: allIssues.filter(i => i.severity === 'warning').length,
       infoCount: allIssues.filter(i => i.severity === 'info').length,
-      matchedDealsToQuotes: validatedDeals.filter(d => d.xeroQuoteId).length,
+      matchedDealsToQuotes: dealsWithMatchedQuote.length,
       matchedDealsToProjects: validatedDeals.filter(d => d.xeroProjectId).length,
-      unmatchedDeals: validatedDeals.filter(d => !d.xeroProjectId && !d.xeroQuoteId).length,
+      unmatchedDeals: dealsWithoutQuoteId.length,
       unmatchedQuotes: validatedQuotes.filter(q => !q.matchedDealId).length,
-      unmatchedProjects: validatedProjects.filter(p => !p.matchedDealId).length
+      unmatchedProjects: validatedProjects.filter(p => !p.matchedDealId).length,
+      quotesByStatus,
+      totalQuoteInProgressValue: totalQuoteInProgressValue > 0 ? totalQuoteInProgressValue : undefined,
+      totalPipedriveWorkInProgressValue: totalPipedriveWorkInProgressValue > 0 ? totalPipedriveWorkInProgressValue : undefined,
+      orphanedAcceptedQuotes: orphanedAcceptedQuotes.length,
+      orphanedAcceptedQuotesValue: orphanedAcceptedQuotesValue > 0 ? orphanedAcceptedQuotesValue : undefined,
+      acceptedQuotesWithInvalidFormat: acceptedQuotesWithInvalidFormat > 0 ? acceptedQuotesWithInvalidFormat : undefined
     };
     
     return {

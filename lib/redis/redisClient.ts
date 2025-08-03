@@ -6,8 +6,8 @@ import { parseRedisUrl } from './parseRedisUrl';
  * Handles both local development and Vercel deployment scenarios
  */
 const REDIS_CONFIG = {
-  maxRetriesPerRequest: 2,
-  enableOfflineQueue: false,
+  maxRetriesPerRequest: 3,
+  enableOfflineQueue: true,  // Changed to true to handle connection issues better
   connectTimeout: 5000,
   commandTimeout: 5000,
   lazyConnect: true,

@@ -67,6 +67,19 @@ export interface ValidationSummary {
   unmatchedDeals: number;
   unmatchedQuotes: number;
   unmatchedProjects: number;
+  quotesByStatus?: {
+    DRAFT: number;
+    SENT: number;
+    ACCEPTED: number;
+    DECLINED: number;
+    DELETED: number;
+    INVOICED: number;
+  };
+  totalQuoteInProgressValue?: number;
+  totalPipedriveWorkInProgressValue?: number;
+  orphanedAcceptedQuotes?: number;
+  orphanedAcceptedQuotesValue?: number;
+  acceptedQuotesWithInvalidFormat?: number;
 }
 
 export interface TenantConfig {

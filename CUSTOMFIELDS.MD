@@ -5,7 +5,7 @@
 ## 🏢 Tenant 1: `6dd39ea4-e6a6-4993-a37a-21482ccf8d22`
 
 **🔐 Pipedrive API Key**  
-`a8b760a714bed5f212c1bd13d0ed3bcb2859d001`
+`a8b760a714bed5f212c1bd13d0ed3bcb2859d001` 
 
 ### 🧾 Custom Fields
 
@@ -30,6 +30,12 @@
 | Pipeline ID | Pipeline Name       |
 |-------------|---------------------|
 | `2`         | Work In Progress    |
+
+### 📊 Pipeline Stages
+
+| Stage ID    | Stage Name          | Pipeline ID | Business Rules |
+|-------------|---------------------|-------------|----------------|
+| `6`         | Invoice             | `2`         | Quotes must be in INVOICED status |
 
 ---
 

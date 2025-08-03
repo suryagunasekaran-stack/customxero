@@ -29,6 +29,7 @@ export interface PipedriveConfig {
   customFieldKeys: CustomFieldMapping;
   enabled: boolean;
   tenantName?: string;
+  invoiceStageId?: number; // Stage ID for Invoice stage (e.g., 6 for tenant 6dd39ea4...)
 }
 
 /**
@@ -68,6 +69,7 @@ export async function resolvePipedriveConfig(tenantId: string): Promise<Pipedriv
       apiKey: process.env.PIPEDRIVE_KEY_TENANT1 || process.env.PIPEDRIVE_KEY || '',
       companyDomain: 'api', // Standard API domain
       pipelineIds: [2], // Work In Progress pipeline
+      invoiceStageId: 6, // Invoice stage in pipeline 2
       customFieldKeys: {
         quoteNumber: 'a0b59ccf244af998aa57a01f22e2ffd41cf504f9',
         invoiceId: 'c599cab3902b6c84c1f9e2689f308a4369fffe7d',
