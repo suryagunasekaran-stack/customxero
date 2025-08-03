@@ -243,31 +243,40 @@ export function crossReferenceQuotes(context: PipedriveValidationContext): Quote
     const xeroQuoteIdValue = firstDeal.custom_fields?.[customFieldKeys.xeroQuoteId] || 
                             firstDeal[customFieldKeys.xeroQuoteId];
     
+    // Also check what quotes we have
+    const sampleQuotes = context.xeroQuotes.slice(0, 3).map(q => ({
+      QuoteID: q.QuoteID,
+      QuoteNumber: q.QuoteNumber,
+      Reference: q.Reference
+    }));
+    
     // Use a proper logger or store in results instead of console.log
     const debugInfo = {
       lookingForField: customFieldKeys.xeroQuoteId,
       v1CustomFields: customFieldKeysInDeal.slice(0, 5),
       v2CustomFields: customFieldKeysInV2.slice(0, 5),
-      sampleValue: xeroQuoteIdValue,
+      sampleXeroQuoteIdValue: xeroQuoteIdValue,
+      dealId: firstDeal.id,
+      dealTitle: firstDeal.title || firstDeal.name,
       hasQuoteFieldV1: customFieldKeys.xeroQuoteId in firstDeal,
       hasQuoteFieldV2: customFieldKeys.xeroQuoteId in customFieldsV2,
-      hasCustomFieldsObject: !!firstDeal.custom_fields
+      hasCustomFieldsObject: !!firstDeal.custom_fields,
+      totalQuotesFromXero: context.xeroQuotes.length,
+      sampleQuotesFromXero: sampleQuotes
     };
     
-    // Add debug info to first result
-    if (!xeroQuoteIdValue) {
-      results.push({
-        dealId: 0,
-        dealTitle: 'DEBUG INFO',
-        hasQuote: false,
-        issues: [{
-          severity: 'info',
-          code: 'DEBUG_FIELD_INFO',
-          message: `Looking for field: ${customFieldKeys.xeroQuoteId}, V1 fields: ${customFieldKeysInDeal.length}, V2 fields: ${customFieldKeysInV2.length}`,
-          metadata: debugInfo
-        }]
-      });
-    }
+    // Always add debug info to help understand what's happening
+    results.push({
+      dealId: 0,
+      dealTitle: 'DEBUG INFO',
+      hasQuote: false,
+      issues: [{
+        severity: 'info',
+        code: 'DEBUG_FIELD_INFO',
+        message: `Debug: Looking for field ${customFieldKeys.xeroQuoteId}, Found ${context.xeroQuotes.length} quotes from Xero`,
+        metadata: debugInfo
+      }]
+    });
   }
   
   for (const deal of context.pipedriveDeals) {
@@ -297,18 +306,95 @@ export function crossReferenceQuotes(context: PipedriveValidationContext): Quote
     }
     
     // Find matching quote in Xero
-    const matchingQuote = context.xeroQuotes.find(q => q.QuoteID === xeroQuoteId);
+    // The xeroQuoteId field should contain the QuoteID (UUID) from Xero
+    let matchingQuote = context.xeroQuotes.find(q => q.QuoteID === xeroQuoteId);
     
     if (!matchingQuote) {
-      issues.push({
-        severity: 'error',
-        code: 'QUOTE_NOT_FOUND',
-        message: `Xero quote ${xeroQuoteId} not found in Xero`,
-        dealId: deal.id,
-        dealTitle: deal.title || deal.name,
-        field: 'xeroQuoteId'
-      });
+      // Try to find by quote number if the field contains a quote number instead of ID
+      const matchByNumber = context.xeroQuotes.find(q => q.QuoteNumber === xeroQuoteId);
+      matchingQuote = matchByNumber; // Use this for result even if found by number
+      
+      if (matchByNumber) {
+        issues.push({
+          severity: 'warning',
+          code: 'QUOTE_ID_MISMATCH',
+          message: `Found quote by number ${xeroQuoteId} but should store QuoteID: ${matchByNumber.QuoteID}`,
+          dealId: deal.id,
+          dealTitle: deal.title || deal.name,
+          field: 'xeroQuoteId',
+          metadata: {
+            currentValue: xeroQuoteId,
+            expectedValue: matchByNumber.QuoteID,
+            quoteNumber: matchByNumber.QuoteNumber
+          }
+        });
+        // Use the found quote for further validation and result
+        const quoteToValidate = matchByNumber;
+        const foundQuote = matchByNumber; // Store for use in results
+        
+        // Check Reference field
+        if (quoteToValidate.Reference) {
+          const expectedReference = `Pipedrive Deal ID: ${deal.id}`;
+          if (quoteToValidate.Reference !== expectedReference) {
+            issues.push({
+              severity: 'warning',
+              code: 'REFERENCE_MISMATCH',
+              message: `Quote reference "${quoteToValidate.Reference}" doesn't match expected "${expectedReference}"`,
+              dealId: deal.id,
+              dealTitle: deal.title || deal.name,
+              field: 'reference'
+            });
+          }
+        }
+        
+        // Check quote status
+        if (deal.status === 'won' && quoteToValidate.Status !== 'ACCEPTED') {
+          issues.push({
+            severity: 'warning',
+            code: 'QUOTE_STATUS_MISMATCH',
+            message: `Won deal has quote in status ${quoteToValidate.Status} (expected ACCEPTED)`,
+            dealId: deal.id,
+            dealTitle: deal.title || deal.name,
+            field: 'quoteStatus'
+          });
+        }
+      } else {
+        issues.push({
+          severity: 'error',
+          code: 'QUOTE_NOT_FOUND',
+          message: `Xero quote with ID or Number "${xeroQuoteId}" not found in Xero`,
+          dealId: deal.id,
+          dealTitle: deal.title || deal.name,
+          field: 'xeroQuoteId'
+        });
+      }
     } else {
+      // Found quote by ID - validate it
+      
+      // Check Reference field - should be "Pipedrive Deal ID: {dealId}"
+      if (matchingQuote.Reference) {
+        const expectedReference = `Pipedrive Deal ID: ${deal.id}`;
+        if (matchingQuote.Reference !== expectedReference) {
+          issues.push({
+            severity: 'warning',
+            code: 'REFERENCE_MISMATCH',
+            message: `Quote reference "${matchingQuote.Reference}" doesn't match expected "${expectedReference}"`,
+            dealId: deal.id,
+            dealTitle: deal.title || deal.name,
+            field: 'reference'
+          });
+        }
+      } else {
+        issues.push({
+          severity: 'info',
+          code: 'MISSING_REFERENCE',
+          message: 'Quote has no reference to Pipedrive Deal ID',
+          dealId: deal.id,
+          dealTitle: deal.title || deal.name,
+          field: 'reference'
+        });
+      }
+      
       // Check quote status
       if (deal.status === 'won' && matchingQuote.Status !== 'ACCEPTED') {
         issues.push({
@@ -343,7 +429,7 @@ export function crossReferenceQuotes(context: PipedriveValidationContext): Quote
       dealTitle: deal.title || deal.name || '',
       xeroQuoteId,
       quoteNumber: matchingQuote?.QuoteNumber,
-      hasQuote: true,
+      hasQuote: !!matchingQuote,
       quoteStatus: matchingQuote?.Status,
       issues
     });
