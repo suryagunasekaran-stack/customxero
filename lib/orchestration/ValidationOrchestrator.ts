@@ -350,21 +350,23 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
     logger.info({ tenantId }, 'Fetching Xero quotes');
     
     try {
-      // Use XeroProjectService or direct API call
-      const response = await fetch('/api/xero/quotes', {
-        headers: {
-          'x-tenant-id': tenantId
-        }
-      });
+      // Import XeroQuoteService dynamically
+      const { XeroQuoteService } = await import('@/lib/services/xeroQuoteService');
       
-      if (!response.ok) {
-        // If quotes endpoint doesn't exist, return empty array
-        logger.warn('Quotes endpoint not available, skipping quote validation');
-        return [];
-      }
+      // Fetch all quotes from Xero
+      const quotes = await XeroQuoteService.fetchAllQuotes(tenantId);
       
-      const data = await response.json();
-      return data.quotes || [];
+      logger.info({ 
+        quotesCount: quotes.length,
+        sampleQuotes: quotes.slice(0, 3).map(q => ({
+          QuoteID: q.QuoteID,
+          QuoteNumber: q.QuoteNumber,
+          Status: q.Status,
+          Reference: q.Reference
+        }))
+      }, 'Fetched Xero quotes');
+      
+      return quotes;
       
     } catch (error) {
       logger.error({ error: (error as Error).message }, 'Failed to fetch Xero quotes');
