@@ -57,9 +57,9 @@ export default function XeroPageV2Example() {
           <div>
             <h2 className="text-xl font-semibold text-gray-800 mb-4">Additional Tools</h2>
             <div className="grid gap-6 md:grid-cols-2">
-              <ManhourBillingCard disabled={isRunning} />
+              {/* <ManhourBillingCard disabled={isRunning} /> */}
               <TimesheetProcessingCard disabled={isRunning} />
-              <AgeingSummaryCard disabled={isRunning} />
+              {/* <AgeingSummaryCard disabled={isRunning} /> */}
               {/* Uncomment to enable additional features */}
               {/* <InvoicesDownloadCard disabled={isRunning} />
               <InvoiceUpdateCard disabled={isRunning} />
