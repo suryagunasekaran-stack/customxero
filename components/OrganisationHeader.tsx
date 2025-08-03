@@ -10,6 +10,7 @@ import { Bars3Icon, BellIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { MagnifyingGlassIcon } from '@heroicons/react/20/solid'
 import { signOut, useSession } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
+import TenantSelector from './TenantSelector'
 
 /**
  * Utility function to combine CSS class names
@@ -44,24 +45,28 @@ export default function OrganisationHeader() {
     return (
         <Popover as="header" className="pb-8" style={{ backgroundColor: 'oklch(21.6% 0.006 56.043)' }}>
             <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:max-w-7xl lg:px-8">
-                <div className="relative flex items-center justify-center py-3 lg:justify-between">
+                <div className="relative flex items-center justify-center py-4 lg:justify-between">
                     {/* Logo */}
                     <div className="absolute left-0 shrink-0 lg:static">
                         <a href="#">
                             <div className="flex items-center gap-2">
-
                                 <img
-                                    alt="Your Company"
+                                    alt="Brightsun Marine"
                                     src="/logo512-removebg-preview_edited_non_transparent-removebg-preview.png"
                                     className="h-8 w-auto"
                                 />
-                                                                <span>Brightsun Marine</span>
+                                <span className="text-white font-medium">Brightsun Marine</span>
                             </div>
                         </a>
                     </div>
 
                     {/* Right section on desktop */}
                     <div className="hidden lg:ml-4 lg:flex lg:items-center lg:pr-0.5 lg:gap-4">
+                        {/* Tenant selector */}
+                        <div className="flex items-center">
+                            <TenantSelector />
+                        </div>
+                        
                         {/* User info */}
                         <div className="flex items-center gap-3">
                             <div className="text-right">
@@ -73,7 +78,7 @@ export default function OrganisationHeader() {
                         {/* Sign out button */}
                         <button
                             onClick={() => signOut({ callbackUrl: '/' })}
-                            className="inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                            className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-white/25 transition-colors duration-200"
                             style={{
                                 backgroundColor: 'oklch(27.4% 0.006 286.033)'
                             }}
@@ -137,12 +142,13 @@ export default function OrganisationHeader() {
                     <div className="divide-y divide-gray-200 rounded-lg bg-white shadow-lg ring-1 ring-black/5">
                         <div className="pt-3 pb-2">
                             <div className="flex items-center justify-between px-4">
-                                <div>
+                                <div className="flex items-center gap-2">
                                     <img
-                                        alt="Your Company"
-                                        src="https://tailwindcss.com/plus-assets/img/logos/mark.svg?color=indigo&shade=600"
+                                        alt="Brightsun Marine"
+                                        src="/logo512-removebg-preview_edited_non_transparent-removebg-preview.png"
                                         className="h-8 w-auto"
                                     />
+                                    <span className="text-gray-900 font-medium">Brightsun Marine</span>
                                 </div>
                                 <div className="-mr-2">
                                     <PopoverButton className="relative inline-flex items-center justify-center rounded-md bg-white p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden focus:ring-inset">
@@ -181,10 +187,18 @@ export default function OrganisationHeader() {
                                     <span className="sr-only">View notifications</span>
                                 </button>
                             </div>
-                            <div className="mt-3 px-2">
+                            
+                            {/* Mobile tenant selector */}
+                            <div className="mt-4 px-5">
+                                <div className="text-xs font-semibold text-gray-500 mb-2">Organization</div>
+                                <div className="bg-gray-50 rounded-lg p-3">
+                                    <TenantSelector isMobile={true} />
+                                </div>
+                            </div>
+                            <div className="mt-4 px-2">
                                 <button
                                     onClick={() => signOut({ callbackUrl: '/' })}
-                                    className="w-full inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                                    className="w-full inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200"
                                     style={{
                                         backgroundColor: 'oklch(27.4% 0.006 286.033)'
                                     }}
