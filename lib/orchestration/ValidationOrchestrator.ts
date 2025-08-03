@@ -104,7 +104,9 @@ export interface ValidationSummary {
     INVOICED: number;
   };
   totalQuoteInProgressValue?: number;
+  quoteCurrency?: string;
   totalPipedriveWorkInProgressValue?: number;
+  pipedriveCurrency?: string;
 }
 
 /**
@@ -626,13 +628,19 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
 
     // Calculate total quote value for "in progress" statuses (DRAFT, SENT, ACCEPTED)
     const inProgressQuoteStatuses = ['DRAFT', 'SENT', 'ACCEPTED'];
-    const totalQuoteInProgressValue = quotes
-      .filter(q => inProgressQuoteStatuses.includes(q.Status))
+    const inProgressQuotes = quotes.filter(q => inProgressQuoteStatuses.includes(q.Status));
+    const totalQuoteInProgressValue = inProgressQuotes
       .reduce((sum, q) => sum + (q.Total || 0), 0);
+    
+    // Determine quote currency (assume all quotes use same currency, take from first quote)
+    const quoteCurrency = quotes.length > 0 && quotes[0].CurrencyCode ? quotes[0].CurrencyCode : 'SGD';
 
     // Calculate total Pipedrive work in progress value (sum of all deal values)
     const totalPipedriveWorkInProgressValue = deals
       .reduce((sum, d) => sum + (d.value || 0), 0);
+    
+    // Determine Pipedrive currency (take from first deal with currency)
+    const pipedriveCurrency = deals.find(d => d.currency)?.currency || 'SGD';
     
     // Find orphaned accepted quotes (accepted quotes not linked to any deal)
     const acceptedQuotes = quotes.filter(q => q.Status === 'ACCEPTED');
@@ -689,7 +697,9 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
       unmatchedProjects: validatedProjects.filter(p => !p.matchedDealId).length,
       quotesByStatus,
       totalQuoteInProgressValue: totalQuoteInProgressValue > 0 ? totalQuoteInProgressValue : undefined,
+      quoteCurrency: totalQuoteInProgressValue > 0 ? quoteCurrency : undefined,
       totalPipedriveWorkInProgressValue: totalPipedriveWorkInProgressValue > 0 ? totalPipedriveWorkInProgressValue : undefined,
+      pipedriveCurrency: totalPipedriveWorkInProgressValue > 0 ? pipedriveCurrency : undefined,
       orphanedAcceptedQuotes: orphanedAcceptedQuotes.length,
       orphanedAcceptedQuotesValue: orphanedAcceptedQuotesValue > 0 ? orphanedAcceptedQuotesValue : undefined,
       acceptedQuotesWithInvalidFormat: acceptedQuotesWithInvalidFormat > 0 ? acceptedQuotesWithInvalidFormat : undefined

@@ -48,7 +48,9 @@ interface ValidationResults {
         INVOICED: number;
       };
       totalQuoteInProgressValue?: number;
+      quoteCurrency?: string;
       totalPipedriveWorkInProgressValue?: number;
+      pipedriveCurrency?: string;
     };
     issues: Array<{
       severity: 'error' | 'warning' | 'info';
@@ -412,7 +414,7 @@ export function SyncButton() {
                         {results.results.summary.totalQuoteInProgressValue && (
                           <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-200">
                             <div className="text-lg font-bold text-gray-700">
-                              ${results.results.summary.totalQuoteInProgressValue.toLocaleString()}
+                              {results.results.summary.quoteCurrency || 'SGD'} {results.results.summary.totalQuoteInProgressValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
                             <div className="text-xs text-gray-600">Total Quote Value (In Progress)</div>
                           </div>
@@ -420,7 +422,7 @@ export function SyncButton() {
                         {results.results.summary.totalPipedriveWorkInProgressValue && (
                           <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-200">
                             <div className="text-lg font-bold text-gray-700">
-                              ${results.results.summary.totalPipedriveWorkInProgressValue.toLocaleString()}
+                              {results.results.summary.pipedriveCurrency || 'SGD'} {results.results.summary.totalPipedriveWorkInProgressValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
                             <div className="text-xs text-gray-600">Total Pipedrive Value (Work in Progress)</div>
                           </div>
@@ -438,7 +440,7 @@ export function SyncButton() {
                               </div>
                               {results.results.summary.orphanedAcceptedQuotesValue && (
                                 <div className="text-yellow-700 mt-1">
-                                  Value: ${results.results.summary.orphanedAcceptedQuotesValue.toLocaleString()}
+                                  Value: {results.results.summary.quoteCurrency || 'SGD'} {results.results.summary.orphanedAcceptedQuotesValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </div>
                               )}
                               <div className="text-xs text-yellow-600 mt-1">
@@ -526,7 +528,7 @@ export function SyncButton() {
                                   </div>
                                   {issue.metadata?.quoteTotal && (
                                     <div className="text-xs text-gray-700 mt-1">
-                                      Value: ${issue.metadata.quoteTotal.toLocaleString()}
+                                      Value: SGD {issue.metadata.quoteTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </div>
                                   )}
                                   {issue.metadata?.reference && (
@@ -568,7 +570,7 @@ export function SyncButton() {
                                   </div>
                                   {issue.metadata?.quoteTotal && (
                                     <div className="text-xs text-gray-700 mt-1">
-                                      Value: ${issue.metadata.quoteTotal.toLocaleString()}
+                                      Value: SGD {issue.metadata.quoteTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </div>
                                   )}
                                   <div className="text-xs text-red-700 mt-1">
@@ -602,7 +604,7 @@ export function SyncButton() {
                                   </div>
                                   {issue.metadata?.quoteTotal && (
                                     <div className="text-xs text-gray-700 mt-1">
-                                      Value: ${issue.metadata.quoteTotal.toLocaleString()}
+                                      Value: SGD {issue.metadata.quoteTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </div>
                                   )}
                                   <div className="text-xs text-red-600 mt-1">
