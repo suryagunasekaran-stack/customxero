@@ -212,7 +212,9 @@ function validateDealTitle(deal: any): TitleValidationResult {
     });
   }
   
-  // 3. Check for "(copy)" suffix which indicates duplicate
+  // 3. Check for "(copy)" suffix - DISABLED for now, allowed per business requirements
+  // Keeping the code commented for future reference if needed
+  /*
   if (title.includes('(copy)')) {
     issues.push({
       severity: 'warning',
@@ -224,6 +226,7 @@ function validateDealTitle(deal: any): TitleValidationResult {
       suggestedFix: 'Remove "(copy)" and ensure unique project-vessel combination'
     });
   }
+  */
   
   // Check for valid project code pattern (but exclude QU prefix)
   if (!parsed.projectCode || parsed.projectCode.startsWith('QU')) {

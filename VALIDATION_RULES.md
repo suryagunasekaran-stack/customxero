@@ -25,9 +25,10 @@ Ensures Pipedrive deal titles follow the correct format: `PROJECTCODE-VESSELNAME
    - Code: `INVALID_TITLE_NUMBER_SEQUENCE`
    - Catches patterns like: "QU0362- 8203249816 - 6200035482"
 
-4. **Duplicate Deal Check** ✅ NEW
-   - Warning if title contains "(copy)"
-   - Code: `DUPLICATE_DEAL_TITLE`
+4. **Duplicate Deal Check** ~~✅ NEW~~ **DISABLED**
+   - ~~Warning if title contains "(copy)"~~
+   - ~~Code: `DUPLICATE_DEAL_TITLE`~~
+   - **Temporarily disabled - "(copy)" is allowed per business requirements**
 
 5. **Project Code Validation**
    - Error if no valid project code found
@@ -44,11 +45,12 @@ Ensures Pipedrive deal titles follow the correct format: `PROJECTCODE-VESSELNAME
 - ✅ `ED12345-VesselName`
 - ✅ `NY2594-ShipABC`
 - ✅ `MES2024001-Tanker123`
+- ✅ `NY25633-LST 209 RSS PERSISTENCE (copy)` (copy suffix allowed)
 
 ### Invalid Examples:
 - ❌ `QU0362-8203249816-6200035482` (starts with QU)
 - ❌ `ED12345-123456` (vessel is just numbers)
-- ❌ `SomeTitle (copy)` (duplicate indicator)
+- ~~❌ `SomeTitle (copy)` (duplicate indicator)~~ **Now allowed**
 
 ---
 
@@ -203,7 +205,8 @@ Validates Xero projects against deals
 2. **Added Number Sequence Validation**: Catches titles with multiple long numbers
 3. **Added Vessel Name Number Check**: Vessel names that are just numbers are rejected
 4. **Improved Pattern Matching**: More specific project code patterns (NY, MES, ED, etc.)
-5. **Added Duplicate Detection**: Flags deals with "(copy)" in title
+5. ~~**Added Duplicate Detection**: Flags deals with "(copy)" in title~~ **DISABLED** - "(copy)" is now allowed per business requirements
+6. **Added Value Mismatch Validation**: Validates quote totals against deal values with 10% tolerance
 
 ---
 
