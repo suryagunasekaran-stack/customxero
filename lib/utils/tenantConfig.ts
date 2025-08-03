@@ -65,7 +65,7 @@ export async function resolvePipedriveConfig(tenantId: string): Promise<Pipedriv
   const configs: Record<string, PipedriveConfig> = {
     // Tenant 1 (now correctly mapped to 6dd39ea4-e6a6-4993-a37a-21482ccf8d22)
     '6dd39ea4-e6a6-4993-a37a-21482ccf8d22': {
-      apiKey: process.env.PIPEDRIVE_KEY_2 || '',
+      apiKey: process.env.PIPEDRIVE_KEY_TENANT1 || process.env.PIPEDRIVE_KEY || '',
       companyDomain: 'api', // Standard API domain
       pipelineIds: [2], // Work In Progress pipeline
       customFieldKeys: {
@@ -88,7 +88,7 @@ export async function resolvePipedriveConfig(tenantId: string): Promise<Pipedriv
     },
     // Tenant 2 (now correctly mapped to ea67107e-c352-40a9-a8b8-24d81ae3fc85)
     'ea67107e-c352-40a9-a8b8-24d81ae3fc85': {
-      apiKey: process.env.PIPEDRIVE_KEY || '',
+      apiKey: process.env.PIPEDRIVE_KEY_TENANT2 || process.env.PIPEDRIVE_KEY_2 || '',
       companyDomain: 'bseni',
       pipelineIds: [3, 4, 5, 6, 7, 8, 9, 16], // All WIP pipelines (removed pipeline 2)
       customFieldKeys: {
