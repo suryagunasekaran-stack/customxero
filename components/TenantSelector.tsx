@@ -175,6 +175,13 @@ export default function TenantSelector({ isMobile = false }: TenantSelectorProps
         fetchTenants();
     }, []);
 
+    // Memoize computed values for performance
+    // This MUST be called before any conditional returns to follow React's rules of hooks
+    const currentTenant = useMemo(() => 
+        tenants.find(t => t.tenantId === selectedTenant) || tenants[0],
+        [tenants, selectedTenant]
+    );
+
     // Don't render if loading initially
     if (isLoading) {
         return (
@@ -226,11 +233,6 @@ export default function TenantSelector({ isMobile = false }: TenantSelectorProps
 
     // Don't render the dropdown for single tenant (just show the name)
     if (!hasMultipleTenants) {
-        // Memoize computed values for performance
-    const currentTenant = useMemo(() => 
-        tenants.find(t => t.tenantId === selectedTenant) || tenants[0],
-        [tenants, selectedTenant]
-    );
         return (
             <div className={classNames(
                 "flex items-center gap-2",
@@ -241,12 +243,6 @@ export default function TenantSelector({ isMobile = false }: TenantSelectorProps
             </div>
         );
     }
-
-    // Memoize computed values for performance
-    const currentTenant = useMemo(() => 
-        tenants.find(t => t.tenantId === selectedTenant) || tenants[0],
-        [tenants, selectedTenant]
-    );
 
     return (
         <div className="relative">
