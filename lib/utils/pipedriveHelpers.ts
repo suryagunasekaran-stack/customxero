@@ -39,6 +39,14 @@ export interface PipedriveOrganization {
   [key: string]: any;
 }
 
+interface DealField {
+  id: number;
+  key: string;
+  name: string;
+  field_type: string;
+  options?: Array<{ id: number; label: string }>;
+}
+
 export interface PipedriveApiResponse<T> {
   success: boolean;
   data: T;
@@ -153,12 +161,12 @@ export async function fetchPipedriveDealsWithPagination(
   
   while (moreItems) {
     try {
+      // Don't use filter_id as it's for saved filters, not pipelines
       const url = buildPipedriveApiUrl(companyDomain, 'deals', {
         api_token: apiKey,
         status,
         start,
-        limit,
-        filter_id: pipelineId // This filters by pipeline
+        limit
       });
       
       const response = await fetch(url);
@@ -179,8 +187,24 @@ export async function fetchPipedriveDealsWithPagination(
       }
       
       if (data.data && Array.isArray(data.data)) {
-        // Filter by pipeline_id since filter_id might not work as expected
+        // Filter by pipeline_id to get only deals from the specified pipeline
         const pipelineDeals = data.data.filter(deal => deal.pipeline_id === pipelineId);
+        
+        // Log first deal to see available fields
+        if (pipelineDeals.length > 0 && allDeals.length === 0) {
+          const firstDeal = pipelineDeals[0];
+          const customFields = Object.keys(firstDeal).filter(key => key.length > 20); // Custom fields have long hash keys
+          logger.info({ 
+            dealId: firstDeal.id,
+            title: firstDeal.title || firstDeal.name,
+            customFieldKeys: customFields.slice(0, 10), // Log first 10 custom field keys
+            sampleCustomFieldValues: customFields.slice(0, 3).reduce((acc, key) => {
+              acc[key] = firstDeal[key];
+              return acc;
+            }, {} as Record<string, any>)
+          }, 'Sample deal with custom fields');
+        }
+        
         allDeals.push(...pipelineDeals);
       }
       
@@ -503,4 +527,52 @@ function extractCustomFields(deal: PipedriveDeal): Record<string, any> {
   }
   
   return customFields;
+}
+
+/**
+ * Fetches all available deal fields from Pipedrive to understand custom field structure
+ * 
+ * @param {string} apiKey - The Pipedrive API token for authentication
+ * @param {string} companyDomain - The Pipedrive company domain
+ * @returns {Promise<DealField[]>} Array of deal field definitions
+ */
+export async function fetchDealFields(
+  apiKey: string,
+  companyDomain: string
+): Promise<DealField[]> {
+  try {
+    const url = buildPipedriveApiUrl(companyDomain, 'dealFields', {
+      api_token: apiKey
+    });
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      logger.error({ 
+        status: response.status, 
+        statusText: response.statusText 
+      }, 'Failed to fetch deal fields');
+      return [];
+    }
+    
+    const data: PipedriveApiResponse<DealField[]> = await response.json();
+    
+    if (!data.success || !data.data) {
+      logger.error({ error: data.error }, 'Failed to get deal fields');
+      return [];
+    }
+    
+    // Log custom fields for debugging
+    const customFields = data.data.filter(field => field.key.length > 20);
+    logger.info({ 
+      totalFields: data.data.length,
+      customFieldsCount: customFields.length,
+      customFields: customFields.map(f => ({ key: f.key, name: f.name, type: f.field_type }))
+    }, 'Deal fields fetched');
+    
+    return data.data;
+  } catch (error) {
+    logger.error({ error: error instanceof Error ? error.message : error }, 'Error fetching deal fields');
+    return [];
+  }
 }

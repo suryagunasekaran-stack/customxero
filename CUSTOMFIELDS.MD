@@ -48,7 +48,7 @@
 | Department        | `baad1beac0e8ba5a000dc82f7f1d2d9fd45b10a7`    |
 | Location          | `d5db80cbb7d8612c676482c73a15c43a06b60e09`    |
 | Person In Charge  | `87813f40f660dde69c31412d52136e16552afeb2`    |
-| Xero Quote ID          | `1f21104ccb95f5a4773ef52cd0c2cc1c78203f69`    |
+| Xero Quote ID     | `1f21104ccb95f5a4773ef52cd0c2cc1c78203f69`    |
 | Xero Quote Number | `a52165a056d57cabba309ec5e53d7a6cd47ea766`    |
 | Invoice ID        | `8c5c696440f023067a49103a15b60ff6ae6e3243`    |
 | Invoice Number    | `b0d383d6f828cae7cb5c80b5f3144b3d0e8b9419`    |

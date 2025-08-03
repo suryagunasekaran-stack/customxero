@@ -230,6 +230,14 @@ export function crossReferenceQuotes(context: PipedriveValidationContext): Quote
   const results: QuoteValidationResult[] = [];
   const { customFieldKeys } = context.tenantConfig;
   
+  // Log the custom field key we're looking for (only once)
+  if (context.pipedriveDeals.length > 0) {
+    const firstDeal = context.pipedriveDeals[0];
+    console.log('Looking for Xero Quote ID in field:', customFieldKeys.xeroQuoteId);
+    console.log('Sample deal keys:', Object.keys(firstDeal).filter(k => k.length > 20).slice(0, 5));
+    console.log('Sample deal xeroQuoteId value:', firstDeal[customFieldKeys.xeroQuoteId]);
+  }
+  
   for (const deal of context.pipedriveDeals) {
     const issues: ValidationIssue[] = [];
     const xeroQuoteId = deal[customFieldKeys.xeroQuoteId];

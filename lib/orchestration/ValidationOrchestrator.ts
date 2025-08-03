@@ -325,6 +325,10 @@ export class ValidationOrchestrator extends ProjectSyncOrchestrator {
       pipelines: config.pipelineIds 
     }, 'Fetching Pipedrive deals');
     
+    // First fetch deal fields to understand custom field mapping
+    const { fetchDealFields } = await import('@/lib/utils/pipedriveHelpers');
+    await fetchDealFields(config.apiKey, config.companyDomain);
+    
     // Apply rate limiting
     await SmartRateLimit.waitIfNeeded();
     
