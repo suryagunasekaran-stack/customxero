@@ -13,7 +13,7 @@ export default function XeroPage() {
           <p className="mt-2 text-gray-600">Process timesheets and synchronize data with Xero</p>
         </div>
 
-        <div className="space-y-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Pipedrive Validation Section */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
             <div className="p-6">
@@ -32,10 +32,8 @@ export default function XeroPage() {
           </div>
 
           {/* Timesheet Processing Section */}
-          <div className="flex justify-center">
-            <div className="w-full max-w-4xl">
-              <TimesheetProcessingCard disabled={false} />
-            </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
+            <TimesheetProcessingCard disabled={false} />
           </div>
         </div>
       </div>

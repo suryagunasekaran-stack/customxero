@@ -139,6 +139,12 @@ export class XeroTokenStore {
       await redis.set(key, JSON.stringify(tokenData), 'EX', ttl);
       console.log(`[TokenStore] Token stored for user ${userId}`);
     }, undefined);
+    
+    // Also save tenants separately for getUserTenants method
+    if (tenants && tenants.length > 0) {
+      await this.saveUserTenants(userId, tenants);
+      console.log(`[TokenStore] Tenants saved for user ${userId}: ${tenants.length} tenants`);
+    }
   }
 
   /**

@@ -24,9 +24,17 @@ export async function ensureValidToken() {
   }
 
   // Get available tenants
-  const available_tenants = await XeroTokenStore.getUserTenants(userId);
+  let available_tenants = await XeroTokenStore.getUserTenants(userId);
+  
+  // If no tenants are stored, try to get them from the token data
   if (!available_tenants || available_tenants.length === 0) {
-    throw new Error('No tenants available');
+    if (tokenData.tenants && tokenData.tenants.length > 0) {
+      // Save the tenants that were in the token data
+      await XeroTokenStore.saveUserTenants(userId, tokenData.tenants);
+      available_tenants = tokenData.tenants;
+    } else {
+      throw new Error('No tenants available. Please reconnect to Xero.');
+    }
   }
 
   // Get selected tenant
