@@ -1,0 +1,10 @@
+{
+  "$set": {
+    "pipedrive.pipelineValidation": {
+      "noWonInPipelines": [1],
+      "noOpenInPipelines": [6, 8, 7, 3, 5, 4, 9, 16, 11, 17],
+      "ignorePipelines": [12, 13],
+      "description": "Pipeline validation rules for deal status checks"
+    }
+  }
+}

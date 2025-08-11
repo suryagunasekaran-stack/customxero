@@ -1,704 +1,417 @@
 /**
- * Validation orchestrator extending ProjectSyncOrchestrator for Pipedrive-Xero validation
+ * Simplified Validation Orchestrator for Pipedrive-Xero validation
  */
 
-import { ProjectSyncOrchestrator } from './ProjectSyncOrchestrator';
-import { XeroProjectService } from '../xeroProjectService';
-import { SmartRateLimit } from '../smartRateLimit';
 import { logger } from '../logger';
-import type { SyncSession, SyncStep } from './types';
-import type { PipedriveConfig } from '../utils/tenantConfig';
-import type {
-  ValidationIssue,
-  TitleValidationResult,
-  QuoteValidationResult
-} from '../validation/pipedriveValidationRules';
-import type { ValidationSummary as ImportedValidationSummary } from '../types/validation';
-import type {
-  PipedriveDeal,
-  DetailedDeal
-} from '../utils/pipedriveHelpers';
-import {
-  fetchDealsFromMultiplePipelines,
-  fetchBatchDealDetails
-} from '../utils/pipedriveHelpers';
-import {
-  validatePipedriveDeals,
-  validateDealTitles,
-  crossReferenceQuotes,
-  generateProjectKey,
-  type PipedriveValidationContext
-} from '../validation/pipedriveValidationRules';
+import { fetchDealsFromMultiplePipelines } from '../utils/pipedriveHelpers';
+import { tenantConfigService, type TenantConfiguration } from '../services/tenantConfigService';
 
-export interface ValidationSession extends SyncSession {
-  validationResults?: ValidationResult;
-}
-
-export interface ValidationResult {
+// Simple types for now
+export interface ValidationSession {
+  id: string;
   tenantId: string;
-  timestamp: Date;
-  deals: ValidatedDeal[];
-  quotes: ValidatedQuote[];
-  projects: ValidatedProject[];
-  summary: ImportedValidationSummary;
-  issues: ValidationIssue[];
+  tenantName: string;
+  startTime: Date;
+  endTime?: Date;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  validationResults?: any;
 }
-
-export interface ValidatedDeal {
-  id: number;
-  title: string;
-  normalizedTitle: string;
-  pipelineId: number;
-  pipelineName?: string;
-  value: number;
-  currency: string;
-  xeroQuoteId?: string;
-  xeroProjectId?: string;
-  validationIssues: ValidationIssue[];
-  customFields: Record<string, any>;
-  matchedProject?: any;
-  matchedQuote?: any;
-}
-
-export interface ValidatedQuote {
-  QuoteID: string;
-  QuoteNumber: string;
-  Status: string;
-  Total: number;
-  matchedDealId?: number;
-  validationIssues: ValidationIssue[];
-}
-
-export interface ValidatedProject {
-  projectId: string;
-  name: string;
-  normalizedKey: string;
-  status: string;
-  totalAmount?: number;
-  matchedDealId?: number;
-  validationIssues: ValidationIssue[];
-}
-
 
 /**
- * Orchestrates comprehensive validation workflows for Pipedrive-Xero data synchronization
- * 
- * @description Extends ProjectSyncOrchestrator to provide specialized validation capabilities
- * for cross-system data integrity checking between Pipedrive deals and Xero quotes/projects.
- * Manages complex multi-step validation workflows with real-time progress tracking.
- * 
- * @example
- * ```typescript
- * // Initialize validation orchestrator
- * const validator = new ValidationOrchestrator({
- *   progressCallback: (step) => console.log(`Step: ${step.name}`)
- * });
- * 
- * // Execute validation workflow
- * const session = await validator.executeValidationWorkflow(tenantId, pipedriveConfig);
- * 
- * if (session.validationResults) {
- *   const summary = session.validationResults.summary;
- *   console.log(`Validation completed: ${summary.totalIssues} issues found`);
- * }
- * ```
- * 
- * @since 1.0.0
+ * Simplified ValidationOrchestrator
  */
-export class ValidationOrchestrator extends ProjectSyncOrchestrator {
-  /**
-   * Creates a new ValidationOrchestrator instance
-   * 
-   * @param {any} [config={}] - Configuration object passed to parent ProjectSyncOrchestrator
-   */
+export class ValidationOrchestrator {
+  private progressCallback?: (step: any) => void;
+
   constructor(config: any = {}) {
-    super(config);
+    // Simple constructor
   }
-  
-  /**
-   * Override to create validation-specific steps
-   */
-  private createValidationSteps(): SyncStep[] {
-    return [
-      {
-        id: 'fetch_pipedrive_deals',
-        name: 'Fetch Pipedrive Deals',
-        description: 'Retrieving deals from all configured pipelines',
-        status: 'pending',
-      },
-      {
-        id: 'fetch_xero_quotes',
-        name: 'Fetch Xero Quotes',
-        description: 'Retrieving quotes from Xero',
-        status: 'pending',
-      },
-      {
-        id: 'fetch_xero_projects',
-        name: 'Fetch Xero Projects',
-        description: 'Retrieving projects from Xero',
-        status: 'pending',
-      },
-      {
-        id: 'validate_titles',
-        name: 'Validate Deal Titles',
-        description: 'Checking deal title formats and normalization',
-        status: 'pending',
-      },
-      {
-        id: 'cross_reference',
-        name: 'Cross-Reference Systems',
-        description: 'Matching deals with quotes and projects',
-        status: 'pending',
-      },
-      {
-        id: 'generate_report',
-        name: 'Generate Validation Report',
-        description: 'Compiling validation results and issues',
-        status: 'pending',
-      },
-    ];
+
+  setProgressCallback(callback: (step: any) => void) {
+    this.progressCallback = callback;
   }
-  
+
   /**
-   * Executes a comprehensive validation workflow for a tenant's Pipedrive-Xero integration
-   * 
-   * @description Orchestrates a multi-step validation process that:
-   * 1. Fetches data from Pipedrive and Xero systems
-   * 2. Validates deal title formats and required fields
-   * 3. Cross-references deals with quotes and projects
-   * 4. Generates comprehensive validation report with issues
-   * 
-   * @param {string} tenantId - The unique identifier for the tenant to validate
-   * @param {PipedriveConfig} pipedriveConfig - Tenant's Pipedrive configuration including API keys and field mappings
-   * @returns {Promise<ValidationSession>} Promise resolving to complete validation session with results
-   * 
-   * @throws {Error} When validation workflow fails at any step
-   * 
-   * @example
-   * ```typescript
-   * const orchestrator = new ValidationOrchestrator();
-   * 
-   * try {
-   *   const session = await orchestrator.executeValidationWorkflow(
-   *     'ea67107e-c352-40a9-a8b8-24d81ae3fc85',
-   *     {
-   *       apiKey: 'pipedrive-key',
-   *       companyDomain: 'api',
-   *       pipelineIds: [2],
-   *       customFieldKeys: { xeroQuoteId: 'abc123', vesselName: 'def456' },
-   *       enabled: true
-   *     }
-   *   );
-   * 
-   *   const results = session.validationResults;
-   *   if (results) {
-   *     console.log(`Found ${results.summary.totalIssues} validation issues`);
-   *     console.log(`${results.summary.matchedDealsToQuotes} deals matched to quotes`);
-   *   }
-   * } catch (error) {
-   *   console.error('Validation failed:', error.message);
-   * }
-   * ```
-   * 
-   * @since 1.0.0
+   * Main validation workflow - simplified version
    */
   async executeValidationWorkflow(
     tenantId: string,
-    pipedriveConfig: PipedriveConfig
+    legacyConfig: any // Keep for compatibility but won't use
   ): Promise<ValidationSession> {
-    // Initialize session with validation steps
-    const session = this.initializeSession(tenantId, pipedriveConfig.tenantName || 'Unknown');
-    session.steps = this.createValidationSteps();
     
+    // Fetch tenant configuration from MongoDB
+    const tenantConfig = await tenantConfigService.getTenantConfig(tenantId);
+    
+    if (!tenantConfig) {
+      throw new Error(`No configuration found for tenant: ${tenantId}`);
+    }
+    
+    const session: ValidationSession = {
+      id: `validation-${Date.now()}`,
+      tenantId,
+      tenantName: tenantConfig.tenantName,
+      startTime: new Date(),
+      status: 'running'
+    };
+
     try {
-      (session as any).status = 'running';
-      logger.info({ sessionId: session.id, tenantId }, 'Starting validation workflow');
+      logger.info({ 
+        tenantId, 
+        tenantName: tenantConfig.tenantName,
+        pipelineCount: tenantConfig.pipedrive.pipelineIds.length,
+        apiKeyRef: tenantConfig.pipedrive.apiKeyRef
+      }, '🚀 Starting validation workflow with MongoDB config');
       
-      // Step 1: Fetch Pipedrive deals
-      const pipedriveDeals = await this.executeValidationStep(
-        'fetch_pipedrive_deals',
-        async () => await this.fetchPipedriveDeals(pipedriveConfig)
-      );
+      // Step 1: Fetch all deals from Pipedrive
+      this.notifyProgress({
+        id: 'fetch_deals',
+        name: 'Fetching Deals',
+        description: 'Retrieving all deals from Pipedrive for validation',
+        status: 'running'
+      });
+
+      const allDeals = await this.fetchWonDeals(tenantConfig);
       
-      // Step 2: Fetch Xero quotes
-      const xeroQuotes = await this.executeValidationStep(
-        'fetch_xero_quotes',
-        async () => await this.fetchXeroQuotes(tenantId)
-      );
+      logger.info({ 
+        totalDeals: allDeals.length,
+        dealsByStatus: {
+          won: allDeals.filter(d => d.status === 'won').length,
+          open: allDeals.filter(d => d.status === 'open').length,
+          lost: allDeals.filter(d => d.status === 'lost').length
+        }
+      }, '📊 Deals fetched for validation');
       
-      // Step 3: Fetch Xero projects
-      const xeroProjects = await this.executeValidationStep(
-        'fetch_xero_projects',
-        async () => await this.fetchXeroProjects(tenantId)
-      );
-      
-      // Step 4: Validate deal titles
-      const titleValidations = await this.executeValidationStep(
-        'validate_titles',
-        async () => await this.validateDealsStep(pipedriveDeals)
-      );
-      
-      // Step 5: Cross-reference systems
-      const crossReferenceResult = await this.executeValidationStep(
-        'cross_reference',
-        async () => await this.crossReferenceStep(
-          pipedriveDeals,
-          xeroQuotes,
-          xeroProjects,
-          pipedriveConfig
-        )
-      );
-      
-      // Step 6: Generate report
-      const validationResult = await this.executeValidationStep(
-        'generate_report',
-        async () => await this.generateReportStep(
-          pipedriveDeals,
-          xeroQuotes,
-          xeroProjects,
-          titleValidations,
-          crossReferenceResult,
-          pipedriveConfig
-        )
-      );
-      
-      // Complete session
-      (session as any).endTime = new Date();
-      (session as any).status = 'completed';
-      (session as ValidationSession).validationResults = validationResult;
+      // Step 2: Validate deals based on pipeline rules
+      this.notifyProgress({
+        id: 'validate_deals',
+        name: 'Validating Deals',
+        description: 'Checking deals against pipeline rules',
+        status: 'running'
+      });
+
+      const validationResults = await this.validateDeals(allDeals, tenantConfig);
       
       logger.info({
+        totalDeals: validationResults.totalDeals,
+        issuesFound: validationResults.issues.length,
+        errorCount: validationResults.errorCount,
+        warningCount: validationResults.warningCount
+      }, '📊 Validation completed');
+
+      this.notifyProgress({
+        id: 'validate_deals',
+        name: 'Validating Deals',
+        description: `Found ${validationResults.issues.length} issues`,
+        status: 'completed',
+        result: { 
+          totalIssues: validationResults.issues.length,
+          errors: validationResults.errorCount,
+          warnings: validationResults.warningCount
+        }
+      });
+
+      session.validationResults = validationResults;
+      session.status = 'completed';
+      session.endTime = new Date();
+
+      logger.info({ 
         sessionId: session.id,
-        summary: validationResult.summary
-      }, 'Validation workflow completed');
-      
-      return session as ValidationSession;
-      
+        duration: session.endTime.getTime() - session.startTime.getTime()
+      }, '✅ Validation completed');
+
+      return session;
+
     } catch (error) {
-      (session as any).status = 'failed';
-      (session as any).error = (error as Error).message;
-      (session as any).endTime = new Date();
-      
-      logger.error({
-        sessionId: session.id,
-        error: (error as Error).message
-      }, 'Validation workflow failed');
-      
+      logger.error({ error }, '❌ Validation failed');
+      session.status = 'failed';
+      session.endTime = new Date();
       throw error;
     }
   }
-  
+
   /**
-   * Execute a validation step using parent's protected method
+   * Fetch ALL deals from Pipedrive using MongoDB configuration
    */
-  private async executeValidationStep<T>(stepId: string, executor: () => Promise<T>): Promise<T> {
-    // Access parent's private method through prototype
-    const parentExecuteStep = (this as any).executeStep;
-    if (typeof parentExecuteStep === 'function') {
-      return parentExecuteStep.call(this, stepId, executor);
-    }
-    throw new Error('Parent executeStep method not accessible');
-  }
-  
-  /**
-   * Fetch deals from Pipedrive
-   */
-  private async fetchPipedriveDeals(config: PipedriveConfig): Promise<PipedriveDeal[]> {
+  private async fetchWonDeals(config: TenantConfiguration): Promise<any[]> {
     logger.info({ 
-      domain: config.companyDomain,
-      pipelines: config.pipelineIds 
-    }, 'Fetching Pipedrive deals');
-    
-    // First fetch deal fields to understand custom field mapping
-    const { fetchDealFields } = await import('@/lib/utils/pipedriveHelpers');
-    await fetchDealFields(config.apiKey, config.companyDomain);
-    
-    // Apply rate limiting
-    await SmartRateLimit.waitIfNeeded();
-    
-    const deals = await fetchDealsFromMultiplePipelines(
-      config.apiKey,
-      config.companyDomain,
-      config.pipelineIds,
-      'won' // Only fetch won deals for validation
-    );
-    
-    logger.info({ dealCount: deals.length }, 'Fetched Pipedrive deals');
-    return deals;
-  }
-  
-  /**
-   * Fetch quotes from Xero
-   */
-  private async fetchXeroQuotes(tenantId: string): Promise<any[]> {
-    logger.info({ tenantId }, 'Fetching Xero quotes');
-    
+      domain: config.pipedrive.companyDomain,
+      pipelines: config.pipedrive.pipelineIds,
+      tenantName: config.tenantName
+    }, 'Fetching all deals from Pipedrive for validation');
+
     try {
-      // Import XeroQuoteService dynamically
-      const { XeroQuoteService } = await import('@/lib/services/xeroQuoteService');
+      // Get the actual API key from environment variable
+      const apiKey = await tenantConfigService.getApiKey(config);
       
-      // Fetch all quotes from Xero
-      const quotes = await XeroQuoteService.fetchAllQuotes(tenantId);
+      // Include pipeline 1 to catch unqualified deals
+      const allPipelineIds = [1, ...config.pipedrive.pipelineIds];
       
-      // Check specifically for the quote we're looking for (deal 558)
-      const targetQuoteId = 'f1decff3-ab05-4c0b-a1b6-e419b9c70161';
-      const hasTargetQuote = quotes.some(q => q.QuoteID === targetQuoteId);
-      
-      logger.info({ 
-        quotesCount: quotes.length,
-        hasTargetQuote,
-        targetQuoteId,
-        sampleQuotes: quotes.slice(0, 5).map(q => ({
-          QuoteID: q.QuoteID,
-          QuoteNumber: q.QuoteNumber,
-          Status: q.Status,
-          Reference: q.Reference
-        }))
-      }, 'Fetched Xero quotes');
-      
-      return quotes;
-      
-    } catch (error) {
-      logger.error({ error: (error as Error).message }, 'Failed to fetch Xero quotes');
-      return [];
-    }
-  }
-  
-  /**
-   * Fetch projects from Xero (only INPROGRESS)
-   */
-  private async fetchXeroProjects(tenantId: string): Promise<any[]> {
-    logger.info({ tenantId }, 'Fetching Xero projects (INPROGRESS only)');
-    
-    try {
-      // Fetch only INPROGRESS projects as per business requirement
-      const projectData = await XeroProjectService.getProjectData('INPROGRESS');
-      
-      // Double-check filter on the client side to ensure we only get INPROGRESS projects
-      const inProgressProjects = projectData.projects?.filter(p => p.status === 'INPROGRESS') || [];
-      
-      logger.info({ 
-        totalProjectsFromAPI: projectData.projects?.length || 0,
-        inProgressProjectsFiltered: inProgressProjects.length,
-        status: 'INPROGRESS'
-      }, 'Fetched and filtered Xero projects');
-      
-      return inProgressProjects;
-    } catch (error) {
-      logger.error({ error: (error as Error).message }, 'Failed to fetch Xero projects');
-      return [];
-    }
-  }
-  
-  /**
-   * Validate deal titles
-   */
-  private async validateDealsStep(deals: PipedriveDeal[]): Promise<TitleValidationResult[]> {
-    logger.info({ dealCount: deals.length }, 'Validating deal titles');
-    
-    const titleValidations = validateDealTitles(deals);
-    
-    const stats = {
-      total: titleValidations.length,
-      valid: titleValidations.filter(v => v.isValid).length,
-      invalid: titleValidations.filter(v => !v.isValid).length,
-      withIssues: titleValidations.filter(v => v.issues.length > 0).length
-    };
-    
-    logger.info(stats, 'Title validation completed');
-    return titleValidations;
-  }
-  
-  /**
-   * Cross-reference deals with quotes and projects
-   */
-  private async crossReferenceStep(
-    deals: PipedriveDeal[],
-    quotes: any[],
-    projects: any[],
-    config: PipedriveConfig
-  ): Promise<QuoteValidationResult[]> {
-    logger.info('Cross-referencing deals with Xero data');
-    
-    const context: PipedriveValidationContext = {
-      pipedriveDeals: deals,
-      xeroQuotes: quotes,
-      xeroProjects: projects,
-      tenantConfig: {
-        tenantId: config.companyDomain,
-        pipedriveApiKey: config.apiKey,
-        companyDomain: config.companyDomain,
-        pipelineIds: config.pipelineIds,
-        customFieldKeys: config.customFieldKeys,
-        enabled: config.enabled,
-        invoiceStageId: config.invoiceStageId
-      }
-    };
-    
-    const quoteValidations = crossReferenceQuotes(context);
-    
-    logger.info({
-      dealsWithQuotes: quoteValidations.filter(q => q.hasQuote).length,
-      dealsWithoutQuotes: quoteValidations.filter(q => !q.hasQuote).length
-    }, 'Cross-reference completed');
-    
-    return quoteValidations;
-  }
-  
-  /**
-   * Generate validation report
-   */
-  private async generateReportStep(
-    deals: PipedriveDeal[],
-    quotes: any[],
-    projects: any[],
-    titleValidations: TitleValidationResult[],
-    quoteValidations: QuoteValidationResult[],
-    config: PipedriveConfig
-  ): Promise<ValidationResult> {
-    logger.info('Generating validation report');
-    
-    // Combine all issues
-    const allIssues: ValidationIssue[] = [];
-    
-    // Collect title validation issues
-    titleValidations.forEach(tv => {
-      allIssues.push(...tv.issues);
-    });
-    
-    // Collect quote validation issues
-    quoteValidations.forEach(qv => {
-      allIssues.push(...qv.issues);
-    });
-    
-    // Run comprehensive business logic validation (includes orphaned quotes, invoice stage, etc.)
-    const context: PipedriveValidationContext = {
-      pipedriveDeals: deals,
-      xeroQuotes: quotes,
-      xeroProjects: projects,
-      tenantConfig: {
-        tenantId: config.companyDomain,
-        pipedriveApiKey: config.apiKey,
-        companyDomain: config.companyDomain,
-        pipelineIds: config.pipelineIds,
-        customFieldKeys: config.customFieldKeys,
-        enabled: config.enabled,
-        invoiceStageId: config.invoiceStageId
-      }
-    };
-    
-    const businessLogicIssues = validatePipedriveDeals(context);
-    allIssues.push(...businessLogicIssues);
-    
-    logger.info({
-      businessLogicIssues: businessLogicIssues.length,
-      orphanedQuotes: businessLogicIssues.filter(i => i.code === 'ORPHANED_ACCEPTED_QUOTE').length,
-      invalidQuoteFormat: businessLogicIssues.filter(i => i.code === 'ACCEPTED_QUOTE_INVALID_FORMAT').length,
-      invoiceStageIssues: businessLogicIssues.filter(i => i.code?.startsWith('INVOICE_STAGE')).length
-    }, 'Business logic validation completed');
-    
-    // Map deals with their validation results
-    const validatedDeals: ValidatedDeal[] = deals.map(deal => {
-      const titleValidation = titleValidations.find(tv => tv.dealId === deal.id);
-      const quoteValidation = quoteValidations.find(qv => qv.dealId === deal.id);
-      const dealIssues: ValidationIssue[] = [];
-      
-      if (titleValidation) {
-        dealIssues.push(...titleValidation.issues);
-      }
-      if (quoteValidation) {
-        dealIssues.push(...quoteValidation.issues);
-      }
-      
-      // Find matching project
-      const normalizedKey = generateProjectKey(deal.title || deal.name || '');
-      const matchedProject = projects.find(p => 
-        generateProjectKey(p.name) === normalizedKey
+      // Fetch won deals
+      const wonDeals = await fetchDealsFromMultiplePipelines(
+        apiKey,
+        config.pipedrive.companyDomain,
+        allPipelineIds,
+        'won'
       );
       
-      // Extract Xero Quote ID from v2 API structure
-      const xeroQuoteId = deal.custom_fields?.[config.customFieldKeys.xeroQuoteId] || 
-                         deal[config.customFieldKeys.xeroQuoteId];
-      
-      return {
-        id: deal.id,
-        title: deal.title || deal.name || '',
-        normalizedTitle: titleValidation?.normalizedTitle || '',
-        pipelineId: deal.pipeline_id,
-        value: deal.value,
-        currency: deal.currency,
-        xeroQuoteId: xeroQuoteId,
-        xeroProjectId: matchedProject?.projectId,
-        validationIssues: dealIssues,
-        customFields: this.extractCustomFields(deal, config.customFieldKeys),
-        matchedProject,
-        matchedQuote: quotes.find(q => q.QuoteID === xeroQuoteId)
-      };
-    });
-    
-    // Map quotes with validation
-    const validatedQuotes: ValidatedQuote[] = quotes.map(quote => {
-      const matchedDeal = deals.find(d => {
-        const quoteId = d.custom_fields?.[config.customFieldKeys.xeroQuoteId] || 
-                        d[config.customFieldKeys.xeroQuoteId];
-        return quoteId === quote.QuoteID;
-      });
-      
-      return {
-        QuoteID: quote.QuoteID,
-        QuoteNumber: quote.QuoteNumber,
-        Status: quote.Status,
-        Total: quote.Total,
-        matchedDealId: matchedDeal?.id,
-        validationIssues: []
-      };
-    });
-    
-    // Map projects with validation
-    const validatedProjects: ValidatedProject[] = projects.map(project => {
-      const normalizedKey = generateProjectKey(project.name);
-      const matchedDeal = deals.find(d => 
-        generateProjectKey(d.title || d.name || '') === normalizedKey
+      // Fetch open deals
+      const openDeals = await fetchDealsFromMultiplePipelines(
+        apiKey,
+        config.pipedrive.companyDomain,
+        allPipelineIds,
+        'open'
       );
       
-      const issues: ValidationIssue[] = [];
-      if (!matchedDeal && project.status === 'INPROGRESS') {
-        issues.push({
-          severity: 'info',
-          code: 'UNMATCHED_PROJECT',
-          message: `Project "${project.name}" has no matching deal in Pipedrive`,
-          field: 'project'
-        });
-      }
-      
-      return {
-        projectId: project.projectId,
-        name: project.name,
-        normalizedKey,
-        status: project.status,
-        totalAmount: project.totalAmount?.value,
-        matchedDealId: matchedDeal?.id,
-        validationIssues: issues
-      };
-    });
-    
-    // Calculate summary with better matching statistics
-    const dealsWithQuoteId = validatedDeals.filter(d => d.xeroQuoteId);
-    const dealsWithMatchedQuote = validatedDeals.filter(d => d.matchedQuote);
-    const dealsWithoutQuoteId = validatedDeals.filter(d => !d.xeroQuoteId);
-    
-    // Calculate quotes by status
-    const quotesByStatus = {
-      DRAFT: quotes.filter(q => q.Status === 'DRAFT').length,
-      SENT: quotes.filter(q => q.Status === 'SENT').length,
-      ACCEPTED: quotes.filter(q => q.Status === 'ACCEPTED').length,
-      DECLINED: quotes.filter(q => q.Status === 'DECLINED').length,
-      DELETED: quotes.filter(q => q.Status === 'DELETED').length,
-      INVOICED: quotes.filter(q => q.Status === 'INVOICED').length
+      // Combine all deals
+      const deals = [...wonDeals, ...openDeals];
+
+      logger.info({ 
+        dealCount: deals.length,
+        pipelines: config.pipedrive.pipelineIds,
+        tenantName: config.tenantName
+      }, 'Deals fetched successfully');
+
+      // Log validation rules from config
+      logger.info({
+        validPrefixes: config.validation.rules.validProjectPrefixes,
+        titleFormat: config.validation.rules.titleFormat,
+        requireVesselName: config.validation.rules.requireVesselName
+      }, 'Validation rules loaded from MongoDB');
+
+      return deals;
+    } catch (error) {
+      logger.error({ error }, 'Failed to fetch deals');
+      throw error;
+    }
+  }
+
+  /**
+   * Validate deals based on pipeline rules
+   */
+  private async validateDeals(deals: any[], _config: TenantConfiguration): Promise<any> {
+    const issues: any[] = [];
+    let errorCount = 0;
+    let warningCount = 0;
+
+    // Define validation rules for this tenant
+    const validationRules = {
+      noWonInPipeline: [1], // No won deals should be in pipeline 1
+      noOpenInPipelines: [6, 8, 7, 3, 5, 4, 9, 16, 11, 17], // No open deals in these pipelines
+      ignorePipelines: [12, 13] // Completely ignore these pipelines
     };
 
-    // Calculate total quote value for "in progress" statuses (DRAFT, SENT, ACCEPTED)
-    const inProgressQuoteStatuses = ['DRAFT', 'SENT', 'ACCEPTED'];
-    const inProgressQuotes = quotes.filter(q => inProgressQuoteStatuses.includes(q.Status));
-    const totalQuoteInProgressValue = inProgressQuotes
-      .reduce((sum, q) => sum + (q.Total || 0), 0);
-    
-    // Determine quote currency (assume all quotes use same currency, take from first quote)
-    const quoteCurrency = quotes.length > 0 && quotes[0].CurrencyCode ? quotes[0].CurrencyCode : 'SGD';
-
-    // Calculate total Pipedrive work in progress value (sum of all deal values)
-    const totalPipedriveWorkInProgressValue = deals
-      .reduce((sum, d) => sum + (d.value || 0), 0);
-    
-    // Determine Pipedrive currency (take from first deal with currency)
-    const pipedriveCurrency = deals.find(d => d.currency)?.currency || 'SGD';
-    
-    // Find orphaned accepted quotes (accepted quotes not linked to any deal)
-    const acceptedQuotes = quotes.filter(q => q.Status === 'ACCEPTED');
-    const orphanedAcceptedQuotes = acceptedQuotes.filter(quote => {
-      // Check if quote references a Pipedrive Deal ID
-      let referencedDealId: number | null = null;
-      if (quote.Reference) {
-        const dealIdMatch = quote.Reference.match(/(?:Pipedrive\s+)?Deal\s+I[dD]:\s*(\d+)/i);
-        if (dealIdMatch) {
-          referencedDealId = parseInt(dealIdMatch[1], 10);
-        }
-      }
-      
-      // If quote references a deal, check if that deal exists
-      if (referencedDealId) {
-        const dealExists = deals.some(deal => deal.id === referencedDealId);
-        return !dealExists; // Only orphaned if referenced deal doesn't exist
-      }
-      
-      // Check if any deal references this quote
-      const isLinked = deals.some(deal => {
-        const xeroQuoteId = deal.custom_fields?.[config.customFieldKeys.xeroQuoteId] || 
-                           deal[config.customFieldKeys.xeroQuoteId];
-        return xeroQuoteId === quote.QuoteID || xeroQuoteId === quote.QuoteNumber;
-      });
-      return !isLinked;
-    });
-    
-    const orphanedAcceptedQuotesValue = orphanedAcceptedQuotes
-      .reduce((sum, q) => sum + (q.Total || 0), 0);
-    
-    // Count accepted quotes with invalid format
-    // Valid pattern: PROJECTCODE-QUNUMBER-VERSION (e.g., NY2594-QU22554-1, MES2024-QU123-1-v2)
-    const validQuotePattern = /^[A-Z]+\d+[-]QU\d+[-]\d+(?:[-]v\d+)?$/i;
-    const acceptedQuotesWithInvalidFormat = acceptedQuotes.filter(quote => 
-      !validQuotePattern.test(quote.QuoteNumber || '')
-    ).length;
-    
-    const summary: ImportedValidationSummary = {
+    logger.info({
       totalDeals: deals.length,
-      totalQuotes: quotes.length,
-      totalProjects: projects.length,
-      dealsWithIssues: validatedDeals.filter(d => d.validationIssues.length > 0).length,
-      quotesWithIssues: validatedQuotes.filter(q => q.validationIssues.length > 0).length,
-      projectsWithIssues: validatedProjects.filter(p => p.validationIssues.length > 0).length,
-      totalIssues: allIssues.length,
-      errorCount: allIssues.filter(i => i.severity === 'error').length,
-      warningCount: allIssues.filter(i => i.severity === 'warning').length,
-      infoCount: allIssues.filter(i => i.severity === 'info').length,
-      matchedDealsToQuotes: dealsWithMatchedQuote.length,
-      matchedDealsToProjects: validatedDeals.filter(d => d.xeroProjectId).length,
-      unmatchedDeals: dealsWithoutQuoteId.length,
-      unmatchedQuotes: validatedQuotes.filter(q => !q.matchedDealId).length,
-      unmatchedProjects: validatedProjects.filter(p => !p.matchedDealId).length,
-      quotesByStatus,
-      totalQuoteInProgressValue: totalQuoteInProgressValue > 0 ? totalQuoteInProgressValue : undefined,
-      quoteCurrency: totalQuoteInProgressValue > 0 ? quoteCurrency : undefined,
-      totalPipedriveWorkInProgressValue: totalPipedriveWorkInProgressValue > 0 ? totalPipedriveWorkInProgressValue : undefined,
-      pipedriveCurrency: totalPipedriveWorkInProgressValue > 0 ? pipedriveCurrency : undefined,
-      orphanedAcceptedQuotes: orphanedAcceptedQuotes.length,
-      orphanedAcceptedQuotesValue: orphanedAcceptedQuotesValue > 0 ? orphanedAcceptedQuotesValue : undefined,
-      acceptedQuotesWithInvalidFormat: acceptedQuotesWithInvalidFormat > 0 ? acceptedQuotesWithInvalidFormat : undefined
+      rules: validationRules
+    }, 'Starting deal validation with pipeline rules');
+
+    // Get custom field keys for this tenant from config
+    const customFieldKeys = {
+      projectCode: '0be49a5ee144f20b90168670b3a3f8f9b18977ae', // For Brightsun Marine
+      vesselName: 'ecb34e26525067dd1a426c0c59909a8797a85e54'   // For Brightsun Marine
     };
-    
-    return {
-      tenantId: config.companyDomain,
-      timestamp: new Date(),
-      deals: validatedDeals,
-      quotes: validatedQuotes,
-      projects: validatedProjects,
-      summary,
-      issues: allIssues
-    };
-  }
-  
-  /**
-   * Extract custom fields from deal
-   */
-  private extractCustomFields(deal: PipedriveDeal, fieldKeys: any): Record<string, any> {
-    const customFields: Record<string, any> = {};
-    
-    for (const [name, fieldId] of Object.entries(fieldKeys)) {
-      if (deal[fieldId as string] !== undefined) {
-        customFields[name] = deal[fieldId as string];
+
+    // Process each deal
+    for (const deal of deals) {
+      const pipelineId = deal.pipeline_id;
+      const status = deal.status;
+      
+      // Skip ignored pipelines
+      if (validationRules.ignorePipelines.includes(pipelineId)) {
+        continue;
+      }
+
+      // Check: Title format validation (projectCode-vesselName)
+      // Only validate title format for won deals
+      // v2 API returns custom fields in a custom_fields object
+      const projectCode = deal.custom_fields?.[customFieldKeys.projectCode] || '';
+      const vesselName = deal.custom_fields?.[customFieldKeys.vesselName] || '';
+      
+      // Build the expected title based on custom field values
+      let expectedTitle = '';
+      let titleHasIssue = false;
+      let issueDescription = '';
+      
+      // Only validate title format for won deals
+      if (status === 'won' && projectCode && vesselName) {
+        // Check if this is an ED project
+        const isEDProject = projectCode.toUpperCase().startsWith('ED');
+        
+        if (isEDProject) {
+          // For ED projects, the format can be: projectCode-middlePart-vesselName
+          // We need to check if the title matches the pattern
+          
+          // First check if it starts with the project code
+          if (deal.title?.startsWith(projectCode)) {
+            // Remove the project code and the dash after it
+            const remainingAfterProjectCode = deal.title.substring(projectCode.length + 1);
+            
+            // Check if what remains ends with the vessel name
+            if (remainingAfterProjectCode === vesselName) {
+              // Standard format: projectCode-vesselName
+              titleHasIssue = false;
+            } else if (remainingAfterProjectCode.endsWith(vesselName)) {
+              // Check if there's a middle part
+              const beforeVesselName = remainingAfterProjectCode.substring(0, remainingAfterProjectCode.length - vesselName.length);
+              
+              // The middle part should end with a dash
+              if (beforeVesselName.endsWith('-')) {
+                // Valid ED format: projectCode-middlePart-vesselName
+                titleHasIssue = false;
+              } else {
+                titleHasIssue = true;
+                expectedTitle = `${projectCode}-[code]-${vesselName}`;
+                issueDescription = `ED project title "${deal.title}" format issue - missing dash before vessel name`;
+              }
+            } else {
+              titleHasIssue = true;
+              expectedTitle = `${projectCode}-[code]-${vesselName}`;
+              issueDescription = `ED project title "${deal.title}" does not match expected vessel name "${vesselName}"`;
+            }
+          } else {
+            titleHasIssue = true;
+            expectedTitle = `${projectCode}-[code]-${vesselName}`;
+            issueDescription = `ED project title "${deal.title}" does not start with project code "${projectCode}"`;
+          }
+        } else {
+          // Non-ED projects - standard format only
+          expectedTitle = `${projectCode}-${vesselName}`;
+          if (deal.title !== expectedTitle) {
+            titleHasIssue = true;
+            issueDescription = `Title "${deal.title}" does not match expected format "${expectedTitle}"`;
+          }
+        }
+      } else if (status === 'won' && (projectCode || vesselName)) {
+        // One field exists but not both
+        expectedTitle = `${projectCode || '(missing project code)'}-${vesselName || '(missing vessel name)'}`;
+        titleHasIssue = true;
+        if (!projectCode) {
+          issueDescription = 'Project code is missing in custom fields';
+        } else {
+          issueDescription = 'Vessel name is missing in custom fields';
+        }
+      } else if (status === 'won' && deal.title && deal.title.trim() && deal.title !== '-') {
+        // Deal has a title but custom fields are empty
+        titleHasIssue = true;
+        issueDescription = 'Title exists but project code and vessel name custom fields are empty';
+        expectedTitle = '(set project code and vessel name in custom fields)';
+      }
+      
+      if (titleHasIssue) {
+        const issue = {
+          code: 'INVALID_TITLE_FORMAT',
+          severity: 'warning' as const,
+          message: `Deal title format incorrect: "${deal.title}"`,
+          suggestedFix: issueDescription || `Title should be "${expectedTitle}" (ProjectCode-VesselName format)`,
+          metadata: {
+            dealId: deal.id,
+            dealTitle: deal.title,
+            expectedTitle: expectedTitle,
+            projectCode: projectCode || '(missing)',
+            vesselName: vesselName || '(missing)',
+            pipelineId: pipelineId,
+            status: status,
+            dealValue: deal.value,
+            currency: deal.currency || 'SGD'
+          }
+        };
+        issues.push(issue);
+        warningCount++;
+        
+        logger.debug({
+          dealId: deal.id,
+          title: deal.title,
+          expectedTitle: expectedTitle,
+          projectCode: projectCode || '(empty)',
+          vesselName: vesselName || '(empty)',
+          issue: issueDescription
+        }, 'Deal title validation issue found');
+      }
+
+      // Check: No won deals in pipeline 1
+      if (status === 'won' && validationRules.noWonInPipeline.includes(pipelineId)) {
+        const issue = {
+          code: 'WON_DEAL_IN_UNQUALIFIED_PIPELINE',
+          severity: 'error',
+          message: `Won deal "${deal.title}" found in unqualified pipeline (Pipeline ${pipelineId})`,
+          suggestedFix: `Move this deal to an appropriate pipeline or change its status`,
+          metadata: {
+            dealId: deal.id,
+            dealTitle: deal.title,
+            pipelineId: pipelineId,
+            status: status,
+            dealValue: deal.value,
+            stageId: deal.stage_id,
+            currency: deal.currency || 'SGD'
+          }
+        };
+        issues.push(issue);
+        errorCount++;
+        
+        logger.warn({
+          dealId: deal.id,
+          title: deal.title,
+          pipeline: pipelineId
+        }, 'Won deal in unqualified pipeline');
+      }
+
+      // Check: No open deals in specified pipelines
+      if (status === 'open' && validationRules.noOpenInPipelines.includes(pipelineId)) {
+        const issue = {
+          code: 'OPEN_DEAL_IN_WRONG_PIPELINE',
+          severity: 'error',
+          message: `Open deal "${deal.title}" found in pipeline ${pipelineId}`,
+          suggestedFix: `This pipeline should only contain closed (won/lost) deals. Please update the deal status or move to appropriate pipeline`,
+          metadata: {
+            dealId: deal.id,
+            dealTitle: deal.title,
+            pipelineId: pipelineId,
+            status: status,
+            dealValue: deal.value,
+            stageId: deal.stage_id,
+            currency: deal.currency || 'SGD'
+          }
+        };
+        issues.push(issue);
+        errorCount++;
+        
+        logger.warn({
+          dealId: deal.id,
+          title: deal.title,
+          pipeline: pipelineId,
+          status: status
+        }, 'Open deal in pipeline that should only have closed deals');
       }
     }
-    
-    return customFields;
+
+    // Log summary
+    logger.info({
+      totalDealsProcessed: deals.length,
+      issuesFound: issues.length,
+      errors: errorCount,
+      warnings: warningCount
+    }, 'Deal validation completed');
+
+    return {
+      totalDeals: deals.length,
+      issues: issues,
+      errorCount: errorCount,
+      warningCount: warningCount,
+      summary: {
+        message: issues.length > 0 
+          ? `Found ${issues.length} validation issues` 
+          : 'All deals passed validation',
+        timestamp: new Date().toISOString()
+      }
+    };
+  }
+
+  /**
+   * Notify progress to callback if set
+   */
+  private notifyProgress(step: any) {
+    if (this.progressCallback) {
+      this.progressCallback(step);
+    }
   }
 }

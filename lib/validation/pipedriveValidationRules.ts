@@ -19,6 +19,7 @@ export interface TenantConfig {
   customFieldKeys: CustomFieldMapping;
   enabled: boolean;
   invoiceStageId?: number; // Stage ID for Invoice stage (e.g., 6 for tenant 6dd39ea4...)
+  workInProgressStageIds?: number[]; // Stage IDs that are considered "Work In Progress"
 }
 
 export interface CustomFieldMapping {
@@ -137,6 +138,10 @@ export function validatePipedriveDeals(context: PipedriveValidationContext): Val
   // Validate accepted quote number format
   const quoteFormatIssues = validateAcceptedQuoteNumberFormat(context);
   issues.push(...quoteFormatIssues);
+  
+  // Validate tenant-specific rules (e.g., no won deals in stage 1 for Brightsun Marine)
+  const tenantSpecificIssues = validateTenantSpecificRules(context);
+  issues.push(...tenantSpecificIssues);
   
   return issues;
 }
@@ -1047,8 +1052,8 @@ export function parseTitle(title: string): ParsedTitle {
   }
   
   // Standard format (PROJECTCODE-VESSELNAME)
-  // But exclude patterns like NY, MES, etc. Common project prefixes
-  const standardMatch = cleanTitle.match(/^((?:NY|MES|ED|PO|WO|SO|JO)\d+)([-\s]+)(.+)$/i);
+  // Include all valid project prefixes: AF, NY, ED, MES, LC, MS, PO, WO, SO, JO, etc.
+  const standardMatch = cleanTitle.match(/^((?:AF|NY|ED|MES|LC|MS|PO|WO|SO|JO)\d+)([-\s]+)(.+)$/i);
   if (standardMatch) {
     const vesselName = standardMatch[3].trim();
     
@@ -1187,4 +1192,86 @@ export function generateProjectKey(title: string): string {
     .toLowerCase()
     .replace(/[^a-zA-Z0-9]+/g, '')
     .trim();
+}
+
+/**
+ * Validates tenant-specific business rules
+ * 
+ * @description Applies tenant-specific validation rules such as:
+ * - Brightsun Marine (ea67107e): No won deals allowed in stage 1
+ * - Additional tenant-specific rules can be added here
+ * 
+ * @param {PipedriveValidationContext} context - The validation context
+ * @returns {ValidationIssue[]} Array of validation issues found
+ * 
+ * @since 1.0.0
+ */
+export function validateTenantSpecificRules(context: PipedriveValidationContext): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const { tenantId, workInProgressStageIds, invoiceStageId } = context.tenantConfig;
+  
+  // Define valid stages: WIP stages + invoice stage
+  const validStageIds = [
+    ...(workInProgressStageIds || []),
+    ...(invoiceStageId ? [invoiceStageId] : [])
+  ];
+  
+  // Validate all deals are in valid stages (WIP or Invoice)
+  for (const deal of context.pipedriveDeals) {
+    const stageId = deal.stage_id;
+    
+    // Check if deal is in a valid stage
+    if (!validStageIds.includes(stageId)) {
+      issues.push({
+        severity: 'error',
+        code: 'DEAL_IN_INVALID_STAGE',
+        message: `Deal "${deal.title || deal.name}" is in stage ${stageId}, but should be in Work In Progress stages (${workInProgressStageIds?.join(', ')}) or Invoice stage (${invoiceStageId})`,
+        dealId: deal.id,
+        dealTitle: deal.title || deal.name,
+        field: 'stage_id',
+        suggestedFix: `Move this deal to one of the valid stages: ${validStageIds.join(', ')}`,
+        metadata: {
+          dealId: deal.id,
+          dealTitle: deal.title || deal.name,
+          currentStage: stageId,
+          validStages: validStageIds,
+          status: deal.status,
+          value: deal.value,
+          currency: deal.currency
+        }
+      });
+    }
+    
+    // Additional rule: Won deals should NOT be in stage 1 (Unqualified)
+    if (stageId === 1 && deal.status === 'won') {
+      issues.push({
+        severity: 'error',
+        code: 'WON_DEAL_IN_UNQUALIFIED',
+        message: `Deal "${deal.title || deal.name}" is marked as won but is in Stage 1 (Unqualified)`,
+        dealId: deal.id,
+        dealTitle: deal.title || deal.name,
+        field: 'stage_id',
+        suggestedFix: 'Won deals should never be in the Unqualified stage. Move to a Work In Progress or Invoice stage.',
+        metadata: {
+          dealId: deal.id,
+          dealTitle: deal.title || deal.name,
+          currentStage: 1,
+          currentStatus: 'won',
+          value: deal.value,
+          currency: deal.currency
+        }
+      });
+    }
+  }
+  
+  // Tenant-specific rules
+  if (tenantId === 'ea67107e-c352-40a9-a8b8-24d81ae3fc85') {
+    // Brightsun Marine specific rules can be added here
+  }
+  
+  if (tenantId === '6dd39ea4-e6a6-4993-a37a-21482ccf8d22') {
+    // BS E&I Service (BSENI) specific rules can be added here
+  }
+  
+  return issues;
 }

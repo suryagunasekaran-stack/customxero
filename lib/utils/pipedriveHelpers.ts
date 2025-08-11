@@ -124,7 +124,7 @@ export function buildPipedriveApiUrl(
  * @param {string} apiKey - The Pipedrive API token for authentication
  * @param {string} companyDomain - The Pipedrive company domain (e.g., 'api', 'bseni')
  * @param {number} pipelineId - The specific pipeline ID to fetch deals from
- * @param {'won' | 'lost' | 'all_not_deleted'} [status='won'] - Deal status filter
+ * @param {'won' | 'lost' | 'open' | 'all_not_deleted'} [status='won'] - Deal status filter
  * @returns {Promise<PipedriveDeal[]>} Promise resolving to array of all deals in the pipeline
  * 
  * @throws {Error} When API request fails or returns error response
@@ -155,7 +155,7 @@ export async function fetchPipedriveDealsWithPagination(
   apiKey: string,
   companyDomain: string,
   pipelineId: number,
-  status: 'won' | 'lost' | 'all_not_deleted' = 'won'
+  status: 'won' | 'lost' | 'open' | 'all_not_deleted' = 'won'
 ): Promise<PipedriveDeal[]> {
   const allDeals: PipedriveDeal[] = [];
   let cursor: string | undefined = undefined;
@@ -253,7 +253,7 @@ export async function fetchPipedriveDealsWithPagination(
  * @param {string} apiKey - The Pipedrive API token for authentication
  * @param {string} companyDomain - The Pipedrive company domain
  * @param {number[]} pipelineIds - Array of pipeline IDs to fetch deals from
- * @param {'won' | 'lost' | 'all_not_deleted'} [status='won'] - Deal status filter applied to all pipelines
+ * @param {'won' | 'lost' | 'open' | 'all_not_deleted'} [status='won'] - Deal status filter applied to all pipelines
  * @returns {Promise<PipedriveDeal[]>} Promise resolving to combined array of deals from all pipelines
  * 
  * @example
@@ -282,7 +282,7 @@ export async function fetchDealsFromMultiplePipelines(
   apiKey: string,
   companyDomain: string,
   pipelineIds: number[],
-  status: 'won' | 'lost' | 'all_not_deleted' = 'won'
+  status: 'won' | 'lost' | 'open' | 'all_not_deleted' = 'won'
 ): Promise<PipedriveDeal[]> {
   const allDeals: PipedriveDeal[] = [];
   

@@ -30,6 +30,7 @@ export interface PipedriveConfig {
   enabled: boolean;
   tenantName?: string;
   invoiceStageId?: number; // Stage ID for Invoice stage (e.g., 6 for tenant 6dd39ea4...)
+  workInProgressStageIds?: number[]; // Stage IDs that are considered "Work In Progress"
 }
 
 /**
@@ -62,14 +63,15 @@ export interface PipedriveConfig {
  * @since 1.0.0
  */
 export async function resolvePipedriveConfig(tenantId: string): Promise<PipedriveConfig | null> {
-  // Configuration based on CUSTOMFIELDS.md (corrected)
+  // Configuration based on CUSTOMFIELDS.md (fixed tenant mapping)
   const configs: Record<string, PipedriveConfig> = {
-    // Tenant 1 (now correctly mapped to 6dd39ea4-e6a6-4993-a37a-21482ccf8d22)
-    '6dd39ea4-e6a6-4993-a37a-21482ccf8d22': {
-      apiKey: process.env.PIPEDRIVE_KEY_TENANT1 || process.env.PIPEDRIVE_KEY || '',
+    // Brightsun Marine Pte Ltd (ea67107e-c352-40a9-a8b8-24d81ae3fc85) - Bigger company with multiple pipelines
+    'ea67107e-c352-40a9-a8b8-24d81ae3fc85': {
+      apiKey: process.env.PIPEDRIVE_KEY_TENANT2 || process.env.PIPEDRIVE_KEY_2 || '',
       companyDomain: 'api', // Standard API domain
-      pipelineIds: [2], // Work In Progress pipeline
-      invoiceStageId: 6, // Invoice stage in pipeline 2
+      pipelineIds: [3, 4, 5, 6, 7, 8, 9, 16], // All WIP pipelines for the bigger company
+      invoiceStageId: 6, // Invoice stage
+      workInProgressStageIds: [2, 3, 4, 5], // Stages 2-5 are typically WIP stages (excluding stage 1 unqualified)
       customFieldKeys: {
         quoteNumber: 'a0b59ccf244af998aa57a01f22e2ffd41cf504f9',
         invoiceId: 'c599cab3902b6c84c1f9e2689f308a4369fffe7d',
@@ -86,13 +88,15 @@ export async function resolvePipedriveConfig(tenantId: string): Promise<Pipedriv
         department: 'b1ccab4cb2fd2179aaceddf107187b70b48d9cb7'
       },
       enabled: true,
-      tenantName: 'Tenant 1'
+      tenantName: 'Brightsun Marine Pte Ltd'
     },
-    // Tenant 2 (now correctly mapped to ea67107e-c352-40a9-a8b8-24d81ae3fc85)
-    'ea67107e-c352-40a9-a8b8-24d81ae3fc85': {
-      apiKey: process.env.PIPEDRIVE_KEY_TENANT2 || process.env.PIPEDRIVE_KEY_2 || '',
+    // BS E&I Service (BSENI) (6dd39ea4-e6a6-4993-a37a-21482ccf8d22)
+    '6dd39ea4-e6a6-4993-a37a-21482ccf8d22': {
+      apiKey: process.env.PIPEDRIVE_KEY_TENANT1 || process.env.PIPEDRIVE_KEY || '',
       companyDomain: 'bseni',
-      pipelineIds: [3, 4, 5, 6, 7, 8, 9, 16], // All WIP pipelines (removed pipeline 2)
+      pipelineIds: [2], // Single Work In Progress pipeline
+      invoiceStageId: 6, // Invoice stage
+      workInProgressStageIds: [2, 3, 4, 5], // Stages 2-5 are typically WIP stages
       customFieldKeys: {
         wopqNumber: '8a3fabdbd16595e1dc83d75327312eba71bbb0a4',
         ipc: '0be49a5ee144f20b90168670b3a3f8f9b18977ae',
@@ -109,7 +113,7 @@ export async function resolvePipedriveConfig(tenantId: string): Promise<Pipedriv
         salesReference: '6ec23a25a64aa044f0e57d1180d2ad8b7bdb43b9'
       },
       enabled: true,
-      tenantName: 'Tenant 2 (BSENI)'
+      tenantName: 'BS E&I Service (BSENI)'
     }
   };
   
@@ -158,11 +162,7 @@ export async function resolvePipedriveConfig(tenantId: string): Promise<Pipedriv
  */
 export function getPipelineNames(tenantId: string): Record<number, string> {
   const pipelineNames: Record<string, Record<number, string>> = {
-    // Tenant 1
-    '6dd39ea4-e6a6-4993-a37a-21482ccf8d22': {
-      2: 'Work In Progress'
-    },
-    // Tenant 2 (BSENI)
+    // Brightsun Marine Pte Ltd (bigger company with multiple pipelines)
     'ea67107e-c352-40a9-a8b8-24d81ae3fc85': {
       3: 'WIP - Engine Recon',
       4: 'WIP - Machine Shop',
@@ -172,6 +172,10 @@ export function getPipelineNames(tenantId: string): Record<number, string> {
       8: 'WIP - Electricals',
       9: 'WIP - Mechanical',
       16: 'WIP - Navy'
+    },
+    // BS E&I Service (BSENI)
+    '6dd39ea4-e6a6-4993-a37a-21482ccf8d22': {
+      2: 'Work In Progress'
     }
   };
   

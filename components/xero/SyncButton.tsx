@@ -9,7 +9,7 @@ import {
   PlayIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
-import { ValidationSummary, ValidationIssue } from '@/lib/types/validation';
+import { ValidationIssue } from '@/lib/types/validation';
 
 interface ValidationStep {
   id: string;
@@ -24,8 +24,14 @@ interface ValidationStep {
 interface ValidationResults {
   session: any;
   results?: {
-    summary: ValidationSummary;
+    totalDeals: number;
     issues: ValidationIssue[];
+    errorCount: number;
+    warningCount: number;
+    summary: {
+      message: string;
+      timestamp: string;
+    };
   };
 }
 
@@ -327,144 +333,154 @@ export function SyncButton() {
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
             <div className="p-6">
-              <h3 className="text-xl font-semibold text-gray-900 mb-4">Validation Summary</h3>
+              <h3 className="text-xl font-semibold text-gray-900 mb-4">Pipedrive Validation Summary</h3>
             
+              {/* Main Statistics */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                 <div className="bg-gray-50 rounded-lg p-4 text-center border border-gray-100">
-                  <div className="text-2xl font-bold text-gray-900">{results.results.summary.totalDeals}</div>
-                  <div className="text-xs text-gray-600 mt-1">Total Deals</div>
+                  <div className="text-2xl font-bold text-gray-900">{results.results.totalDeals || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">Total Deals Validated</div>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-4 text-center border border-gray-100">
-                  <div className="text-2xl font-bold text-gray-900">{results.results.summary.totalQuotes}</div>
-                  <div className="text-xs text-gray-600 mt-1">Total Quotes</div>
+                <div className={`rounded-lg p-4 text-center border ${
+                  results.results.errorCount > 0 
+                    ? 'bg-red-50 border-red-200' 
+                    : 'bg-green-50 border-green-200'
+                }`}>
+                  <div className={`text-2xl font-bold ${
+                    results.results.errorCount > 0 ? 'text-red-900' : 'text-green-900'
+                  }`}>
+                    {results.results.errorCount || 0}
+                  </div>
+                  <div className={`text-xs mt-1 ${
+                    results.results.errorCount > 0 ? 'text-red-600' : 'text-green-600'
+                  }`}>
+                    Errors Found
+                  </div>
                 </div>
-                <div className="bg-gray-50 rounded-lg p-4 text-center border border-gray-100">
-                  <div className="text-2xl font-bold text-gray-900">{results.results.summary.totalProjects}</div>
-                  <div className="text-xs text-gray-600 mt-1">INPROGRESS Projects</div>
+                <div className={`rounded-lg p-4 text-center border ${
+                  results.results.warningCount > 0 
+                    ? 'bg-amber-50 border-amber-200' 
+                    : 'bg-gray-50 border-gray-100'
+                }`}>
+                  <div className={`text-2xl font-bold ${
+                    results.results.warningCount > 0 ? 'text-amber-900' : 'text-gray-900'
+                  }`}>
+                    {results.results.warningCount || 0}
+                  </div>
+                  <div className={`text-xs mt-1 ${
+                    results.results.warningCount > 0 ? 'text-amber-600' : 'text-gray-600'
+                  }`}>
+                    Warnings
+                  </div>
                 </div>
               </div>
               
-              {/* Quotes Breakdown by Status */}
-              {results.results.summary.quotesByStatus && (
-                <div className="border-t pt-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Quotes by Status</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                    <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-200">
-                      <div className="text-lg font-bold text-gray-700">{results.results.summary.quotesByStatus.DRAFT}</div>
-                      <div className="text-xs text-gray-600">Draft</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-200">
-                      <div className="text-lg font-bold text-gray-700">{results.results.summary.quotesByStatus.SENT}</div>
-                      <div className="text-xs text-gray-600">Sent</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-200">
-                      <div className="text-lg font-bold text-gray-700">{results.results.summary.quotesByStatus.ACCEPTED}</div>
-                      <div className="text-xs text-gray-600">Accepted</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-200">
-                      <div className="text-lg font-bold text-gray-700">{results.results.summary.quotesByStatus.DECLINED}</div>
-                      <div className="text-xs text-gray-600">Declined</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-200">
-                      <div className="text-lg font-bold text-gray-700">{results.results.summary.quotesByStatus.INVOICED}</div>
-                      <div className="text-xs text-gray-600">Invoiced</div>
+              {/* Validation Status Message */}
+              {results.results.summary && (
+                <div className={`p-4 rounded-lg border ${
+                  results.results.issues?.length > 0
+                    ? 'bg-amber-50 border-amber-200'
+                    : 'bg-green-50 border-green-200'
+                }`}>
+                  <div className="flex items-center">
+                    {results.results.issues?.length > 0 ? (
+                      <ExclamationTriangleIcon className="h-5 w-5 text-amber-600 mr-2" />
+                    ) : (
+                      <CheckCircleIcon className="h-5 w-5 text-green-600 mr-2" />
+                    )}
+                    <div>
+                      <div className={`font-semibold ${
+                        results.results.issues?.length > 0 ? 'text-amber-900' : 'text-green-900'
+                      }`}>
+                        {results.results.summary.message}
+                      </div>
+                      <div className={`text-xs mt-1 ${
+                        results.results.issues?.length > 0 ? 'text-amber-600' : 'text-green-600'
+                      }`}>
+                        Validated at {new Date(results.results.summary.timestamp).toLocaleString()}
+                      </div>
                     </div>
                   </div>
-                  
-                  {/* Total Values */}
-                  {(results.results.summary.totalQuoteInProgressValue || results.results.summary.totalPipedriveWorkInProgressValue) && (
-                    <div className="mt-4 pt-3 border-t border-gray-200">
-                      <h5 className="text-sm font-semibold text-gray-700 mb-2">Work in Progress Values</h5>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {results.results.summary.totalQuoteInProgressValue && (
-                          <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-200">
-                            <div className="text-lg font-bold text-gray-700">
-                              {results.results.summary.quoteCurrency || 'SGD'} {results.results.summary.totalQuoteInProgressValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </div>
-                            <div className="text-xs text-gray-600">Total Quote Value (In Progress)</div>
-                          </div>
-                        )}
-                        {results.results.summary.totalPipedriveWorkInProgressValue && (
-                          <div className="bg-gray-50 rounded-lg p-3 text-center border border-gray-200">
-                            <div className="text-lg font-bold text-gray-700">
-                              {results.results.summary.pipedriveCurrency || 'SGD'} {results.results.summary.totalPipedriveWorkInProgressValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </div>
-                            <div className="text-xs text-gray-600">Total Pipedrive Value (Work in Progress)</div>
-                          </div>
-                        )}
-                      </div>
-                      
-                      {/* Orphaned Accepted Quotes Info */}
-                      {(results.results.summary.orphanedAcceptedQuotes ?? 0) > 0 && (
-                        <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                          <div className="flex items-start">
-                            <ExclamationTriangleIcon className="h-5 w-5 text-yellow-600 mt-0.5 mr-2 flex-shrink-0" />
-                            <div className="text-sm">
-                              <div className="font-semibold text-yellow-800">
-                                {results.results.summary.orphanedAcceptedQuotes ?? 0} Accepted Quote{(results.results.summary.orphanedAcceptedQuotes ?? 0) > 1 ? 's' : ''} Not in Pipedrive
-                              </div>
-                              {results.results.summary.orphanedAcceptedQuotesValue && (
-                                <div className="text-yellow-700 mt-1">
-                                  Value: {results.results.summary.quoteCurrency || 'SGD'} {results.results.summary.orphanedAcceptedQuotesValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </div>
-                              )}
-                              <div className="text-xs text-yellow-600 mt-1">
-                                These accepted quotes are not linked to any Pipedrive deal, explaining the value discrepancy
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Invalid Quote Format Warning */}
-                      {(results.results.summary.acceptedQuotesWithInvalidFormat ?? 0) > 0 && (
-                        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                          <div className="flex items-start">
-                            <XCircleIcon className="h-5 w-5 text-red-600 mt-0.5 mr-2 flex-shrink-0" />
-                            <div className="text-sm">
-                              <div className="font-semibold text-red-800">
-                                {results.results.summary.acceptedQuotesWithInvalidFormat ?? 0} Accepted Quote{(results.results.summary.acceptedQuotesWithInvalidFormat ?? 0) > 1 ? 's' : ''} with Invalid Format
-                              </div>
-                              <div className="text-xs text-red-600 mt-1">
-                                Accepted quotes must follow the format: PROJECTNUMBER-QUNUMBER-VERSION
-                              </div>
-                              <div className="text-xs text-red-500 mt-1">
-                                Example: NY2594-QU22554-1 or NY2450-QU19757-1-v2
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                </div>
+              )}
+              
+              {/* Pipeline Rules Applied */}
+              <div className="border-t pt-4 mt-4">
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Validation Rules Applied</h4>
+                <div className="space-y-2">
+                  <div className="flex items-start">
+                    <CheckCircleIcon className="h-4 w-4 text-green-500 mt-0.5 mr-2 flex-shrink-0" />
+                    <div className="text-sm text-gray-600">
+                      No won deals allowed in Pipeline 1 (Unqualified)
                     </div>
-                  )}
+                  </div>
+                  <div className="flex items-start">
+                    <CheckCircleIcon className="h-4 w-4 text-green-500 mt-0.5 mr-2 flex-shrink-0" />
+                    <div className="text-sm text-gray-600">
+                      No open deals allowed in Pipelines 3, 4, 5, 6, 7, 8, 9, 16, 11, 17 (must be won/lost)
+                    </div>
+                  </div>
+                  <div className="flex items-start">
+                    <InformationCircleIcon className="h-4 w-4 text-blue-500 mt-0.5 mr-2 flex-shrink-0" />
+                    <div className="text-sm text-gray-600">
+                      Pipelines 12 and 13 are excluded from validation
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Quick Stats if there are issues */}
+              {results.results.issues?.length > 0 && (
+                <div className="border-t pt-4 mt-4">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Issue Breakdown</h4>
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                    {results.results.issues.filter(i => i.code === 'WON_DEAL_IN_UNQUALIFIED_PIPELINE').length > 0 && (
+                      <div className="bg-red-50 rounded-lg p-3 border border-red-200">
+                        <div className="text-lg font-bold text-red-900">
+                          {results.results.issues.filter(i => i.code === 'WON_DEAL_IN_UNQUALIFIED_PIPELINE').length}
+                        </div>
+                        <div className="text-xs text-red-600">Won deals in unqualified pipeline</div>
+                      </div>
+                    )}
+                    {results.results.issues.filter(i => i.code === 'OPEN_DEAL_IN_WRONG_PIPELINE').length > 0 && (
+                      <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+                        <div className="text-lg font-bold text-amber-900">
+                          {results.results.issues.filter(i => i.code === 'OPEN_DEAL_IN_WRONG_PIPELINE').length}
+                        </div>
+                        <div className="text-xs text-amber-600">Open deals in closed-only pipelines</div>
+                      </div>
+                    )}
+                    {results.results.issues.filter(i => i.code === 'INVALID_TITLE_FORMAT').length > 0 && (
+                      <div className="bg-yellow-50 rounded-lg p-3 border border-yellow-200">
+                        <div className="text-lg font-bold text-yellow-900">
+                          {results.results.issues.filter(i => i.code === 'INVALID_TITLE_FORMAT').length}
+                        </div>
+                        <div className="text-xs text-yellow-600">Invalid title format</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
           </div>
           
           {/* Issues Summary */}
-          {results.results.summary.totalIssues > 0 && (
+          {results.results.issues?.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
               <div className="p-6">
                 <h3 className="text-xl font-semibold text-gray-900 mb-4">Issues Found</h3>
               
                 <div className="flex gap-4 mb-4">
-                  {results.results.summary.errorCount > 0 && (
+                  {results.results.errorCount > 0 && (
                     <div className="flex items-center gap-2">
                       <XCircleIcon className="h-4 w-4 text-red-500" />
-                      <span className="text-sm text-gray-900">{results.results.summary.errorCount} Errors</span>
+                      <span className="text-sm text-gray-900">{results.results.errorCount} Errors</span>
                     </div>
                   )}
-                  {results.results.summary.warningCount > 0 && (
+                  {results.results.warningCount > 0 && (
                     <div className="flex items-center gap-2">
                       <ExclamationTriangleIcon className="h-4 w-4 text-amber-500" />
-                      <span className="text-sm text-gray-900">{results.results.summary.warningCount} Warnings</span>
-                    </div>
-                  )}
-                  {results.results.summary.infoCount > 0 && (
-                    <div className="flex items-center gap-2">
-                      <InformationCircleIcon className="h-4 w-4 text-blue-500" />
-                      <span className="text-sm text-gray-900">{results.results.summary.infoCount} Info</span>
+                      <span className="text-sm text-gray-900">{results.results.warningCount} Warnings</span>
                     </div>
                   )}
                 </div>
@@ -585,11 +601,114 @@ export function SyncButton() {
                       </div>
                     )}
                     
+                    {/* Pipeline Validation Issues - Won Deals in Unqualified Pipeline */}
+                    {results.results.issues.filter(issue => issue.code === 'WON_DEAL_IN_UNQUALIFIED_PIPELINE').length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Won Deals in Unqualified Pipeline</h4>
+                        <div className="space-y-2">
+                          {results.results.issues
+                            .filter(issue => issue.code === 'WON_DEAL_IN_UNQUALIFIED_PIPELINE')
+                            .map((issue, i) => (
+                              <div key={`won-unqualified-${i}`} className="flex gap-3 p-3 bg-red-50 rounded-lg text-sm border border-red-200">
+                                <div className="flex-shrink-0 mt-0.5">
+                                  <XCircleIcon className="h-4 w-4 text-red-500" />
+                                </div>
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900">
+                                    {issue.metadata?.dealTitle || issue.message}
+                                  </div>
+                                  {issue.metadata?.dealValue && (
+                                    <div className="text-xs text-gray-700 mt-1">
+                                      Value: {issue.metadata.currency} {issue.metadata.dealValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </div>
+                                  )}
+                                  <div className="text-xs text-gray-600 mt-1">
+                                    Pipeline ID: {issue.metadata?.pipelineId} | Status: {issue.metadata?.status}
+                                  </div>
+                                  <div className="text-xs text-red-700 mt-1">
+                                    {issue.suggestedFix}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Pipeline Validation Issues - Open Deals in Wrong Pipeline */}
+                    {results.results.issues.filter(issue => issue.code === 'OPEN_DEAL_IN_WRONG_PIPELINE').length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Open Deals in Closed-Only Pipelines</h4>
+                        <div className="space-y-2">
+                          {results.results.issues
+                            .filter(issue => issue.code === 'OPEN_DEAL_IN_WRONG_PIPELINE')
+                            .map((issue, i) => (
+                              <div key={`open-wrong-${i}`} className="flex gap-3 p-3 bg-amber-50 rounded-lg text-sm border border-amber-200">
+                                <div className="flex-shrink-0 mt-0.5">
+                                  <ExclamationTriangleIcon className="h-4 w-4 text-amber-500" />
+                                </div>
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900">
+                                    {issue.metadata?.dealTitle || issue.message}
+                                  </div>
+                                  {issue.metadata?.dealValue && (
+                                    <div className="text-xs text-gray-700 mt-1">
+                                      Value: {issue.metadata.currency} {issue.metadata.dealValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </div>
+                                  )}
+                                  <div className="text-xs text-gray-600 mt-1">
+                                    Pipeline ID: {issue.metadata?.pipelineId} | Status: {issue.metadata?.status}
+                                  </div>
+                                  <div className="text-xs text-amber-700 mt-1">
+                                    {issue.suggestedFix}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Title Format Validation Issues */}
+                    {results.results.issues.filter(issue => issue.code === 'INVALID_TITLE_FORMAT').length > 0 && (
+                      <div className="mb-4">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Invalid Title Format</h4>
+                        <div className="space-y-2">
+                          {results.results.issues
+                            .filter(issue => issue.code === 'INVALID_TITLE_FORMAT')
+                            .map((issue, i) => (
+                              <div key={`title-format-${i}`} className="flex gap-3 p-3 bg-yellow-50 rounded-lg text-sm border border-yellow-200">
+                                <div className="flex-shrink-0 mt-0.5">
+                                  <ExclamationTriangleIcon className="h-4 w-4 text-yellow-500" />
+                                </div>
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900">
+                                    Current: "{issue.metadata?.dealTitle}"
+                                  </div>
+                                  <div className="text-xs text-gray-600 mt-1">
+                                    Expected: "{issue.metadata?.expectedTitle}"
+                                  </div>
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    Project Code: {issue.metadata?.projectCode} | Vessel: {issue.metadata?.vesselName}
+                                  </div>
+                                  <div className="text-xs text-yellow-700 mt-1">
+                                    {issue.suggestedFix}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+                    
                     {/* Other Issues */}
                     {results.results.issues.filter(issue => 
                       issue.code !== 'ORPHANED_ACCEPTED_QUOTE' && 
                       issue.code !== 'ACCEPTED_QUOTE_INVALID_FORMAT' &&
-                      issue.code !== 'QUOTE_REFERENCES_MISSING_DEAL'
+                      issue.code !== 'QUOTE_REFERENCES_MISSING_DEAL' &&
+                      issue.code !== 'WON_DEAL_IN_UNQUALIFIED_PIPELINE' &&
+                      issue.code !== 'OPEN_DEAL_IN_WRONG_PIPELINE' &&
+                      issue.code !== 'INVALID_TITLE_FORMAT'
                     ).length > 0 && (
                       <div>
                         <h4 className="text-sm font-semibold text-gray-700 mb-2">Other Issues</h4>
@@ -598,7 +717,10 @@ export function SyncButton() {
                             .filter(issue => 
                               issue.code !== 'ORPHANED_ACCEPTED_QUOTE' && 
                               issue.code !== 'ACCEPTED_QUOTE_INVALID_FORMAT' &&
-                              issue.code !== 'QUOTE_REFERENCES_MISSING_DEAL'
+                              issue.code !== 'QUOTE_REFERENCES_MISSING_DEAL' &&
+                              issue.code !== 'WON_DEAL_IN_UNQUALIFIED_PIPELINE' &&
+                              issue.code !== 'OPEN_DEAL_IN_WRONG_PIPELINE' &&
+                              issue.code !== 'INVALID_TITLE_FORMAT'
                             )
                             .slice(0, 30)
                             .map((issue, i) => (
@@ -634,7 +756,7 @@ export function SyncButton() {
           )}
           
           {/* Success Message */}
-          {results.results.summary.totalIssues === 0 && (
+          {results.results.issues?.length === 0 && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-3">
               <div className="flex items-center">
                 <CheckCircleIcon className="h-5 w-5 text-green-600 mr-2" />
