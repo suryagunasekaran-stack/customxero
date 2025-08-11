@@ -228,8 +228,17 @@ export function SyncButton() {
       return null;
     }
     
+    // Filter out issues that cannot be automatically fixed
+    const fixableIssues = results.results.issues.filter(issue => 
+      issue.code !== 'REQUIRED_FIELD_MISSING' // Cannot auto-fix missing required fields
+    );
+    
+    if (fixableIssues.length === 0) {
+      return null;
+    }
+    
     // Transform validation issues into fix-ready format with categorization
-    const issues: FixValidationIssue[] = results.results.issues.map(issue => ({
+    const issues: FixValidationIssue[] = fixableIssues.map(issue => ({
       ...issue,
       selected: true, // All issues selected for fixing by default
       category: 
@@ -436,6 +445,7 @@ export function SyncButton() {
   
   return (
     <div className="space-y-6">
+      {/* First row: Validate and Show Details buttons */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
         <button
           onClick={startValidation}
@@ -466,61 +476,64 @@ export function SyncButton() {
         </button>
         
         {results && (
-          <>
-            <button
-              onClick={() => setShowDetails(!showDetails)}
-              className="flex-1 sm:flex-initial sm:min-w-32 inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200"
-              aria-expanded={showDetails}
-              aria-label={`${showDetails ? 'Hide' : 'Show'} validation details`}
-            >
-              {showDetails ? 'Hide' : 'Show'} Details
-            </button>
-            
-            {/* Fix Issues Button - only show if there are fixable issues */}
-            {fixConfirmationData && fixConfirmationData.totalCount > 0 && (
-              <button
-                onClick={() => setShowFixConfirmation(true)}
-                className="flex-1 sm:flex-initial sm:min-w-40 inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200"
-                style={{
-                  backgroundColor: 'oklch(27.4% 0.006 286.033)'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
-                }}
-                aria-label="Fix validation issues"
-              >
-                <WrenchScrewdriverIcon className="h-5 w-5 mr-2" aria-hidden="true" />
-                <span>Fix {fixConfirmationData.totalCount} {fixConfirmationData.totalCount === 1 ? 'Issue' : 'Issues'}</span>
-              </button>
-            )}
-            
-            {/* Export to Excel Button - only show if there are validation issues */}
-            {results?.results?.issues && results.results.issues.length > 0 && (
-              <button
-                onClick={handleExportToExcel}
-                disabled={isExporting}
-                className="flex-1 sm:flex-initial sm:min-w-40 inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label="Export validation issues to Excel"
-              >
-                {isExporting ? (
-                  <>
-                    <div className="h-5 w-5 rounded-full border-2 border-blue-200 border-t-blue-500 animate-spin mr-2" aria-hidden="true" />
-                    <span>Exporting...</span>
-                  </>
-                ) : (
-                  <>
-                    <DocumentArrowDownIcon className="h-5 w-5 mr-2" aria-hidden="true" />
-                    <span>Export to Excel</span>
-                  </>
-                )}
-              </button>
-            )}
-          </>
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="flex-1 sm:flex-initial sm:min-w-32 inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200"
+            aria-expanded={showDetails}
+            aria-label={`${showDetails ? 'Hide' : 'Show'} validation details`}
+          >
+            {showDetails ? 'Hide' : 'Show'} Details
+          </button>
         )}
       </div>
+      
+      {/* Second row: Fix Issues and Export to Excel buttons */}
+      {results && ((fixConfirmationData && fixConfirmationData.totalCount > 0) || (results?.results?.issues && results.results.issues.length > 0)) && (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+          {/* Fix Issues Button - only show if there are fixable issues */}
+          {fixConfirmationData && fixConfirmationData.totalCount > 0 && (
+            <button
+              onClick={() => setShowFixConfirmation(true)}
+              className="flex-1 inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200"
+              style={{
+                backgroundColor: 'oklch(27.4% 0.006 286.033)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+              }}
+              aria-label="Fix validation issues"
+            >
+              <WrenchScrewdriverIcon className="h-5 w-5 mr-2" aria-hidden="true" />
+              <span>Fix {fixConfirmationData.totalCount} {fixConfirmationData.totalCount === 1 ? 'Issue' : 'Issues'}</span>
+            </button>
+          )}
+          
+          {/* Export to Excel Button - only show if there are validation issues */}
+          {results?.results?.issues && results.results.issues.length > 0 && (
+            <button
+              onClick={handleExportToExcel}
+              disabled={isExporting}
+              className="flex-1 inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Export validation issues to Excel"
+            >
+              {isExporting ? (
+                <>
+                  <div className="h-5 w-5 rounded-full border-2 border-blue-200 border-t-blue-500 animate-spin mr-2" aria-hidden="true" />
+                  <span>Exporting...</span>
+                </>
+              ) : (
+                <>
+                  <DocumentArrowDownIcon className="h-5 w-5 mr-2" aria-hidden="true" />
+                  <span>Export to Excel</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      )}
       
       {/* Current Step Progress */}
       {currentStep && (
