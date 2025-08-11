@@ -7,7 +7,8 @@ import {
   ExclamationTriangleIcon,
   InformationCircleIcon,
   PlayIcon,
-  WrenchScrewdriverIcon
+  WrenchScrewdriverIcon,
+  DocumentArrowDownIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 import { ValidationIssue } from '@/lib/types/validation';
@@ -79,6 +80,7 @@ export function SyncButton() {
   const [showFixProgress, setShowFixProgress] = useState(false);
   const [isDryRun, setIsDryRun] = useState(false);
   const [tenantId, setTenantId] = useState<string>('');
+  const [isExporting, setIsExporting] = useState(false);
   
   // Use fix session hook
   const fixSession = useFixSession();
@@ -294,6 +296,102 @@ export function SyncButton() {
   };
   
   /**
+   * Handles exporting validation issues to Excel format with automatic file download
+   * 
+   * @description Sends validation issues data to the Excel export API endpoint and
+   * initiates automatic file download. Manages loading states, error handling, and
+   * blob conversion for client-side file download. Creates a comprehensive Excel
+   * workbook with multiple worksheets containing categorized validation issues.
+   * 
+   * The function performs the following operations:
+   * 1. Validates that validation results contain exportable issues
+   * 2. Sets loading state to provide user feedback
+   * 3. Sends POST request to export API with validation data
+   * 4. Converts response to downloadable blob
+   * 5. Creates temporary download link and triggers file download
+   * 6. Cleans up temporary resources and handles any errors
+   * 
+   * @async
+   * @function handleExportToExcel
+   * @returns {Promise<void>} Promise that resolves when export completes or fails
+   * 
+   * @throws Will set error state if API request fails or blob conversion fails
+   * 
+   * @example
+   * ```typescript
+   * // Called when user clicks "Export to Excel" button
+   * await handleExportToExcel();
+   * 
+   * // Function handles all aspects of file download automatically:
+   * // - API communication
+   * // - Blob conversion
+   * // - File download triggering
+   * // - Error handling and user feedback
+   * ```
+   * 
+   * @example
+   * ```typescript
+   * // Usage in JSX button handler
+   * <button
+   *   onClick={handleExportToExcel}
+   *   disabled={isExporting || !results?.results?.issues?.length}
+   * >
+   *   {isExporting ? 'Exporting...' : 'Export to Excel'}
+   * </button>
+   * ```
+   * 
+   * @since 1.0.0 - Added Excel export functionality for validation issues
+   */
+  const handleExportToExcel = async () => {
+    // Early return if no validation issues are available for export
+    if (!results?.results?.issues || results.results.issues.length === 0) return;
+    
+    setIsExporting(true);
+    try {
+      // Send validation data to Excel export API endpoint
+      const response = await fetch('/api/export/validation-issues-excel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          issues: results.results.issues,
+          tenantName: results.session?.tenantName || 'Unknown',
+          timestamp: results.results.summary?.timestamp
+        }),
+      });
+      
+      // Handle API errors by parsing error response
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to export to Excel');
+      }
+      
+      // Convert API response to binary blob for file download
+      const blob = await response.blob();
+      
+      // Create temporary download link using object URL
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `validation-issues-${new Date().toISOString().split('T')[0]}.xlsx`;
+      
+      // Trigger file download by programmatically clicking the link
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up temporary resources to prevent memory leaks
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Export error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to export to Excel');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+  
+  /**
    * Returns appropriate icon component based on validation step status
    * 
    * @param {string} status - The current status of the validation step
@@ -396,6 +494,28 @@ export function SyncButton() {
               >
                 <WrenchScrewdriverIcon className="h-5 w-5 mr-2" aria-hidden="true" />
                 <span>Fix {fixConfirmationData.totalCount} {fixConfirmationData.totalCount === 1 ? 'Issue' : 'Issues'}</span>
+              </button>
+            )}
+            
+            {/* Export to Excel Button - only show if there are validation issues */}
+            {results?.results?.issues && results.results.issues.length > 0 && (
+              <button
+                onClick={handleExportToExcel}
+                disabled={isExporting}
+                className="flex-1 sm:flex-initial sm:min-w-40 inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Export validation issues to Excel"
+              >
+                {isExporting ? (
+                  <>
+                    <div className="h-5 w-5 rounded-full border-2 border-blue-200 border-t-blue-500 animate-spin mr-2" aria-hidden="true" />
+                    <span>Exporting...</span>
+                  </>
+                ) : (
+                  <>
+                    <DocumentArrowDownIcon className="h-5 w-5 mr-2" aria-hidden="true" />
+                    <span>Export to Excel</span>
+                  </>
+                )}
               </button>
             )}
           </>
