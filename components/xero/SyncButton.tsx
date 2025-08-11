@@ -1,15 +1,20 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   CheckCircleIcon,
   XCircleIcon,
   ExclamationTriangleIcon,
   InformationCircleIcon,
-  PlayIcon
+  PlayIcon,
+  WrenchScrewdriverIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckCircleIconSolid } from '@heroicons/react/24/solid';
 import { ValidationIssue } from '@/lib/types/validation';
+import { FixValidationIssue, FixConfirmationData } from '@/lib/types/fix';
+import { useFixSession } from '@/lib/hooks/useFixSession';
+import FixConfirmationDialog from './FixConfirmationDialog';
+import FixProgressModal from './FixProgressModal';
 
 interface ValidationStep {
   id: string;
@@ -70,6 +75,13 @@ export function SyncButton() {
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<ValidationResults | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [showFixConfirmation, setShowFixConfirmation] = useState(false);
+  const [showFixProgress, setShowFixProgress] = useState(false);
+  const [isDryRun, setIsDryRun] = useState(false);
+  const [tenantId, setTenantId] = useState<string>('');
+  
+  // Use fix session hook
+  const fixSession = useFixSession();
   
   /**
    * Initiates the validation workflow by calling the API endpoint and processing SSE responses
@@ -152,6 +164,10 @@ export function SyncButton() {
               } else if (data.type === 'complete') {
                 setResults(data.data);
                 setCurrentStep(null);
+                // Extract tenant ID from the session data if available
+                if (data.data?.session?.tenantId) {
+                  setTenantId(data.data.session.tenantId);
+                }
               }
             } catch (e) {
               console.error('Failed to parse SSE data:', e, 'Line:', line);
@@ -181,6 +197,100 @@ export function SyncButton() {
     } finally {
       setIsValidating(false);
     }
+  };
+  
+  /**
+   * Prepares fix confirmation data from validation results for the confirmation dialog
+   * 
+   * @description Transforms validation results into structured confirmation data suitable
+   * for the fix confirmation dialog. Automatically categorizes issues by type, calculates
+   * statistics, and sets all issues as selected by default. Returns null if no fixable
+   * issues are available.
+   * 
+   * @function fixConfirmationData
+   * @returns {FixConfirmationData | null} Structured confirmation data or null if no issues
+   * 
+   * @example
+   * ```typescript
+   * // Automatically computed when validation results change
+   * if (fixConfirmationData && fixConfirmationData.totalCount > 0) {
+   *   // Show fix button and enable fix operations
+   *   setShowFixButton(true);
+   * }
+   * ```
+   * 
+   * @since 1.0.0
+   */
+  const fixConfirmationData = useMemo<FixConfirmationData | null>(() => {
+    if (!results?.results?.issues || results.results.issues.length === 0) {
+      return null;
+    }
+    
+    // Transform validation issues into fix-ready format with categorization
+    const issues: FixValidationIssue[] = results.results.issues.map(issue => ({
+      ...issue,
+      selected: true, // All issues selected for fixing by default
+      category: 
+        issue.code === 'INVALID_TITLE_FORMAT' ? 'title' :
+        issue.code === 'WON_DEAL_IN_UNQUALIFIED_PIPELINE' || issue.code === 'OPEN_DEAL_IN_WRONG_PIPELINE' ? 'pipeline' :
+        issue.code === 'ORPHANED_ACCEPTED_QUOTE' || issue.code === 'ACCEPTED_QUOTE_INVALID_FORMAT' || issue.code === 'QUOTE_REFERENCES_MISSING_DEAL' ? 'quote' :
+        'other'
+    }));
+    
+    // Group issues by category for organized display in confirmation dialog
+    const issuesByCategory = {
+      title: issues.filter(i => i.category === 'title'),
+      pipeline: issues.filter(i => i.category === 'pipeline'),
+      quote: issues.filter(i => i.category === 'quote'),
+      other: issues.filter(i => i.category === 'other')
+    };
+    
+    // Return complete confirmation data structure
+    return {
+      issues,
+      tenantId,
+      issuesByCategory,
+      totalCount: issues.length,
+      errorCount: issues.filter(i => i.severity === 'error').length,
+      warningCount: issues.filter(i => i.severity === 'warning').length
+    };
+  }, [results, tenantId]);
+  
+  /**
+   * Handles user confirmation to start the fix operation
+   * 
+   * @description Processes user confirmation from the fix confirmation dialog.
+   * Closes the confirmation dialog, opens the progress modal, and initiates
+   * the fix operation using the fix session hook with the selected configuration.
+   * 
+   * @async
+   * @function handleFixConfirm
+   * @returns {Promise<void>} Promise that resolves when fix operation starts
+   * 
+   * @example
+   * ```typescript
+   * // Called when user clicks "Apply Fixes" in confirmation dialog
+   * <FixConfirmationDialog
+   *   onConfirm={handleFixConfirm}
+   *   // ... other props
+   * />
+   * ```
+   * 
+   * @since 1.0.0
+   */
+  const handleFixConfirm = async () => {
+    if (!fixConfirmationData) return;
+    
+    // Close confirmation dialog and show progress modal
+    setShowFixConfirmation(false);
+    setShowFixProgress(true);
+    
+    // Start fix operation with current configuration
+    await fixSession.startFix(
+      tenantId,
+      fixConfirmationData.issues,
+      { enableDryRun: isDryRun }
+    );
   };
   
   /**
@@ -258,14 +368,37 @@ export function SyncButton() {
         </button>
         
         {results && (
-          <button
-            onClick={() => setShowDetails(!showDetails)}
-            className="flex-1 sm:flex-initial sm:min-w-32 inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200"
-            aria-expanded={showDetails}
-            aria-label={`${showDetails ? 'Hide' : 'Show'} validation details`}
-          >
-            {showDetails ? 'Hide' : 'Show'} Details
-          </button>
+          <>
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="flex-1 sm:flex-initial sm:min-w-32 inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200"
+              aria-expanded={showDetails}
+              aria-label={`${showDetails ? 'Hide' : 'Show'} validation details`}
+            >
+              {showDetails ? 'Hide' : 'Show'} Details
+            </button>
+            
+            {/* Fix Issues Button - only show if there are fixable issues */}
+            {fixConfirmationData && fixConfirmationData.totalCount > 0 && (
+              <button
+                onClick={() => setShowFixConfirmation(true)}
+                className="flex-1 sm:flex-initial sm:min-w-40 inline-flex items-center justify-center px-4 py-3 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200"
+                style={{
+                  backgroundColor: 'oklch(27.4% 0.006 286.033)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'oklch(21.6% 0.006 56.043)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'oklch(27.4% 0.006 286.033)';
+                }}
+                aria-label="Fix validation issues"
+              >
+                <WrenchScrewdriverIcon className="h-5 w-5 mr-2" aria-hidden="true" />
+                <span>Fix {fixConfirmationData.totalCount} {fixConfirmationData.totalCount === 1 ? 'Issue' : 'Issues'}</span>
+              </button>
+            )}
+          </>
         )}
       </div>
       
@@ -768,6 +901,27 @@ export function SyncButton() {
           )}
         </div>
       )}
+      
+      {/* Fix Confirmation Dialog */}
+      <FixConfirmationDialog
+        isOpen={showFixConfirmation}
+        data={fixConfirmationData}
+        onConfirm={handleFixConfirm}
+        onCancel={() => setShowFixConfirmation(false)}
+        isDryRun={isDryRun}
+        onToggleDryRun={setIsDryRun}
+      />
+      
+      {/* Fix Progress Modal */}
+      <FixProgressModal
+        isOpen={showFixProgress}
+        state={fixSession}
+        onClose={() => {
+          setShowFixProgress(false);
+          fixSession.reset();
+        }}
+        onCancel={fixSession.cancel}
+      />
     </div>
   );
 }
