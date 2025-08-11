@@ -188,7 +188,7 @@ export class ValidationOrchestrator {
   /**
    * Validate deals based on pipeline rules
    */
-  private async validateDeals(deals: any[], _config: TenantConfiguration): Promise<any> {
+  private async validateDeals(deals: any[], config: TenantConfiguration): Promise<any> {
     const issues: any[] = [];
     let errorCount = 0;
     let warningCount = 0;
@@ -205,11 +205,22 @@ export class ValidationOrchestrator {
       rules: validationRules
     }, 'Starting deal validation with pipeline rules');
 
-    // Get custom field keys for this tenant from config
-    const customFieldKeys = {
-      projectCode: '0be49a5ee144f20b90168670b3a3f8f9b18977ae', // For Brightsun Marine
-      vesselName: 'ecb34e26525067dd1a426c0c59909a8797a85e54'   // For Brightsun Marine
-    };
+    // Get custom field mappings from database configuration
+    const customFieldMappings = config.pipedrive.customFieldMappings || {};
+    
+    // For BSENI tenant, 'ipc' field is used as projectCode
+    const projectCodeField = config.tenantId === '6dd39ea4-e6a6-4993-a37a-21482ccf8d22' 
+      ? (customFieldMappings.ipc || customFieldMappings.projectCode)
+      : (customFieldMappings.projectCode || customFieldMappings.ipc);
+    
+    const vesselNameField = customFieldMappings.vesselName;
+    
+    logger.debug({
+      tenantId: config.tenantId,
+      customFieldMappings: Object.keys(customFieldMappings),
+      projectCodeField,
+      vesselNameField
+    }, 'Using custom field mappings from database');
 
     // Process each deal
     for (const deal of deals) {
@@ -224,8 +235,8 @@ export class ValidationOrchestrator {
       // Check: Title format validation (projectCode-vesselName)
       // Only validate title format for won deals
       // v2 API returns custom fields in a custom_fields object
-      const projectCode = deal.custom_fields?.[customFieldKeys.projectCode] || '';
-      const vesselName = deal.custom_fields?.[customFieldKeys.vesselName] || '';
+      const projectCode = projectCodeField ? (deal.custom_fields?.[projectCodeField] || '') : '';
+      const vesselName = vesselNameField ? (deal.custom_fields?.[vesselNameField] || '') : '';
       
       // Trim whitespace from custom field values for validation
       const trimmedProjectCode = projectCode.trim();
@@ -300,6 +311,55 @@ export class ValidationOrchestrator {
         titleHasIssue = true;
         issueDescription = 'Title exists but project code and vessel name custom fields are empty';
         expectedTitle = '(set project code and vessel name in custom fields)';
+      }
+      
+      // Check: Required custom fields validation for BSENI tenant (6dd39ea4)
+      if (config.tenantId === '6dd39ea4-e6a6-4993-a37a-21482ccf8d22' && status === 'won') {
+        // For BSENI tenant, validate all required custom fields are not null/empty
+        const requiredFields = [
+          { key: customFieldMappings.wopqNumber, name: 'WO/PQ Number' },
+          { key: customFieldMappings.ipc, name: 'IPC (Project Code)' },
+          { key: customFieldMappings.vesselName, name: 'Vessel Name' },
+          { key: customFieldMappings.department, name: 'Department' },
+          { key: customFieldMappings.location, name: 'Location' },
+          { key: customFieldMappings.personInCharge, name: 'Person In Charge' }
+        ];
+        
+        for (const field of requiredFields) {
+          if (!field.key) {
+            logger.warn({ fieldName: field.name }, 'Custom field mapping not found in database config');
+            continue;
+          }
+          
+          const fieldValue = deal.custom_fields?.[field.key];
+          if (!fieldValue || fieldValue === '' || fieldValue === null) {
+            const issue = {
+              code: 'REQUIRED_FIELD_MISSING',
+              severity: 'error' as const,
+              message: `Required field "${field.name}" is missing or empty`,
+              suggestedFix: `Please fill in the ${field.name} field in Pipedrive`,
+              metadata: {
+                dealId: deal.id,
+                dealTitle: deal.title,
+                fieldName: field.name,
+                fieldKey: field.key,
+                pipelineId: pipelineId,
+                status: status,
+                dealValue: deal.value,
+                currency: deal.currency || 'SGD'
+              }
+            };
+            issues.push(issue);
+            errorCount++;
+            
+            logger.debug({
+              dealId: deal.id,
+              title: deal.title,
+              missingField: field.name,
+              fieldKey: field.key
+            }, 'Required custom field missing');
+          }
+        }
       }
       
       if (titleHasIssue) {
