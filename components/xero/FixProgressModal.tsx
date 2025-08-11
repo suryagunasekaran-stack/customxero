@@ -297,9 +297,18 @@ export default function FixProgressModal({
                     <button
                       type="button"
                       onClick={onClose}
-                      className="inline-flex w-full justify-center rounded-lg bg-gray-600 px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200 sm:ml-3 sm:w-auto"
+                      className="inline-flex w-full justify-center rounded-lg px-4 py-3 text-sm font-medium text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200 sm:ml-3 sm:w-auto"
+                      style={{
+                        backgroundColor: results && results.fixedCount > 0 ? 'oklch(27.4% 0.006 286.033)' : 'oklch(50% 0 0)'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = results && results.fixedCount > 0 ? 'oklch(21.6% 0.006 56.043)' : 'oklch(40% 0 0)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = results && results.fixedCount > 0 ? 'oklch(27.4% 0.006 286.033)' : 'oklch(50% 0 0)';
+                      }}
                     >
-                      {results ? 'Close' : 'Dismiss'}
+                      {results ? (results.fixedCount > 0 ? 'Close & Refresh' : 'Close') : 'Dismiss'}
                     </button>
                   )}
                 </div>

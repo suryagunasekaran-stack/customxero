@@ -257,25 +257,6 @@ export default function FixConfirmationDialog({
                           ))}
                         </div>
                         
-                        {/* Dry Run Option */}
-                        {onToggleDryRun && (
-                          <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                            <label className="flex items-center cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={isDryRun}
-                                onChange={(e) => onToggleDryRun(e.target.checked)}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                              />
-                              <span className="ml-2 text-sm">
-                                <span className="font-medium text-blue-900">Dry Run Mode</span>
-                                <span className="text-blue-700 ml-1">
-                                  (Preview changes without applying them)
-                                </span>
-                              </span>
-                            </label>
-                          </div>
-                        )}
                         
                         {/* Warning */}
                         <div className="mt-6 bg-amber-50 border border-amber-200 rounded-lg p-3">
@@ -284,7 +265,7 @@ export default function FixConfirmationDialog({
                             <div className="ml-2">
                               <p className="text-sm text-amber-800">
                                 <strong>Important:</strong> This will modify {data.totalCount} deals in Pipedrive.
-                                {isDryRun ? ' (Dry run - no actual changes will be made)' : ' These changes cannot be automatically undone.'}
+                                {' These changes cannot be automatically undone.'}
                               </p>
                             </div>
                           </div>
@@ -309,7 +290,7 @@ export default function FixConfirmationDialog({
                     }}
                     onClick={onConfirm}
                   >
-                    {isDryRun ? 'Run Dry Test' : 'Apply Fixes'}
+                    Apply Fixes
                   </button>
                   <button
                     type="button"

@@ -285,11 +285,11 @@ export function SyncButton() {
     setShowFixConfirmation(false);
     setShowFixProgress(true);
     
-    // Start fix operation with current configuration
+    // Start fix operation without dry run
     await fixSession.startFix(
       tenantId,
       fixConfirmationData.issues,
-      { enableDryRun: isDryRun }
+      { enableDryRun: false }
     );
   };
   
@@ -919,6 +919,10 @@ export function SyncButton() {
         onClose={() => {
           setShowFixProgress(false);
           fixSession.reset();
+          // If fixes were successfully applied, refresh validation
+          if (fixSession.results && fixSession.results.fixedCount > 0) {
+            startValidation();
+          }
         }}
         onCancel={fixSession.cancel}
       />

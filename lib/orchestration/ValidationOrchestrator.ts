@@ -227,6 +227,10 @@ export class ValidationOrchestrator {
       const projectCode = deal.custom_fields?.[customFieldKeys.projectCode] || '';
       const vesselName = deal.custom_fields?.[customFieldKeys.vesselName] || '';
       
+      // Trim whitespace from custom field values for validation
+      const trimmedProjectCode = projectCode.trim();
+      const trimmedVesselName = vesselName.trim();
+      
       // Build the expected title based on custom field values
       let expectedTitle = '';
       let titleHasIssue = false;
@@ -234,25 +238,26 @@ export class ValidationOrchestrator {
       
       // Only validate title format for won deals
       if (status === 'won' && projectCode && vesselName) {
+        
         // Check if this is an ED project
-        const isEDProject = projectCode.toUpperCase().startsWith('ED');
+        const isEDProject = trimmedProjectCode.toUpperCase().startsWith('ED');
         
         if (isEDProject) {
           // For ED projects, the format can be: projectCode-middlePart-vesselName
           // We need to check if the title matches the pattern
           
           // First check if it starts with the project code
-          if (deal.title?.startsWith(projectCode)) {
+          if (deal.title?.startsWith(trimmedProjectCode)) {
             // Remove the project code and the dash after it
-            const remainingAfterProjectCode = deal.title.substring(projectCode.length + 1);
+            const remainingAfterProjectCode = deal.title.substring(trimmedProjectCode.length + 1);
             
-            // Check if what remains ends with the vessel name
-            if (remainingAfterProjectCode === vesselName) {
+            // Check if what remains ends with the vessel name (trimmed)
+            if (remainingAfterProjectCode === trimmedVesselName) {
               // Standard format: projectCode-vesselName
               titleHasIssue = false;
-            } else if (remainingAfterProjectCode.endsWith(vesselName)) {
+            } else if (remainingAfterProjectCode.endsWith(trimmedVesselName)) {
               // Check if there's a middle part
-              const beforeVesselName = remainingAfterProjectCode.substring(0, remainingAfterProjectCode.length - vesselName.length);
+              const beforeVesselName = remainingAfterProjectCode.substring(0, remainingAfterProjectCode.length - trimmedVesselName.length);
               
               // The middle part should end with a dash
               if (beforeVesselName.endsWith('-')) {
@@ -260,22 +265,22 @@ export class ValidationOrchestrator {
                 titleHasIssue = false;
               } else {
                 titleHasIssue = true;
-                expectedTitle = `${projectCode}-[code]-${vesselName}`;
+                expectedTitle = `${trimmedProjectCode}-[code]-${trimmedVesselName}`;
                 issueDescription = `ED project title "${deal.title}" format issue - missing dash before vessel name`;
               }
             } else {
               titleHasIssue = true;
-              expectedTitle = `${projectCode}-[code]-${vesselName}`;
-              issueDescription = `ED project title "${deal.title}" does not match expected vessel name "${vesselName}"`;
+              expectedTitle = `${trimmedProjectCode}-[code]-${trimmedVesselName}`;
+              issueDescription = `ED project title "${deal.title}" does not match expected vessel name "${trimmedVesselName}"`;
             }
           } else {
             titleHasIssue = true;
-            expectedTitle = `${projectCode}-[code]-${vesselName}`;
-            issueDescription = `ED project title "${deal.title}" does not start with project code "${projectCode}"`;
+            expectedTitle = `${trimmedProjectCode}-[code]-${trimmedVesselName}`;
+            issueDescription = `ED project title "${deal.title}" does not start with project code "${trimmedProjectCode}"`;
           }
         } else {
           // Non-ED projects - standard format only
-          expectedTitle = `${projectCode}-${vesselName}`;
+          expectedTitle = `${trimmedProjectCode}-${trimmedVesselName}`;
           if (deal.title !== expectedTitle) {
             titleHasIssue = true;
             issueDescription = `Title "${deal.title}" does not match expected format "${expectedTitle}"`;
