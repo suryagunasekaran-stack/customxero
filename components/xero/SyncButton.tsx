@@ -652,35 +652,35 @@ export function SyncButton() {
                   <div className="text-xs text-gray-600 mt-1">Total Deals Validated</div>
                 </div>
                 <div className={`rounded-lg p-4 text-center border ${
-                  results.results.errorCount > 0 
+                  dealCounts.errors > 0 
                     ? 'bg-red-50 border-red-200' 
                     : 'bg-green-50 border-green-200'
                 }`}>
                   <div className={`text-2xl font-bold ${
-                    results.results.errorCount > 0 ? 'text-red-900' : 'text-green-900'
+                    dealCounts.errors > 0 ? 'text-red-900' : 'text-green-900'
                   }`}>
-                    {results.results.errorCount || 0}
+                    {dealCounts.errors || 0}
                   </div>
                   <div className={`text-xs mt-1 ${
-                    results.results.errorCount > 0 ? 'text-red-600' : 'text-green-600'
+                    dealCounts.errors > 0 ? 'text-red-600' : 'text-green-600'
                   }`}>
-                    Errors Found
+                    {dealCounts.errors === 1 ? 'Deal with Errors' : 'Deals with Errors'}
                   </div>
                 </div>
                 <div className={`rounded-lg p-4 text-center border ${
-                  results.results.warningCount > 0 
+                  dealCounts.warnings > 0 
                     ? 'bg-amber-50 border-amber-200' 
                     : 'bg-gray-50 border-gray-100'
                 }`}>
                   <div className={`text-2xl font-bold ${
-                    results.results.warningCount > 0 ? 'text-amber-900' : 'text-gray-900'
+                    dealCounts.warnings > 0 ? 'text-amber-900' : 'text-gray-900'
                   }`}>
-                    {results.results.warningCount || 0}
+                    {dealCounts.warnings || 0}
                   </div>
                   <div className={`text-xs mt-1 ${
-                    results.results.warningCount > 0 ? 'text-amber-600' : 'text-gray-600'
+                    dealCounts.warnings > 0 ? 'text-amber-600' : 'text-gray-600'
                   }`}>
-                    Warnings
+                    {dealCounts.warnings === 1 ? 'Deal with Warnings' : 'Deals with Warnings'}
                   </div>
                 </div>
               </div>
@@ -808,6 +808,43 @@ export function SyncButton() {
                     </div>
                   )}
                 </div>
+                
+                {/* Deal Titles Preview (shown when collapsed) */}
+                {!showDetails && issuesByDeal.size > 0 && (
+                  <div className="border-t border-gray-200 pt-3 mt-3">
+                    <div className="space-y-1">
+                      {Array.from(issuesByDeal.entries()).slice(0, 3).map(([dealKey, dealIssues]) => {
+                        const [dealId, dealTitle] = dealKey.split('-');
+                        const hasErrors = dealIssues.some((i: any) => i.severity === 'error');
+                        const hasWarnings = dealIssues.some((i: any) => i.severity === 'warning');
+                        
+                        return (
+                          <div key={dealKey} className="flex items-center gap-2 text-sm">
+                            <div className="flex-shrink-0">
+                              {hasErrors ? (
+                                <XCircleIcon className="h-4 w-4 text-red-500" />
+                              ) : hasWarnings ? (
+                                <ExclamationTriangleIcon className="h-4 w-4 text-amber-500" />
+                              ) : (
+                                <InformationCircleIcon className="h-4 w-4 text-blue-500" />
+                              )}
+                            </div>
+                            <span className="text-gray-700 truncate flex-1">
+                              {dealTitle !== 'Unknown' ? dealTitle : `Deal ${dealId}`}
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              hasErrors ? 'bg-red-100 text-red-700' : 
+                              hasWarnings ? 'bg-amber-100 text-amber-700' : 
+                              'bg-blue-100 text-blue-700'
+                            }`}>
+                              {dealIssues.length}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               
                 {/* Detailed Issues (shown when expanded) - Grouped by Deal */}
                 {showDetails && (
@@ -922,9 +959,9 @@ export function SyncButton() {
                 )}
                 
                 {/* Show More Message */}
-                {!showDetails && results.results.issues.length > 3 && (
+                {!showDetails && issuesByDeal.size > 3 && (
                   <div className="text-center text-sm text-gray-500 py-2 border-t border-gray-200 mt-3">
-                    Click "Show Details" to view all {issuesByDeal.size} affected {issuesByDeal.size === 1 ? 'deal' : 'deals'}
+                    ... and {issuesByDeal.size - 3} more {issuesByDeal.size - 3 === 1 ? 'deal' : 'deals'}. Click "Show Details" to view all.
                   </div>
                 )}
               </div>

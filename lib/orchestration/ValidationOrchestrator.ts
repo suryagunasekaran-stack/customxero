@@ -3,7 +3,7 @@
  */
 
 import { logger } from '../logger';
-import { fetchDealsFromMultiplePipelines } from '../utils/pipedriveHelpers';
+import { fetchDealsFromMultiplePipelines, fetchDealProducts } from '../utils/pipedriveHelpers';
 import { tenantConfigService, type TenantConfiguration } from '../services/tenantConfigService';
 
 // Simple types for now
@@ -70,6 +70,9 @@ export class ValidationOrchestrator {
         status: 'running'
       });
 
+      // Get the actual API key from environment variable
+      const apiKey = await tenantConfigService.getApiKey(tenantConfig);
+      
       const allDeals = await this.fetchWonDeals(tenantConfig);
       
       logger.info({ 
@@ -89,7 +92,7 @@ export class ValidationOrchestrator {
         status: 'running'
       });
 
-      const validationResults = await this.validateDeals(allDeals, tenantConfig);
+      const validationResults = await this.validateDeals(allDeals, tenantConfig, apiKey);
       
       logger.info({
         totalDeals: validationResults.totalDeals,
@@ -188,7 +191,7 @@ export class ValidationOrchestrator {
   /**
    * Validate deals based on pipeline rules
    */
-  private async validateDeals(deals: any[], config: TenantConfiguration): Promise<any> {
+  private async validateDeals(deals: any[], config: TenantConfiguration, apiKey: string): Promise<any> {
     const issues: any[] = [];
     let errorCount = 0;
     let warningCount = 0;
@@ -319,14 +322,14 @@ export class ValidationOrchestrator {
         // For Brightsun Marine tenant, validate all required custom fields are not null/empty
         // Validate all custom fields except invoiceId
         const requiredFields = [
-          { key: customFieldMappings.xeroQuoteId, name: 'Xero Quote ID' },
-          { key: customFieldMappings.vesselName, name: 'Vessel Name' },
-          { key: customFieldMappings.department, name: 'Department' },
-          { key: customFieldMappings.projectcode, name: 'Project Code' },
-          { key: customFieldMappings.woponumber, name: 'WO/PO Number' },
-          { key: customFieldMappings.location, name: 'Location' },
-          { key: customFieldMappings.salesincharge, name: 'Sales In Charge' },
-          { key: customFieldMappings.xeroquotenumber, name: 'Xero Quote Number' }
+          { key: customFieldMappings.xeroQuoteId, name: 'Xero Quote ID', severity: 'error' },
+          { key: customFieldMappings.xeroquotenumber, name: 'Xero Quote Number', severity: 'error' },
+          { key: customFieldMappings.projectcode, name: 'Project Code', severity: 'error' },
+          { key: customFieldMappings.vesselName, name: 'Vessel Name', severity: 'warning' },
+          { key: customFieldMappings.department, name: 'Department', severity: 'warning' },
+          { key: customFieldMappings.woponumber, name: 'WO/PO Number', severity: 'warning' },
+          { key: customFieldMappings.location, name: 'Location', severity: 'warning' },
+          { key: customFieldMappings.salesincharge, name: 'Sales In Charge', severity: 'warning' }
         ];
         
         for (const field of requiredFields) {
@@ -337,9 +340,12 @@ export class ValidationOrchestrator {
           
           const fieldValue = deal.custom_fields?.[field.key];
           if (!fieldValue || fieldValue === '' || fieldValue === null) {
+            // Determine severity based on field criticality
+            const severity = field.severity || 'warning';
+            
             const issue = {
               code: 'REQUIRED_FIELD_MISSING',
-              severity: 'warning' as const,
+              severity: severity as 'error' | 'warning',
               message: `Required field "${field.name}" is missing or empty`,
               dealId: deal.id,
               dealTitle: deal.title || deal.name,
@@ -454,6 +460,97 @@ export class ValidationOrchestrator {
         }, 'Open deal in pipeline that should only have closed deals');
       }
     }
+
+    // Product validation for won deals
+    this.notifyProgress({
+      id: 'validate_products',
+      status: 'running',
+      message: 'Validating products for won deals...',
+      details: { phase: 'products' }
+    });
+
+    // Get all won deals that need product validation
+    const wonDeals = deals.filter(deal => deal.status === 'won' && !validationRules.ignorePipelines.includes(deal.pipeline_id));
+    
+    if (wonDeals.length > 0) {
+      logger.info({ wonDealsCount: wonDeals.length }, 'Fetching products for won deals');
+      
+      try {
+        // Fetch products for all won deals using bulk API
+        const dealIds = wonDeals.map(deal => deal.id);
+        const dealProducts = await fetchDealProducts(
+          apiKey,
+          config.pipedrive.companyDomain,
+          dealIds
+        );
+        
+        // Validate each won deal has products
+        for (const deal of wonDeals) {
+          const products = dealProducts[deal.id] || [];
+          
+          if (products.length === 0) {
+            const issue = {
+              code: 'NO_PRODUCTS_IN_WON_DEAL',
+              severity: 'error' as const,
+              message: `Won deal has no products attached`,
+              dealId: deal.id,
+              dealTitle: deal.title || deal.name,
+              suggestedFix: `Add products to this won deal in Pipedrive`,
+              metadata: {
+                dealId: deal.id,
+                dealTitle: deal.title || deal.name,
+                dealValue: deal.value,
+                currency: deal.currency || 'SGD',
+                pipelineId: deal.pipeline_id,
+                status: deal.status
+              }
+            };
+            issues.push(issue);
+            errorCount++;
+            
+            logger.debug({
+              dealId: deal.id,
+              title: deal.title,
+              value: deal.value
+            }, 'Won deal missing products');
+          }
+        }
+        
+        logger.info({
+          wonDealsChecked: wonDeals.length,
+          dealsWithoutProducts: wonDeals.filter(d => !dealProducts[d.id] || dealProducts[d.id].length === 0).length
+        }, 'Product validation completed');
+        
+      } catch (error) {
+        logger.error({ 
+          error: error instanceof Error ? error.message : error 
+        }, 'Failed to fetch products for validation');
+        
+        // Add a warning issue if product validation fails
+        const issue = {
+          code: 'PRODUCT_VALIDATION_FAILED',
+          severity: 'warning' as const,
+          message: 'Unable to validate products for won deals',
+          suggestedFix: 'Product validation could not be completed. Please check manually.',
+          metadata: {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            wonDealsCount: wonDeals.length
+          }
+        };
+        issues.push(issue);
+        warningCount++;
+      }
+    }
+
+    this.notifyProgress({
+      id: 'validate_products',
+      status: 'completed',
+      message: 'Product validation completed',
+      details: { 
+        wonDealsChecked: wonDeals.length,
+        productsValidated: true
+      }
+    });
 
     // Log summary
     logger.info({

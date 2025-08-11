@@ -543,6 +543,111 @@ function extractCustomFields(deal: PipedriveDeal): Record<string, any> {
 }
 
 /**
+ * Fetches products associated with multiple deals
+ * 
+ * @description Retrieves product information for multiple deals by making individual
+ * API calls for each deal. Uses the standard Pipedrive v1 API endpoint for deal products.
+ * 
+ * @param {string} apiKey - The Pipedrive API token for authentication
+ * @param {string} companyDomain - The Pipedrive company domain
+ * @param {number[]} dealIds - Array of deal IDs to fetch products for
+ * @returns {Promise<Record<number, any[]>>} Map of deal ID to array of products
+ * 
+ * @example
+ * ```typescript
+ * const dealProducts = await fetchDealProducts('api-key', 'api', [1, 2, 3]);
+ * console.log(dealProducts[1]); // Products for deal ID 1
+ * ```
+ * 
+ * @since 1.0.0
+ */
+export async function fetchDealProducts(
+  apiKey: string,
+  companyDomain: string,
+  dealIds: number[]
+): Promise<Record<number, any[]>> {
+  const productsMap: Record<number, any[]> = {};
+  
+  // Process in smaller batches to avoid rate limiting
+  const batchSize = 10; // Process 10 deals at a time
+  
+  for (let i = 0; i < dealIds.length; i += batchSize) {
+    const batch = dealIds.slice(i, i + batchSize);
+    
+    // Fetch products for each deal in the batch concurrently
+    const batchPromises = batch.map(async (dealId) => {
+      try {
+        // Use the individual deal products endpoint
+        const url = buildPipedriveApiUrl(
+          companyDomain, 
+          `deals/${dealId}/products`, 
+          {
+            api_token: apiKey,
+            start: 0,
+            limit: 100
+          },
+          'v1'
+        );
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          logger.debug({ 
+            dealId,
+            status: response.status, 
+            statusText: response.statusText
+          }, 'Failed to fetch products for deal');
+          
+          productsMap[dealId] = [];
+          return;
+        }
+        
+        const data = await response.json();
+        
+        if (data.success && data.data) {
+          productsMap[dealId] = data.data;
+          
+          // Log if we found products
+          if (data.data.length > 0) {
+            logger.debug({ 
+              dealId,
+              productCount: data.data.length,
+              firstProduct: data.data[0]?.name || 'Unknown'
+            }, 'Found products for deal');
+          }
+        } else {
+          productsMap[dealId] = [];
+        }
+        
+      } catch (error) {
+        logger.error({ 
+          dealId,
+          error: error instanceof Error ? error.message : error
+        }, 'Error fetching products for deal');
+        
+        productsMap[dealId] = [];
+      }
+    });
+    
+    // Wait for all requests in the batch to complete
+    await Promise.all(batchPromises);
+    
+    logger.debug({ 
+      batchProcessed: batch.length,
+      totalProcessed: Math.min(i + batchSize, dealIds.length),
+      totalDeals: dealIds.length
+    }, 'Processed batch of deals for products');
+    
+    // Add delay between batches to respect rate limits
+    if (i + batchSize < dealIds.length) {
+      await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay between batches
+    }
+  }
+  
+  return productsMap;
+}
+
+/**
  * Fetches all available deal fields from Pipedrive to understand custom field structure
  * 
  * @param {string} apiKey - The Pipedrive API token for authentication
