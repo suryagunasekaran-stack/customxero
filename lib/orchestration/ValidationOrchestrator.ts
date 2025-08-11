@@ -209,9 +209,10 @@ export class ValidationOrchestrator {
     const customFieldMappings = config.pipedrive.customFieldMappings || {};
     
     // For BSENI tenant, 'ipc' field is used as projectCode
+    // For Brightsun Marine, 'projectCode' field is used
     const projectCodeField = config.tenantId === '6dd39ea4-e6a6-4993-a37a-21482ccf8d22' 
-      ? (customFieldMappings.ipc || customFieldMappings.projectCode)
-      : (customFieldMappings.projectCode || customFieldMappings.ipc);
+      ? (customFieldMappings.ipc || customFieldMappings.projectCode)  // BSENI uses 'ipc'
+      : (customFieldMappings.projectCode || customFieldMappings.ipc); // Brightsun uses 'projectCode'
     
     const vesselNameField = customFieldMappings.vesselName;
     
@@ -313,12 +314,12 @@ export class ValidationOrchestrator {
         expectedTitle = '(set project code and vessel name in custom fields)';
       }
       
-      // Check: Required custom fields validation for BSENI tenant (6dd39ea4)
-      if (config.tenantId === '6dd39ea4-e6a6-4993-a37a-21482ccf8d22' && status === 'won') {
-        // For BSENI tenant, validate all required custom fields are not null/empty
+      // Check: Required custom fields validation for Brightsun Marine tenant (ea67107e)
+      if (config.tenantId === 'ea67107e-c352-40a9-a8b8-24d81ae3fc85' && status === 'won') {
+        // For Brightsun Marine tenant, validate all required custom fields are not null/empty
         const requiredFields = [
-          { key: customFieldMappings.wopqNumber, name: 'WO/PQ Number' },
-          { key: customFieldMappings.ipc, name: 'IPC (Project Code)' },
+          { key: customFieldMappings.woNumber, name: 'WO Number' },
+          { key: customFieldMappings.projectCode || customFieldMappings.ipc, name: 'Project Code (IPC)' },
           { key: customFieldMappings.vesselName, name: 'Vessel Name' },
           { key: customFieldMappings.department, name: 'Department' },
           { key: customFieldMappings.location, name: 'Location' },
