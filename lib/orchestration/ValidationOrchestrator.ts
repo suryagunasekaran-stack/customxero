@@ -341,10 +341,12 @@ export class ValidationOrchestrator {
               code: 'REQUIRED_FIELD_MISSING',
               severity: 'warning' as const,
               message: `Required field "${field.name}" is missing or empty`,
+              dealId: deal.id,
+              dealTitle: deal.title || deal.name,
               suggestedFix: `Please fill in the ${field.name} field in Pipedrive`,
               metadata: {
                 dealId: deal.id,
-                dealTitle: deal.title,
+                dealTitle: deal.title || deal.name,
                 fieldName: field.name,
                 fieldKey: field.key,
                 pipelineId: pipelineId,
