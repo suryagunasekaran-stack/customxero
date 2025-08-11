@@ -339,7 +339,7 @@ export class ValidationOrchestrator {
           if (!fieldValue || fieldValue === '' || fieldValue === null) {
             const issue = {
               code: 'REQUIRED_FIELD_MISSING',
-              severity: 'error' as const,
+              severity: 'warning' as const,
               message: `Required field "${field.name}" is missing or empty`,
               suggestedFix: `Please fill in the ${field.name} field in Pipedrive`,
               metadata: {
@@ -354,7 +354,7 @@ export class ValidationOrchestrator {
               }
             };
             issues.push(issue);
-            errorCount++;
+            warningCount++;
             
             logger.debug({
               dealId: deal.id,
