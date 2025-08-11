@@ -335,9 +335,7 @@ export class ValidationOrchestrator {
             continue;
           }
           
-          // Handle potential typo in MongoDB (extra quote at end of field key)
-          const fieldKey = field.key.replace(/"+$/, '');
-          const fieldValue = deal.custom_fields?.[fieldKey];
+          const fieldValue = deal.custom_fields?.[field.key];
           if (!fieldValue || fieldValue === '' || fieldValue === null) {
             const issue = {
               code: 'REQUIRED_FIELD_MISSING',
@@ -348,7 +346,7 @@ export class ValidationOrchestrator {
                 dealId: deal.id,
                 dealTitle: deal.title,
                 fieldName: field.name,
-                fieldKey: fieldKey,
+                fieldKey: field.key,
                 pipelineId: pipelineId,
                 status: status,
                 dealValue: deal.value,
