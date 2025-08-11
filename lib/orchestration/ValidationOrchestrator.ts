@@ -209,10 +209,10 @@ export class ValidationOrchestrator {
     const customFieldMappings = config.pipedrive.customFieldMappings || {};
     
     // For BSENI tenant, 'ipc' field is used as projectCode
-    // For Brightsun Marine, 'projectCode' field is used
+    // For Brightsun Marine, 'projectcode' field is used (lowercase in DB)
     const projectCodeField = config.tenantId === '6dd39ea4-e6a6-4993-a37a-21482ccf8d22' 
       ? (customFieldMappings.ipc || customFieldMappings.projectCode)  // BSENI uses 'ipc'
-      : (customFieldMappings.projectCode || customFieldMappings.ipc); // Brightsun uses 'projectCode'
+      : (customFieldMappings.projectcode || customFieldMappings.projectCode); // Brightsun uses 'projectcode' (lowercase)
     
     const vesselNameField = customFieldMappings.vesselName;
     
@@ -317,13 +317,16 @@ export class ValidationOrchestrator {
       // Check: Required custom fields validation for Brightsun Marine tenant (ea67107e)
       if (config.tenantId === 'ea67107e-c352-40a9-a8b8-24d81ae3fc85' && status === 'won') {
         // For Brightsun Marine tenant, validate all required custom fields are not null/empty
+        // Validate all custom fields except invoiceId
         const requiredFields = [
-          { key: customFieldMappings.woNumber, name: 'WO Number' },
-          { key: customFieldMappings.projectCode || customFieldMappings.ipc, name: 'Project Code (IPC)' },
+          { key: customFieldMappings.xeroQuoteId, name: 'Xero Quote ID' },
           { key: customFieldMappings.vesselName, name: 'Vessel Name' },
           { key: customFieldMappings.department, name: 'Department' },
+          { key: customFieldMappings.projectcode, name: 'Project Code' },
+          { key: customFieldMappings.woponumber, name: 'WO/PO Number' },
           { key: customFieldMappings.location, name: 'Location' },
-          { key: customFieldMappings.personInCharge, name: 'Person In Charge' }
+          { key: customFieldMappings.salesincharge, name: 'Sales In Charge' },
+          { key: customFieldMappings.xeroquotenumber, name: 'Xero Quote Number' }
         ];
         
         for (const field of requiredFields) {
@@ -332,7 +335,9 @@ export class ValidationOrchestrator {
             continue;
           }
           
-          const fieldValue = deal.custom_fields?.[field.key];
+          // Handle potential typo in MongoDB (extra quote at end of field key)
+          const fieldKey = field.key.replace(/"+$/, '');
+          const fieldValue = deal.custom_fields?.[fieldKey];
           if (!fieldValue || fieldValue === '' || fieldValue === null) {
             const issue = {
               code: 'REQUIRED_FIELD_MISSING',
@@ -343,7 +348,7 @@ export class ValidationOrchestrator {
                 dealId: deal.id,
                 dealTitle: deal.title,
                 fieldName: field.name,
-                fieldKey: field.key,
+                fieldKey: fieldKey,
                 pipelineId: pipelineId,
                 status: status,
                 dealValue: deal.value,
