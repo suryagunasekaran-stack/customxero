@@ -401,6 +401,50 @@ export function SyncButton() {
   };
   
   /**
+   * Groups validation issues by deal for cleaner UI display
+   * 
+   * @returns {Map<string, any[]>} Map of deal ID to array of issues for that deal
+   */
+  const issuesByDeal = useMemo(() => {
+    if (!results?.results?.issues) return new Map();
+    
+    const dealMap = new Map<string, any[]>();
+    
+    results.results.issues.forEach(issue => {
+      const dealId = issue.dealId || issue.metadata?.dealId || 'no-deal';
+      const dealKey = `${dealId}-${issue.dealTitle || issue.metadata?.dealTitle || 'Unknown'}`;
+      
+      if (!dealMap.has(dealKey)) {
+        dealMap.set(dealKey, []);
+      }
+      dealMap.get(dealKey)!.push(issue);
+    });
+    
+    return dealMap;
+  }, [results]);
+  
+  /**
+   * Counts unique deals with issues for each severity level
+   * 
+   * @returns {Object} Object with error/warning/info counts by unique deals
+   */
+  const dealCounts = useMemo(() => {
+    const counts = { errors: 0, warnings: 0, info: 0 };
+    
+    issuesByDeal.forEach((issues) => {
+      const hasError = issues.some((i: any) => i.severity === 'error');
+      const hasWarning = issues.some((i: any) => i.severity === 'warning');
+      const hasInfo = issues.some((i: any) => i.severity === 'info');
+      
+      if (hasError) counts.errors++;
+      else if (hasWarning) counts.warnings++;
+      else if (hasInfo) counts.info++;
+    });
+    
+    return counts;
+  }, [issuesByDeal]);
+  
+  /**
    * Returns appropriate icon component based on validation step status
    * 
    * @param {string} status - The current status of the validation step
@@ -734,33 +778,115 @@ export function SyncButton() {
           {results.results.issues?.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
               <div className="p-6">
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">Issues Found</h3>
+                <h3 className="text-xl font-semibold text-gray-900 mb-4">
+                  Issues Found ({issuesByDeal.size} {issuesByDeal.size === 1 ? 'Deal' : 'Deals'})
+                </h3>
               
                 <div className="flex gap-4 mb-4">
-                  {results.results.errorCount > 0 && (
+                  {dealCounts.errors > 0 && (
                     <div className="flex items-center gap-2">
                       <XCircleIcon className="h-4 w-4 text-red-500" />
-                      <span className="text-sm text-gray-900">{results.results.errorCount} Errors</span>
+                      <span className="text-sm text-gray-900">
+                        {dealCounts.errors} {dealCounts.errors === 1 ? 'Deal' : 'Deals'} with Errors
+                      </span>
                     </div>
                   )}
-                  {results.results.warningCount > 0 && (
+                  {dealCounts.warnings > 0 && (
                     <div className="flex items-center gap-2">
                       <ExclamationTriangleIcon className="h-4 w-4 text-amber-500" />
-                      <span className="text-sm text-gray-900">{results.results.warningCount} Warnings</span>
+                      <span className="text-sm text-gray-900">
+                        {dealCounts.warnings} {dealCounts.warnings === 1 ? 'Deal' : 'Deals'} with Warnings
+                      </span>
+                    </div>
+                  )}
+                  {dealCounts.info > 0 && (
+                    <div className="flex items-center gap-2">
+                      <InformationCircleIcon className="h-4 w-4 text-blue-500" />
+                      <span className="text-sm text-gray-900">
+                        {dealCounts.info} {dealCounts.info === 1 ? 'Deal' : 'Deals'} with Info
+                      </span>
                     </div>
                   )}
                 </div>
               
-                {/* Detailed Issues (shown when expanded) */}
+                {/* Detailed Issues (shown when expanded) - Grouped by Deal */}
                 {showDetails && (
                   <div className="space-y-4 max-h-96 overflow-y-auto border-t border-gray-200 pt-4">
-                    {/* Orphaned Accepted Quotes Section */}
-                    {results.results.issues.filter(issue => issue.code === 'ORPHANED_ACCEPTED_QUOTE').length > 0 && (
+                    {/* Issues Grouped by Deal */}
+                    {Array.from(issuesByDeal.entries()).map(([dealKey, dealIssues], dealIndex) => {
+                      const [dealId, dealTitle] = dealKey.split('-');
+                      const hasErrors = dealIssues.some((i: any) => i.severity === 'error');
+                      const hasWarnings = dealIssues.some((i: any) => i.severity === 'warning');
+                      
+                      return (
+                        <div key={dealKey} className="mb-4">
+                          <div className={`rounded-lg border ${
+                            hasErrors ? 'border-red-200 bg-red-50' : 
+                            hasWarnings ? 'border-amber-200 bg-amber-50' : 
+                            'border-blue-200 bg-blue-50'
+                          }`}>
+                            <div className="p-3 border-b border-gray-200 bg-white bg-opacity-50">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <h4 className="text-sm font-semibold text-gray-900">
+                                    {dealTitle !== 'Unknown' ? dealTitle : `Deal ${dealId}`}
+                                  </h4>
+                                  {dealId !== 'no-deal' && (
+                                    <span className="text-xs text-gray-500">ID: {dealId}</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                                    hasErrors ? 'bg-red-100 text-red-700' : 
+                                    hasWarnings ? 'bg-amber-100 text-amber-700' : 
+                                    'bg-blue-100 text-blue-700'
+                                  }`}>
+                                    {dealIssues.length} {dealIssues.length === 1 ? 'Issue' : 'Issues'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="p-3 space-y-2">
+                              {dealIssues.map((issue: any, issueIndex: number) => (
+                                <div key={`${dealKey}-issue-${issueIndex}`} className="flex gap-3 text-sm">
+                                  <div className="flex-shrink-0 mt-0.5">
+                                    {getSeverityIcon(issue.severity)}
+                                  </div>
+                                  <div className="flex-1">
+                                    <div className="font-medium text-gray-900">
+                                      {issue.message}
+                                    </div>
+                                    {issue.suggestedFix && (
+                                      <div className="text-xs text-green-700 mt-1">
+                                        Suggestion: {issue.suggestedFix}
+                                      </div>
+                                    )}
+                                    {issue.metadata && (
+                                      <div className="text-xs text-gray-600 mt-1">
+                                        {issue.metadata.projectCode && (
+                                          <span>Project: {issue.metadata.projectCode} | </span>
+                                        )}
+                                        {issue.metadata.vesselName && (
+                                          <span>Vessel: {issue.metadata.vesselName}</span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    
+                    {/* Orphaned Accepted Quotes Section (no deal associated) */}
+                    {results.results.issues.filter(issue => issue.code === 'ORPHANED_ACCEPTED_QUOTE' && !issue.dealId && !issue.metadata?.dealId).length > 0 && (
                       <div className="mb-4">
                         <h4 className="text-sm font-semibold text-gray-700 mb-2">Orphaned Accepted Quotes (No Deal Link)</h4>
                         <div className="space-y-2">
                           {results.results.issues
-                            .filter(issue => issue.code === 'ORPHANED_ACCEPTED_QUOTE')
+                            .filter(issue => issue.code === 'ORPHANED_ACCEPTED_QUOTE' && !issue.dealId && !issue.metadata?.dealId)
                             .map((issue, i) => (
                               <div key={`orphaned-${i}`} className="flex gap-3 p-3 bg-yellow-50 rounded-lg text-sm border border-yellow-200">
                                 <div className="flex-shrink-0 mt-0.5">
@@ -792,229 +918,13 @@ export function SyncButton() {
                         </div>
                       </div>
                     )}
-                    
-                    {/* Quotes Referencing Missing Deals */}
-                    {results.results.issues.filter(issue => issue.code === 'QUOTE_REFERENCES_MISSING_DEAL').length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Quotes Referencing Missing/Different Pipeline Deals</h4>
-                        <div className="space-y-2">
-                          {results.results.issues
-                            .filter(issue => issue.code === 'QUOTE_REFERENCES_MISSING_DEAL')
-                            .map((issue, i) => (
-                              <div key={`missing-deal-${i}`} className="flex gap-3 p-3 bg-red-50 rounded-lg text-sm border border-red-200">
-                                <div className="flex-shrink-0 mt-0.5">
-                                  <XCircleIcon className="h-4 w-4 text-red-500" />
-                                </div>
-                                <div className="flex-1">
-                                  <div className="font-medium text-gray-900">
-                                    {issue.metadata?.quoteNumber || 'Unknown Quote'}
-                                    {issue.metadata?.contactName && (
-                                      <span className="text-gray-600"> - {issue.metadata.contactName}</span>
-                                    )}
-                                  </div>
-                                  <div className="text-xs text-red-600 mt-1">
-                                    References Deal ID: {issue.metadata?.referencedDealId}
-                                  </div>
-                                  {issue.metadata?.quoteTotal && (
-                                    <div className="text-xs text-gray-700 mt-1">
-                                      Value: SGD {issue.metadata.quoteTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </div>
-                                  )}
-                                  <div className="text-xs text-red-700 mt-1">
-                                    {issue.suggestedFix}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Invalid Quote Format Section */}
-                    {results.results.issues.filter(issue => issue.code === 'ACCEPTED_QUOTE_INVALID_FORMAT').length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Accepted Quotes with Invalid Format</h4>
-                        <div className="space-y-2">
-                          {results.results.issues
-                            .filter(issue => issue.code === 'ACCEPTED_QUOTE_INVALID_FORMAT')
-                            .map((issue, i) => (
-                              <div key={`invalid-format-${i}`} className="flex gap-3 p-3 bg-red-50 rounded-lg text-sm border border-red-200">
-                                <div className="flex-shrink-0 mt-0.5">
-                                  <XCircleIcon className="h-4 w-4 text-red-500" />
-                                </div>
-                                <div className="flex-1">
-                                  <div className="font-medium text-gray-900">
-                                    {issue.metadata?.quoteNumber || 'Unknown Quote'}
-                                    {issue.metadata?.contactName && (
-                                      <span className="text-gray-600"> - {issue.metadata.contactName}</span>
-                                    )}
-                                  </div>
-                                  {issue.metadata?.quoteTotal && (
-                                    <div className="text-xs text-gray-700 mt-1">
-                                      Value: SGD {issue.metadata.quoteTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </div>
-                                  )}
-                                  <div className="text-xs text-red-600 mt-1">
-                                    Current format: {issue.metadata?.currentFormat}
-                                  </div>
-                                  <div className="text-xs text-green-700 mt-1">
-                                    {issue.suggestedFix}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Pipeline Validation Issues - Won Deals in Unqualified Pipeline */}
-                    {results.results.issues.filter(issue => issue.code === 'WON_DEAL_IN_UNQUALIFIED_PIPELINE').length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Won Deals in Unqualified Pipeline</h4>
-                        <div className="space-y-2">
-                          {results.results.issues
-                            .filter(issue => issue.code === 'WON_DEAL_IN_UNQUALIFIED_PIPELINE')
-                            .map((issue, i) => (
-                              <div key={`won-unqualified-${i}`} className="flex gap-3 p-3 bg-red-50 rounded-lg text-sm border border-red-200">
-                                <div className="flex-shrink-0 mt-0.5">
-                                  <XCircleIcon className="h-4 w-4 text-red-500" />
-                                </div>
-                                <div className="flex-1">
-                                  <div className="font-medium text-gray-900">
-                                    {issue.metadata?.dealTitle || issue.message}
-                                  </div>
-                                  {issue.metadata?.dealValue && (
-                                    <div className="text-xs text-gray-700 mt-1">
-                                      Value: {issue.metadata.currency} {issue.metadata.dealValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </div>
-                                  )}
-                                  <div className="text-xs text-gray-600 mt-1">
-                                    Pipeline ID: {issue.metadata?.pipelineId} | Status: {issue.metadata?.status}
-                                  </div>
-                                  <div className="text-xs text-red-700 mt-1">
-                                    {issue.suggestedFix}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Pipeline Validation Issues - Open Deals in Wrong Pipeline */}
-                    {results.results.issues.filter(issue => issue.code === 'OPEN_DEAL_IN_WRONG_PIPELINE').length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Open Deals in Closed-Only Pipelines</h4>
-                        <div className="space-y-2">
-                          {results.results.issues
-                            .filter(issue => issue.code === 'OPEN_DEAL_IN_WRONG_PIPELINE')
-                            .map((issue, i) => (
-                              <div key={`open-wrong-${i}`} className="flex gap-3 p-3 bg-amber-50 rounded-lg text-sm border border-amber-200">
-                                <div className="flex-shrink-0 mt-0.5">
-                                  <ExclamationTriangleIcon className="h-4 w-4 text-amber-500" />
-                                </div>
-                                <div className="flex-1">
-                                  <div className="font-medium text-gray-900">
-                                    {issue.metadata?.dealTitle || issue.message}
-                                  </div>
-                                  {issue.metadata?.dealValue && (
-                                    <div className="text-xs text-gray-700 mt-1">
-                                      Value: {issue.metadata.currency} {issue.metadata.dealValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </div>
-                                  )}
-                                  <div className="text-xs text-gray-600 mt-1">
-                                    Pipeline ID: {issue.metadata?.pipelineId} | Status: {issue.metadata?.status}
-                                  </div>
-                                  <div className="text-xs text-amber-700 mt-1">
-                                    {issue.suggestedFix}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Title Format Validation Issues */}
-                    {results.results.issues.filter(issue => issue.code === 'INVALID_TITLE_FORMAT').length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Invalid Title Format</h4>
-                        <div className="space-y-2">
-                          {results.results.issues
-                            .filter(issue => issue.code === 'INVALID_TITLE_FORMAT')
-                            .map((issue, i) => (
-                              <div key={`title-format-${i}`} className="flex gap-3 p-3 bg-yellow-50 rounded-lg text-sm border border-yellow-200">
-                                <div className="flex-shrink-0 mt-0.5">
-                                  <ExclamationTriangleIcon className="h-4 w-4 text-yellow-500" />
-                                </div>
-                                <div className="flex-1">
-                                  <div className="font-medium text-gray-900">
-                                    Current: "{issue.metadata?.dealTitle}"
-                                  </div>
-                                  <div className="text-xs text-gray-600 mt-1">
-                                    Expected: "{issue.metadata?.expectedTitle}"
-                                  </div>
-                                  <div className="text-xs text-gray-500 mt-1">
-                                    Project Code: {issue.metadata?.projectCode} | Vessel: {issue.metadata?.vesselName}
-                                  </div>
-                                  <div className="text-xs text-yellow-700 mt-1">
-                                    {issue.suggestedFix}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Other Issues */}
-                    {results.results.issues.filter(issue => 
-                      issue.code !== 'ORPHANED_ACCEPTED_QUOTE' && 
-                      issue.code !== 'ACCEPTED_QUOTE_INVALID_FORMAT' &&
-                      issue.code !== 'QUOTE_REFERENCES_MISSING_DEAL' &&
-                      issue.code !== 'WON_DEAL_IN_UNQUALIFIED_PIPELINE' &&
-                      issue.code !== 'OPEN_DEAL_IN_WRONG_PIPELINE' &&
-                      issue.code !== 'INVALID_TITLE_FORMAT'
-                    ).length > 0 && (
-                      <div>
-                        <h4 className="text-sm font-semibold text-gray-700 mb-2">Other Issues</h4>
-                        <div className="space-y-2">
-                          {results.results.issues
-                            .filter(issue => 
-                              issue.code !== 'ORPHANED_ACCEPTED_QUOTE' && 
-                              issue.code !== 'ACCEPTED_QUOTE_INVALID_FORMAT' &&
-                              issue.code !== 'QUOTE_REFERENCES_MISSING_DEAL' &&
-                              issue.code !== 'WON_DEAL_IN_UNQUALIFIED_PIPELINE' &&
-                              issue.code !== 'OPEN_DEAL_IN_WRONG_PIPELINE' &&
-                              issue.code !== 'INVALID_TITLE_FORMAT'
-                            )
-                            .slice(0, 30)
-                            .map((issue, i) => (
-                              <div key={`other-${i}`} className="flex gap-3 p-3 bg-gray-50 rounded-lg text-sm">
-                                <div className="flex-shrink-0 mt-0.5">
-                                  {getSeverityIcon(issue.severity)}
-                                </div>
-                                <div className="flex-1">
-                                  <div className="font-medium text-gray-900">{issue.message}</div>
-                                  {issue.dealTitle && (
-                                    <div className="text-xs text-gray-600 mt-1">Deal: {issue.dealTitle}</div>
-                                  )}
-                                  {issue.suggestedFix && (
-                                    <div className="text-xs text-green-700 mt-1">
-                                      Suggestion: {issue.suggestedFix}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-                    )}
-                    {results.results.issues.length > 50 && (
-                      <div className="text-center text-sm text-gray-500 py-2">
-                        ... and {results.results.issues.length - 50} more issues
-                      </div>
-                    )}
+                  </div>
+                )}
+                
+                {/* Show More Message */}
+                {!showDetails && results.results.issues.length > 3 && (
+                  <div className="text-center text-sm text-gray-500 py-2 border-t border-gray-200 mt-3">
+                    Click "Show Details" to view all {issuesByDeal.size} affected {issuesByDeal.size === 1 ? 'deal' : 'deals'}
                   </div>
                 )}
               </div>
