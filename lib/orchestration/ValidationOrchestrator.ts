@@ -167,8 +167,16 @@ export class ValidationOrchestrator {
         'open'
       );
       
+      // Fetch lost deals for Xero quote status validation
+      const lostDeals = await fetchDealsFromMultiplePipelines(
+        apiKey,
+        config.pipedrive.companyDomain,
+        allPipelineIds,
+        'lost'
+      );
+      
       // Combine all deals
-      const deals = [...wonDeals, ...openDeals];
+      const deals = [...wonDeals, ...openDeals, ...lostDeals];
 
       logger.info({ 
         dealCount: deals.length,
@@ -267,38 +275,49 @@ export class ValidationOrchestrator {
         
         if (isEDProject) {
           // ED project title formats supported:
-          // 1. Standard: "projectCode-vesselName" (e.g., "ED001-VESSEL_A")
-          // 2. Extended: "projectCode-middlePart-vesselName" (e.g., "ED001-DESC-VESSEL_A")
+          // 1. Standard: "projectCode-vesselName" or "projectCode - vesselName"
+          // 2. Extended: "projectCode-middlePart-vesselName" or with spaces around dashes
           // This flexibility accommodates engineering project naming conventions
           
           // First check if it starts with the project code
           if (deal.title?.startsWith(trimmedProjectCode)) {
-            // Remove the project code and the dash after it
-            const remainingAfterProjectCode = deal.title.substring(trimmedProjectCode.length + 1);
-            
-            // Check if what remains ends with the vessel name (trimmed)
-            if (remainingAfterProjectCode === trimmedVesselName) {
-              // Standard format: projectCode-vesselName
-              titleHasIssue = false;
-            } else if (remainingAfterProjectCode.endsWith(trimmedVesselName)) {
-              // MIDDLE PART VALIDATION for ED projects
-              // Extract the middle portion to validate proper dash formatting
-              const beforeVesselName = remainingAfterProjectCode.substring(0, remainingAfterProjectCode.length - trimmedVesselName.length);
-              
-              // The middle part must end with a dash to separate from vessel name
-              // This ensures consistent formatting: "ED001-DESCRIPTION-VESSEL"
-              if (beforeVesselName.endsWith('-')) {
-                // Valid ED format: projectCode-middlePart-vesselName
-                titleHasIssue = false;
-              } else {
-                titleHasIssue = true;
-                expectedTitle = `${trimmedProjectCode}-[code]-${trimmedVesselName}`;
-                issueDescription = `ED project title "${deal.title}" format issue - missing dash before vessel name`;
-              }
+            // Handle both dash formats (with or without spaces)
+            let remainingAfterProjectCode = '';
+            if (deal.title.substring(trimmedProjectCode.length, trimmedProjectCode.length + 3) === ' - ') {
+              // Format with spaces: "projectCode - remaining"
+              remainingAfterProjectCode = deal.title.substring(trimmedProjectCode.length + 3);
+            } else if (deal.title.substring(trimmedProjectCode.length, trimmedProjectCode.length + 1) === '-') {
+              // Format without spaces: "projectCode-remaining"
+              remainingAfterProjectCode = deal.title.substring(trimmedProjectCode.length + 1);
             } else {
               titleHasIssue = true;
               expectedTitle = `${trimmedProjectCode}-[code]-${trimmedVesselName}`;
-              issueDescription = `ED project title "${deal.title}" does not match expected vessel name "${trimmedVesselName}"`;
+              issueDescription = `ED project title "${deal.title}" has invalid separator after project code`;
+            }
+            
+            if (!titleHasIssue) {
+              // Check if what remains is exactly the vessel name
+              if (remainingAfterProjectCode === trimmedVesselName) {
+                // Standard format: projectCode-vesselName or projectCode - vesselName
+                titleHasIssue = false;
+              } else if (remainingAfterProjectCode.endsWith(trimmedVesselName)) {
+                // Extended format with middle part
+                const beforeVesselName = remainingAfterProjectCode.substring(0, remainingAfterProjectCode.length - trimmedVesselName.length);
+                
+                // The middle part must end with a dash (with or without spaces) to separate from vessel name
+                if (beforeVesselName.endsWith('-') || beforeVesselName.endsWith(' - ')) {
+                  // Valid ED format: projectCode-middlePart-vesselName (with or without spaces)
+                  titleHasIssue = false;
+                } else {
+                  titleHasIssue = true;
+                  expectedTitle = `${trimmedProjectCode}-[code]-${trimmedVesselName}`;
+                  issueDescription = `ED project title "${deal.title}" format issue - missing dash before vessel name`;
+                }
+              } else {
+                titleHasIssue = true;
+                expectedTitle = `${trimmedProjectCode}-[code]-${trimmedVesselName}`;
+                issueDescription = `ED project title "${deal.title}" does not match expected vessel name "${trimmedVesselName}"`;
+              }
             }
           } else {
             titleHasIssue = true;
@@ -307,12 +326,17 @@ export class ValidationOrchestrator {
           }
         } else {
           // STANDARD PROJECT TITLE VALIDATION
-          // Non-ED projects must follow strict "ProjectCode-VesselName" format
-          // This ensures consistency for regular project naming conventions
-          expectedTitle = `${trimmedProjectCode}-${trimmedVesselName}`;
-          if (deal.title !== expectedTitle) {
+          // Allow both "ProjectCode-VesselName" and "ProjectCode - VesselName" formats
+          // Some tenants use spaces around the dash for better readability
+          const expectedTitleNoSpaces = `${trimmedProjectCode}-${trimmedVesselName}`;
+          const expectedTitleWithSpaces = `${trimmedProjectCode} - ${trimmedVesselName}`;
+          
+          // Accept both formats as valid
+          if (deal.title !== expectedTitleNoSpaces && deal.title !== expectedTitleWithSpaces) {
             titleHasIssue = true;
-            issueDescription = `Title "${deal.title}" does not match expected format "${expectedTitle}"`;
+            // Use the no-spaces format as the canonical expected format
+            expectedTitle = expectedTitleNoSpaces;
+            issueDescription = `Title "${deal.title}" does not match expected format "${expectedTitle}" or "${expectedTitleWithSpaces}"`;
           }
         }
       } else if (status === 'won' && (projectCode || vesselName)) {
@@ -331,7 +355,7 @@ export class ValidationOrchestrator {
         expectedTitle = '(set project code and vessel name in custom fields)';
       }
       
-      // Check: Required custom fields validation for Brightsun Marine tenant (ea67107e)
+      // Check: Required custom fields validation for Brightsun Marine tenant only
       if (config.tenantId === 'ea67107e-c352-40a9-a8b8-24d81ae3fc85' && status === 'won') {
         // For Brightsun Marine tenant, validate all required custom fields are not null/empty
         // Validate all custom fields except invoiceId
@@ -486,6 +510,9 @@ export class ValidationOrchestrator {
     // Get all won deals that need product validation
     const wonDeals = deals.filter(deal => deal.status === 'won' && !validationRules.ignorePipelines.includes(deal.pipeline_id));
     
+    // Get all lost deals for Xero quote validation
+    const lostDeals = deals.filter(deal => deal.status === 'lost' && !validationRules.ignorePipelines.includes(deal.pipeline_id));
+    
     if (wonDeals.length > 0) {
       logger.info({ wonDealsCount: wonDeals.length }, 'Fetching products for won deals');
       
@@ -567,21 +594,24 @@ export class ValidationOrchestrator {
       }
     });
 
-    // XERO QUOTE VALIDATION - Brightsun Marine Tenant Only
-    // This validation step is specifically designed for the Brightsun Marine tenant
-    // (ea67107e-c352-40a9-a8b8-24d81ae3fc85) which requires strict quote-to-deal consistency
-    if (config.tenantId === 'ea67107e-c352-40a9-a8b8-24d81ae3fc85') {
+    // XERO QUOTE VALIDATION - Enabled for both Brightsun Marine and BSENI tenants
+    // This validation step ensures strict quote-to-deal consistency across both organizations
+    const isXeroValidationTenant = config.tenantId === 'ea67107e-c352-40a9-a8b8-24d81ae3fc85' || // Brightsun Marine
+                                   config.tenantId === '6dd39ea4-e6a6-4993-a37a-21482ccf8d22';   // BSENI
+    
+    if (isXeroValidationTenant) {
       this.notifyProgress({
         id: 'validate_xero_quotes',
         name: 'Validating Xero Quotes',
-        description: 'Checking Xero quote data against Pipedrive deals',
+        description: 'Checking Xero quote data against won and lost Pipedrive deals',
         status: 'running'
       });
 
       try {
-        // Execute comprehensive Xero quote validation against won deals
-        // This performs 6 validation rules covering existence, consistency, and business logic
-        const xeroValidationResults = await this.validateXeroQuotes(wonDeals, config);
+        // Execute comprehensive Xero quote validation against won and lost deals
+        // This performs validation rules covering existence, consistency, status alignment, and business logic
+        const dealsForXeroValidation = [...wonDeals, ...lostDeals];
+        const xeroValidationResults = await this.validateXeroQuotes(dealsForXeroValidation, config);
         
         // Add Xero validation issues to the main issues list
         issues.push(...xeroValidationResults.issues);
@@ -662,16 +692,16 @@ export class ValidationOrchestrator {
   }
 
   /**
-   * Validates Xero quotes against Pipedrive won deals for data consistency and business rule compliance.
+   * Validates Xero quotes against Pipedrive deals for data consistency and business rule compliance.
    * 
    * This method performs comprehensive validation of Xero quotes against their corresponding Pipedrive deals,
    * ensuring data integrity across both systems. It checks for quote existence, reference format compliance,
-   * contact matching, value alignment, and status consistency.
+   * contact matching, value alignment, and status consistency for both won and lost deals.
    * 
    * @description Validates Xero quotes against Pipedrive deals to ensure data consistency across systems.
-   * Only executed for the Brightsun Marine tenant (ea67107e-c352-40a9-a8b8-24d81ae3fc85).
+   * Executed for both Brightsun Marine and BSENI tenants.
    * 
-   * @param wonDeals - Array of won deals from Pipedrive that need Xero quote validation
+   * @param deals - Array of deals (won and lost) from Pipedrive that need Xero quote validation
    * @param config - Tenant configuration containing custom field mappings and validation rules
    * 
    * @returns Promise resolving to validation results containing:
@@ -699,14 +729,15 @@ export class ValidationOrchestrator {
    * 3. **Reference Format**: Validates quote reference follows "Pipedrive deal id : {dealId}" format
    * 4. **Contact Matching**: Compares Xero quote contact name with Pipedrive organization name
    * 5. **Value Alignment**: Checks that quote total matches deal value (allowing 0.01 rounding tolerance)
-   * 6. **Status Consistency**: Ensures won deals have ACCEPTED quotes in Xero
+   * 6. **Won Deal Status**: Ensures won deals have ACCEPTED quotes in Xero
+   * 7. **Lost Deal Status**: Ensures lost deals have DECLINED quotes in Xero
    * 
    * Error Severity Levels:
    * - **ERROR**: Critical issues requiring immediate attention (missing quotes, value mismatches, status issues)
    * - **WARNING**: Data inconsistencies that should be reviewed (reference format, contact mismatches)
    */
   private async validateXeroQuotes(
-    wonDeals: any[],
+    deals: any[],
     config: TenantConfiguration
   ): Promise<{ issues: any[]; errorCount: number; warningCount: number; quotesChecked: number }> {
     const issues: any[] = [];
@@ -721,7 +752,9 @@ export class ValidationOrchestrator {
       
       logger.info({ 
         tenantId: effective_tenant_id,
-        wonDealsCount: wonDeals.length 
+        totalDealsCount: deals.length,
+        wonDeals: deals.filter(d => d.status === 'won').length,
+        lostDeals: deals.filter(d => d.status === 'lost').length
       }, 'Starting Xero quote validation');
 
       // Fetch all quotes from Xero using the authenticated tenant
@@ -754,9 +787,9 @@ export class ValidationOrchestrator {
       const xeroQuoteIdField = customFieldMappings.xeroQuoteId;
       const xeroQuoteNumberField = customFieldMappings.xeroquotenumber;
 
-      // Validate each won deal against its corresponding Xero quote
+      // Validate each deal (won or lost) against its corresponding Xero quote
       // Process each deal individually to provide detailed validation feedback
-      for (const deal of wonDeals) {
+      for (const deal of deals) {
         quotesChecked++;
         
         // Extract Xero quote identifiers from Pipedrive custom fields
@@ -842,9 +875,13 @@ export class ValidationOrchestrator {
 
         // VALIDATION RULE 3: Reference Format Compliance
         // Ensures quote references follow standardized format for traceability
-        // Format: "Pipedrive deal id : {dealId}" enables bidirectional linking
-        const expectedReference = `Pipedrive deal id : ${deal.id}`;
-        if (matchedQuote.Reference !== expectedReference) {
+        // Accepts multiple formats: "Pipedrive deal id : {dealId}" or "Pipedrive Deal ID: {dealId}"
+        // The validation is now case-insensitive and flexible with spacing around the colon
+        const referencePattern = new RegExp(`^Pipedrive\\s+(deal\\s+)?id\\s*:\\s*${deal.id}$`, 'i');
+        const isReferenceValid = matchedQuote.Reference && referencePattern.test(matchedQuote.Reference);
+        
+        if (!isReferenceValid) {
+          const expectedReference = `Pipedrive Deal ID: ${deal.id}`;
           const issue = {
             code: 'XERO_QUOTE_REFERENCE_MISMATCH',
             severity: 'warning' as const,
@@ -857,7 +894,7 @@ export class ValidationOrchestrator {
               dealTitle: deal.title || deal.name,
               xeroQuoteId: matchedQuote.QuoteID,
               xeroQuoteNumber: matchedQuote.QuoteNumber,
-              expectedReference,
+              expectedReference: expectedReference,
               actualReference: matchedQuote.Reference || null
             }
           };
@@ -866,7 +903,7 @@ export class ValidationOrchestrator {
           
           logger.debug({
             dealId: deal.id,
-            expectedReference,
+            expectedReference: expectedReference,
             actualReference: matchedQuote.Reference
           }, 'Quote reference mismatch');
         }
@@ -948,7 +985,7 @@ export class ValidationOrchestrator {
           }
         }
 
-        // VALIDATION RULE 6: Status Consistency Check
+        // VALIDATION RULE 6: Status Consistency Check for Won Deals
         // Ensures won deals have corresponding ACCEPTED quotes in Xero
         // Maintains alignment between sales pipeline and quote workflow states
         if (deal.status === 'won' && matchedQuote.Status !== 'ACCEPTED') {
@@ -976,6 +1013,36 @@ export class ValidationOrchestrator {
             xeroQuoteStatus: matchedQuote.Status,
             dealStatus: deal.status
           }, 'Quote status not ACCEPTED for won deal');
+        }
+        
+        // VALIDATION RULE 7: Status Consistency Check for Lost Deals
+        // Ensures lost deals have corresponding DECLINED quotes in Xero
+        // Maintains alignment between lost opportunities and declined quotes
+        if (deal.status === 'lost' && matchedQuote.Status !== 'DECLINED') {
+          const issue = {
+            code: 'XERO_QUOTE_STATUS_NOT_DECLINED',
+            severity: 'error' as const,
+            message: `Xero quote status is not DECLINED for lost deal`,
+            dealId: deal.id,
+            dealTitle: deal.title || deal.name,
+            suggestedFix: `Lost deal has quote with status "${matchedQuote.Status}". Quote should be DECLINED for lost deals.`,
+            metadata: {
+              dealId: deal.id,
+              dealTitle: deal.title || deal.name,
+              xeroQuoteId: matchedQuote.QuoteID,
+              xeroQuoteNumber: matchedQuote.QuoteNumber,
+              xeroQuoteStatus: matchedQuote.Status,
+              pipedriveDealStatus: deal.status
+            }
+          };
+          issues.push(issue);
+          errorCount++;
+          
+          logger.debug({
+            dealId: deal.id,
+            xeroQuoteStatus: matchedQuote.Status,
+            dealStatus: deal.status
+          }, 'Quote status not DECLINED for lost deal');
         }
       }
 

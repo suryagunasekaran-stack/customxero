@@ -72,7 +72,6 @@ interface ValidationResults {
 export function SyncButton() {
   const [isValidating, setIsValidating] = useState(false);
   const [currentStep, setCurrentStep] = useState<ValidationStep | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<ValidationResults | null>(null);
   const [showDetails, setShowDetails] = useState(false);
@@ -105,7 +104,6 @@ export function SyncButton() {
   const startValidation = async () => {
     setIsValidating(true);
     setCurrentStep(null);
-    setLogs([]);
     setError(null);
     setResults(null);
     
@@ -156,8 +154,6 @@ export function SyncButton() {
               
               if (data.type === 'progress') {
                 setCurrentStep(data.step);
-              } else if (data.type === 'log') {
-                setLogs(prev => [...prev, data.message]);
               } else if (data.type === 'error') {
                 setError(data.message);
                 if (data.details) {
@@ -610,23 +606,21 @@ export function SyncButton() {
         </div>
       )}
       
-      {/* Logs */}
-      {logs.length > 0 && (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-3 py-2 bg-gray-100 border-b border-gray-200">
-            <h4 className="text-xs font-semibold text-gray-700">Processing Log</h4>
-          </div>
-          <div className="p-3 max-h-32 overflow-y-auto">
-            <div className="space-y-1">
-              {logs.map((log, i) => (
-                <div key={i} className="text-xs text-gray-600 font-mono leading-relaxed">
-                  {log}
-                </div>
-              ))}
+      {/* Simple loading state when validating but no current step */}
+      {isValidating && !currentStep && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-6">
+            <div className="flex items-center gap-4">
+              <div className="h-5 w-5 rounded-full border-2 border-blue-200 border-t-blue-500 animate-spin" />
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Initializing Validation</h3>
+                <p className="text-sm text-gray-600 mt-1">Connecting to services and preparing validation workflow...</p>
+              </div>
             </div>
           </div>
         </div>
       )}
+      
       
       {/* Error Alert */}
       {error && (
@@ -850,7 +844,7 @@ export function SyncButton() {
                 {showDetails && (
                   <div className="space-y-4 max-h-96 overflow-y-auto border-t border-gray-200 pt-4">
                     {/* Issues Grouped by Deal */}
-                    {Array.from(issuesByDeal.entries()).map(([dealKey, dealIssues], dealIndex) => {
+                    {Array.from(issuesByDeal.entries()).map(([dealKey, dealIssues]) => {
                       const [dealId, dealTitle] = dealKey.split('-');
                       const hasErrors = dealIssues.some((i: any) => i.severity === 'error');
                       const hasWarnings = dealIssues.some((i: any) => i.severity === 'warning');

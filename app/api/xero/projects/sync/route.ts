@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { XeroProjectsSyncService } from '@/app/api/xero/services/XeroProjectsSyncService';
+import { logger } from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,21 +14,22 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    console.log('[Xero Projects Sync] Starting sync for tenant:', tenantId);
+    logger.info({ tenantId }, 'Starting Xero projects sync');
 
     const result = await XeroProjectsSyncService.syncProjectsForTenant(tenantId);
 
-    console.log('[Xero Projects Sync] Sync completed:', {
+    logger.info({
+      tenantId,
       projectsSynced: result.projectsSynced,
       projectsFailed: result.projectsFailed,
       tasksSynced: result.tasksSynced,
       syncDuration: result.syncDuration
-    });
+    }, 'Xero projects sync completed');
 
     return NextResponse.json(result);
 
   } catch (error) {
-    console.error('[Xero Projects Sync] Error:', error);
+    logger.error({ error }, 'Failed to sync Xero projects');
 
     return NextResponse.json({ 
       error: error instanceof Error ? error.message : 'Failed to sync projects'
@@ -55,9 +57,9 @@ export async function GET(request: NextRequest) {
       projectCount: syncInfo.projectCount,
       projects: projects.map(p => ({
         projectId: p.projectId,
-        name: p.projectData.name,
+        name: p.projectData?.name,
         projectCode: p.projectCode,
-        status: p.projectData.status,
+        status: p.projectData?.status,
         totalTasks: p.totalTasks,
         totalProjectValue: p.totalProjectValue,
         lastSyncedAt: p.lastSyncedAt
@@ -65,7 +67,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('[Xero Projects Sync] Error fetching sync info:', error);
+    logger.error({ error }, 'Failed to fetch Xero projects sync info');
     
     return NextResponse.json({ 
       error: error instanceof Error ? error.message : 'Failed to fetch sync info'

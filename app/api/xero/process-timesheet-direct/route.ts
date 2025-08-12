@@ -174,6 +174,8 @@ function getTaskConfigForTenant(tenantId: string, tenantName: string) {
 // Process timesheet with Python backend
 async function processTimesheetWithPython(blobUrl: string, fileName: string, tenantId: string): Promise<ProcessedTimesheet> {
   const flaskUrl = `${process.env.NEXT_PUBLIC_FLASK_SERVER_URL}/api/process-timesheet`;
+  console.log('[API] Calling Python backend:', flaskUrl);
+  
   const response = await fetch(flaskUrl, {
     method: 'POST',
     headers: {
@@ -187,13 +189,42 @@ async function processTimesheetWithPython(blobUrl: string, fileName: string, ten
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-    throw new Error(errorData.error || `Python backend error: ${response.status}`);
+    // Try to get error text first, as it might be too large for JSON parsing
+    const errorText = await response.text();
+    console.error('[API] Python backend error response:', errorText.substring(0, 500)); // Log first 500 chars
+    
+    // Check if the error is about text length
+    if (errorText.includes('Text length must not exceed 32767')) {
+      throw new Error('The timesheet data is too large. The backend response exceeds the maximum allowed size. Please try processing a smaller timesheet or contact support.');
+    }
+    
+    // Try to parse as JSON
+    try {
+      const errorData = JSON.parse(errorText);
+      throw new Error(errorData.error || `Python backend error: ${response.status}`);
+    } catch (e) {
+      throw new Error(`Python backend error: ${response.status} - ${errorText.substring(0, 200)}`);
+    }
   }
 
-  const data = await response.json();
+  // Get response text first to check size
+  const responseText = await response.text();
+  console.log('[API] Python backend response size:', responseText.length, 'characters');
   
-  // Temporary: Handle empty response from backend during development
+  // Check if response is too large
+  if (responseText.length > 30000) {
+    console.warn('[API] Warning: Large response from Python backend:', responseText.length, 'characters');
+  }
+  
+  let data;
+  try {
+    data = JSON.parse(responseText);
+  } catch (e) {
+    console.error('[API] Failed to parse Python backend response:', e);
+    throw new Error('Invalid JSON response from Python backend');
+  }
+  
+  // Handle empty response from backend
   if (Object.keys(data).length === 0) {
     console.log('[API] Backend returned empty response - using mock data for now');
     return {
@@ -207,11 +238,135 @@ async function processTimesheetWithPython(blobUrl: string, fileName: string, ten
     };
   }
   
-  if (!data.success) {
+  // Transform the backend response structure to match expected format
+  // Backend returns: {tasks, costVerificationSummary, statistics}
+  // We need: {success, metadata, consolidated_payload, changes, cost_verification, summary}
+  
+  console.log('[API] Backend response structure:', Object.keys(data));
+  
+  // Handle error responses from backend
+  if (data.error) {
     throw new Error(data.error || 'Timesheet processing failed');
   }
+  
+  // Transform tasks array into consolidated_payload and changes
+  let consolidated_payload: ConsolidatedPayload = {};
+  let changes = { updates: [], creates: [] } as any;
+  
+  if (data.tasks && Array.isArray(data.tasks)) {
+    console.log('[API] Processing', data.tasks.length, 'tasks from backend');
+    
+    // Group tasks by project code
+    data.tasks.forEach((task: any) => {
+      const projectCode = task.projectCode || task.project_code || 'UNKNOWN';
+      
+      if (!consolidated_payload[projectCode]) {
+        consolidated_payload[projectCode] = [];
+      }
+      
+      // Transform task to expected format
+      const transformedTask: ConsolidatedTask = {
+        name: task.name || task.taskName || 'Unnamed Task',
+        rate: {
+          currency: task.currency || 'SGD',
+          value: String(task.rate || task.hourlyRate || 0)
+        },
+        chargeType: task.chargeType || 'TIME',
+        estimateMinutes: task.estimateMinutes || task.minutes || 0,
+        idempotencyKey: task.idempotencyKey || `${projectCode}-${Date.now()}-${Math.random()}`
+      };
+      
+      consolidated_payload[projectCode].push(transformedTask);
+      
+      // Add to changes for tracking
+      if (task.isNew) {
+        changes.creates.push({
+          projectId: projectCode,
+          payload: {
+            name: transformedTask.name,
+            rate: {
+              currency: transformedTask.rate.currency,
+              value: Number(transformedTask.rate.value)
+            },
+            chargeType: transformedTask.chargeType,
+            estimateMinutes: transformedTask.estimateMinutes
+          }
+        });
+      } else {
+        changes.updates.push({
+          projectId: projectCode,
+          taskId: task.taskId || 'unknown',
+          payload: {
+            name: transformedTask.name,
+            rate: {
+              currency: transformedTask.rate.currency,
+              value: Number(transformedTask.rate.value)
+            },
+            chargeType: transformedTask.chargeType,
+            estimateMinutes: transformedTask.estimateMinutes
+          }
+        });
+      }
+    });
+  }
+  
+  // Build the response in expected format
+  const processedData: ProcessedTimesheet = {
+    success: true,
+    message: 'Timesheet processed successfully',
+    metadata: {
+      creation_date: data.statistics?.processingDate || new Date().toISOString(),
+      period_range: data.statistics?.periodRange || 'Unknown',
+      entries_processed: data.statistics?.entriesProcessed || data.tasks?.length || 0,
+      entries_grouped: data.statistics?.entriesGrouped || 0,
+      projects_consolidated: Object.keys(consolidated_payload).length,
+      projects_processed: data.statistics?.projectsProcessed || Object.keys(consolidated_payload).length,
+      total_changes: changes.updates.length + changes.creates.length
+    },
+    consolidated_payload,
+    changes,
+    summary: {
+      total_projects_processed: Object.keys(consolidated_payload).length,
+      tasks_to_update: changes.updates.length,
+      tasks_to_create: changes.creates.length,
+      total_changes: changes.updates.length + changes.creates.length
+    },
+    cost_verification: data.costVerificationSummary ? {
+      verification_performed: true,
+      calculations_match: data.costVerificationSummary.calculationsMatch || false,
+      our_total_all_depts_ny_jobs: data.costVerificationSummary.ourTotal || 0,
+      excel_total_all_depts_ny_jobs: data.costVerificationSummary.excelTotal || 0,
+      excel_navy_only_ny_jobs: data.costVerificationSummary.navyTotal || 0,
+      excel_non_navy_ny_jobs: data.costVerificationSummary.nonNavyTotal || 0,
+      difference: data.costVerificationSummary.difference || 0,
+      excel_all_jobs_all_depts: data.costVerificationSummary.allJobsTotal || 0,
+      discrepancies: data.costVerificationSummary.discrepancies || []
+    } : undefined
+  };
+  
+  // Truncate large fields if necessary
+  if (processedData.consolidated_payload) {
+    const payloadStr = JSON.stringify(processedData.consolidated_payload);
+    if (payloadStr.length > 20000) {
+      console.warn('[API] Truncating large consolidated_payload:', payloadStr.length, 'characters');
+      const projectCodes = Object.keys(processedData.consolidated_payload);
+      const truncatedPayload: any = {};
+      let currentSize = 0;
+      for (const code of projectCodes) {
+        const projectStr = JSON.stringify(processedData.consolidated_payload[code]);
+        if (currentSize + projectStr.length > 15000) break;
+        truncatedPayload[code] = processedData.consolidated_payload[code];
+        currentSize += projectStr.length;
+      }
+      processedData.consolidated_payload = truncatedPayload;
+      // Add truncation info to metadata
+      (processedData.metadata as any).truncated = true;
+      (processedData.metadata as any).original_projects_count = projectCodes.length;
+      (processedData.metadata as any).truncated_projects_count = Object.keys(truncatedPayload).length;
+    }
+  }
 
-  return data;
+  return processedData;
 }
 
 // Fetch active Xero projects directly (no caching)
@@ -599,6 +754,16 @@ function generateProcessingReport(
 export const runtime = 'nodejs';
 export const maxDuration = 60; // 60 seconds for Vercel Pro
 
+// Helper function to safely stringify large objects
+function safeStringify(obj: any, maxLength: number = 30000): string {
+  const str = JSON.stringify(obj);
+  if (str.length > maxLength) {
+    console.warn(`[API] Object too large (${str.length} chars), truncating to ${maxLength}`);
+    return str.substring(0, maxLength) + '... [truncated]';
+  }
+  return str;
+}
+
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
   console.log('[API] Starting timesheet processing');
@@ -609,17 +774,44 @@ export async function POST(request: NextRequest) {
   const selectedTenant = available_tenants?.find(t => t.tenantId === effective_tenant_id);
 
   try {
-    // Get JSON payload
     const contentType = request.headers.get('content-type');
-    if (!contentType?.includes('application/json')) {
-      return NextResponse.json({ error: 'Request must be JSON' }, { status: 400 });
-    }
+    let blobUrl: string;
+    let fileName: string;
+    let tenantId = effective_tenant_id; // Use the tenant from auth
     
-    const body = await request.json();
-    const { blobUrl, fileName, tenantId } = body;
-    
-    if (!blobUrl || !fileName || !tenantId) {
-      return NextResponse.json({ error: 'blobUrl, fileName, and tenantId are required' }, { status: 400 });
+    // Handle both FormData (file upload) and JSON (blob URL) requests
+    if (contentType?.includes('multipart/form-data')) {
+      // Handle FormData with file upload
+      const formData = await request.formData();
+      const file = formData.get('file') as File;
+      
+      if (!file) {
+        return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      }
+      
+      fileName = file.name;
+      
+      // For now, create a data URL from the file to pass to Python backend
+      // In production, this should upload to blob storage first
+      const arrayBuffer = await file.arrayBuffer();
+      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      const mimeType = file.type || 'application/octet-stream';
+      blobUrl = `data:${mimeType};base64,${base64}`;
+      
+      console.log('[API] Processing file upload:', fileName, 'size:', file.size);
+      
+    } else if (contentType?.includes('application/json')) {
+      // Handle JSON with blob URL
+      const body = await request.json();
+      blobUrl = body.blobUrl;
+      fileName = body.fileName;
+      tenantId = body.tenantId || effective_tenant_id;
+      
+      if (!blobUrl || !fileName) {
+        return NextResponse.json({ error: 'blobUrl and fileName are required' }, { status: 400 });
+      }
+    } else {
+      return NextResponse.json({ error: 'Request must be either JSON or FormData' }, { status: 400 });
     }
 
     console.log('[API] Processing file:', fileName);
@@ -627,6 +819,17 @@ export async function POST(request: NextRequest) {
     // Step 1: Process timesheet with Python backend
     const timesheetData = await processTimesheetWithPython(blobUrl, fileName, tenantId);
     console.log(`[Stats] Processed: ${timesheetData.metadata.entries_processed} entries, ${timesheetData.metadata.projects_processed || timesheetData.metadata.projects_consolidated || 0} projects`);
+    console.log('[API] Timesheet data structure:', {
+      hasMetadata: !!timesheetData.metadata,
+      hasChanges: !!timesheetData.changes,
+      hasSummary: !!timesheetData.summary,
+      hasCostVerification: !!timesheetData.cost_verification,
+      hasConsolidatedPayload: !!timesheetData.consolidated_payload,
+      changesCount: timesheetData.changes ? {
+        updates: timesheetData.changes.updates?.length || 0,
+        creates: timesheetData.changes.creates?.length || 0
+      } : null
+    });
 
     // Create mock results for Excel report (since we're not processing with Xero yet)
     const mockResults: any[] = [];
@@ -654,19 +857,44 @@ export async function POST(request: NextRequest) {
     // Convert buffer to base64 for download
     const excelBase64 = excelBuffer.toString('base64');
     
-    // Prepare the response data - pass through all data from Python backend
+    // Check if any field is too large and truncate if necessary
+    if (timesheetData.changes) {
+      const changesStr = JSON.stringify(timesheetData.changes);
+      if (changesStr.length > 20000) {
+        console.warn('[API] Changes data too large:', changesStr.length, 'characters, truncating...');
+        // Truncate the changes to a reasonable size
+        const truncatedChanges = {
+          updates: timesheetData.changes.updates?.slice(0, 50) || [],
+          creates: timesheetData.changes.creates?.slice(0, 50) || [],
+          truncated: true,
+          original_updates_count: timesheetData.changes.updates?.length || 0,
+          original_creates_count: timesheetData.changes.creates?.length || 0
+        };
+        timesheetData.changes = truncatedChanges as any;
+      }
+    }
+    
+    // Prepare the response data - ensure it matches DirectProcessingResult interface
     const responseData: any = {
       success: timesheetData.success,
-      message: timesheetData.message,
+      message: timesheetData.message || 'Timesheet processed successfully',
       metadata: timesheetData.metadata,
-      // Include the changes data from Python backend
+      // Include the changes data from Python backend (possibly truncated)
       changes: timesheetData.changes,
-      // Include the summary from Python backend
-      summary: timesheetData.summary,
+      // Build summary in the expected format for frontend
+      summary: {
+        entriesProcessed: timesheetData.metadata.entries_processed || 0,
+        projectsAnalyzed: timesheetData.metadata.projects_processed || timesheetData.metadata.projects_consolidated || 0,
+        projectsMatched: timesheetData.summary?.total_projects_processed || Object.keys(timesheetData.consolidated_payload || {}).length || 0,
+        tasksCreated: timesheetData.summary?.tasks_to_create || timesheetData.changes?.creates?.length || 0,
+        tasksUpdated: timesheetData.summary?.tasks_to_update || timesheetData.changes?.updates?.length || 0,
+        tasksFailed: 0, // Since we're not actually updating Xero yet
+        actualTasksFailed: 0,
+        projectsNotFound: 0,
+        processingTimeMs: Date.now() - startTime
+      },
       // Include cost verification if present
       cost_verification: timesheetData.cost_verification,
-      // Add processing time
-      processingTimeMs: Date.now() - startTime,
       // Results array for compatibility
       results: [],
       downloadableReport: {
@@ -675,6 +903,24 @@ export async function POST(request: NextRequest) {
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       }
     };
+    
+    // Final check on response size
+    const responseStr = JSON.stringify(responseData);
+    console.log('[API] Final response size:', responseStr.length, 'characters');
+    console.log('[API] Response summary:', {
+      success: responseData.success,
+      entriesProcessed: responseData.summary.entriesProcessed,
+      projectsMatched: responseData.summary.projectsMatched,
+      tasksCreated: responseData.summary.tasksCreated,
+      tasksUpdated: responseData.summary.tasksUpdated,
+      hasDownloadableReport: !!responseData.downloadableReport
+    });
+    
+    if (responseStr.length > 32000) {
+      console.error('[API] Response too large, removing downloadable report');
+      delete responseData.downloadableReport;
+      responseData.error = 'Response data was too large. Excel report generation was skipped.';
+    }
     
     return NextResponse.json(responseData);
 
@@ -808,6 +1054,26 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('[API Error]:', error.message || error);
     
+    // Check if it's the text length error
+    if (error.message?.includes('too large') || error.message?.includes('32767')) {
+      return NextResponse.json({
+        success: false,
+        error: 'The timesheet contains too much data to process in a single request. Please try processing a smaller date range or fewer projects.',
+        details: error.message,
+        summary: {
+          entriesProcessed: 0,
+          projectsAnalyzed: 0,
+          projectsMatched: 0,
+          tasksCreated: 0,
+          tasksUpdated: 0,
+          tasksFailed: 0,
+          actualTasksFailed: 0,
+          projectsNotFound: 0,
+          processingTimeMs: Date.now() - startTime
+        },
+        results: []
+      }, { status: 413 }); // 413 Payload Too Large
+    }
 
     return NextResponse.json({
       success: false,
