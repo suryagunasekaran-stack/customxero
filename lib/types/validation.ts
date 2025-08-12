@@ -92,6 +92,35 @@ export interface ValidationSummary {
   acceptedQuotesWithInvalidFormat?: number;
 }
 
+export interface XeroValidationIssue {
+  severity: 'error' | 'warning' | 'info';
+  code: 'INVALID_QUOTE_FORMAT' | 'MISSING_TRACKING_OPTIONS' | 'INVALID_PROJECT_CODE';
+  message: string;
+  quoteNumber: string;
+  quoteId: string;
+  suggestedFix?: string;
+  metadata?: {
+    expectedFormat?: string;
+    actualFormat?: string;
+    lineItemsWithoutTracking?: number;
+    totalLineItems?: number;
+    [key: string]: any;
+  };
+}
+
+export interface XeroValidationSession {
+  id: string;
+  tenantId: string;
+  startTime: Date;
+  endTime?: Date;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  quotesProcessed: number;
+  totalQuotes: number;
+  issues: XeroValidationIssue[];
+  errorCount: number;
+  warningCount: number;
+}
+
 export interface TenantConfig {
   tenantId: string;
   pipedriveApiKey: string;

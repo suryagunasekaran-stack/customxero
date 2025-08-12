@@ -3,6 +3,7 @@
 import React from 'react';
 import { TimesheetProcessingCard } from '../../../components/xero';
 import { SyncButton } from '../../../components/xero/SyncButton';
+import { XeroValidationSummary } from '../../../components/xero/XeroValidationSummary';
 
 export default function XeroPage() {
   return (
@@ -34,6 +35,21 @@ export default function XeroPage() {
           {/* Timesheet Processing Section */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
             <TimesheetProcessingCard disabled={false} />
+          </div>
+        </div>
+
+        {/* Xero Quote Validation Section - Full Width */}
+        <div className="mt-8">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
+            <div className="p-6">
+              <div className="mb-4">
+                <h2 className="text-xl font-semibold text-gray-900">Xero Quote Validation</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Validate accepted quotes for proper format and tracking options.
+                </p>
+              </div>
+              <XeroValidationSummary />
+            </div>
           </div>
         </div>
       </div>

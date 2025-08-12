@@ -22,6 +22,15 @@ export interface XeroQuote {
     LineAmount?: number;
     AccountCode?: string;
     TaxType?: string;
+    TaxAmount?: number;
+    DiscountRate?: number;
+    ItemCode?: string;
+    Tracking?: Array<{
+      TrackingCategoryID: string;
+      TrackingOptionID: string;
+      Name?: string;
+      Option?: string;
+    }>;
   }>;
   Date?: string;
   DateString?: string;

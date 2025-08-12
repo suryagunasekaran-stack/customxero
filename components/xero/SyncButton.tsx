@@ -708,31 +708,6 @@ export function SyncButton() {
                 </div>
               )}
               
-              {/* Pipeline Rules Applied */}
-              <div className="border-t pt-4 mt-4">
-                <h4 className="text-sm font-semibold text-gray-700 mb-3">Validation Rules Applied</h4>
-                <div className="space-y-2">
-                  <div className="flex items-start">
-                    <CheckCircleIcon className="h-4 w-4 text-green-500 mt-0.5 mr-2 flex-shrink-0" />
-                    <div className="text-sm text-gray-600">
-                      No won deals allowed in Pipeline 1 (Unqualified)
-                    </div>
-                  </div>
-                  <div className="flex items-start">
-                    <CheckCircleIcon className="h-4 w-4 text-green-500 mt-0.5 mr-2 flex-shrink-0" />
-                    <div className="text-sm text-gray-600">
-                      No open deals allowed in Pipelines 3, 4, 5, 6, 7, 8, 9, 16, 11, 17 (must be won/lost)
-                    </div>
-                  </div>
-                  <div className="flex items-start">
-                    <InformationCircleIcon className="h-4 w-4 text-blue-500 mt-0.5 mr-2 flex-shrink-0" />
-                    <div className="text-sm text-gray-600">
-                      Pipelines 12 and 13 are excluded from validation
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
               {/* Quick Stats if there are issues */}
               {results.results.issues?.length > 0 && (
                 <div className="border-t pt-4 mt-4">
