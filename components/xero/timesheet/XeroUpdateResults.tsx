@@ -18,11 +18,24 @@ interface UpdateResult {
 
 interface XeroUpdateSummary {
   success: boolean;
-  totalAttempted: number;
   successCount: number;
   failureCount: number;
-  results: UpdateResult[];
-  duration: number;
+  results: {
+    updates: Array<{
+      projectId: string;
+      taskId?: string;
+      taskName: string;
+      status: 'success' | 'failed' | 'skipped';
+      error?: string;
+    }>;
+    creates: Array<{
+      projectId: string;
+      taskName: string;
+      status: 'success' | 'failed' | 'skipped';
+      error?: string;
+    }>;
+  };
+  duration?: number;
 }
 
 interface XeroUpdateResultsProps {
@@ -41,9 +54,29 @@ export default function XeroUpdateResults({
     return `${seconds}s`;
   };
 
-  const successfulUpdates = results.results.filter(r => r.success && r.action === 'updated');
-  const successfulCreates = results.results.filter(r => r.success && r.action === 'created');
-  const failures = results.results.filter(r => !r.success);
+  // Transform the nested results structure into a flat array
+  const flatResults: UpdateResult[] = [
+    ...(results.results?.updates || []).map(u => ({
+      projectId: u.projectId,
+      taskId: u.taskId,
+      taskName: u.taskName,
+      action: 'updated' as const,
+      success: u.status === 'success',
+      error: u.error
+    })),
+    ...(results.results?.creates || []).map(c => ({
+      projectId: c.projectId,
+      taskId: undefined, // Creates don't have taskId
+      taskName: c.taskName,
+      action: 'created' as const,
+      success: c.status === 'success',
+      error: c.error
+    }))
+  ];
+
+  const successfulUpdates = flatResults.filter(r => r.success && r.action === 'updated');
+  const successfulCreates = flatResults.filter(r => r.success && r.action === 'created');
+  const failures = flatResults.filter(r => !r.success);
 
   return (
     <div className="space-y-4">
@@ -68,11 +101,11 @@ export default function XeroUpdateResults({
         <div className="grid grid-cols-2 gap-3 text-sm mb-3">
           <div>
             <span className="text-gray-600">Total Changes:</span>
-            <span className="ml-2 font-medium text-gray-900">{results.totalAttempted}</span>
+            <span className="ml-2 font-medium text-gray-900">{results.successCount + results.failureCount}</span>
           </div>
           <div>
             <span className="text-gray-600">Duration:</span>
-            <span className="ml-2 font-medium text-gray-900">{formatDuration(results.duration)}</span>
+            <span className="ml-2 font-medium text-gray-900">{formatDuration(results.duration || 0)}</span>
           </div>
           <div>
             <span className="text-gray-600">Successful:</span>

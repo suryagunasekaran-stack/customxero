@@ -36,7 +36,10 @@ export default function XeroUpdatePreview({
 }: XeroUpdatePreviewProps) {
   const [showDetails, setShowDetails] = useState(true);
   
-  const totalChanges = updates.length + creates.length;
+  // No truncation - use actual array lengths
+  const actualUpdatesCount = updates.length;
+  const actualCreatesCount = creates.length;
+  const totalChanges = actualUpdatesCount + actualCreatesCount;
   
   const formatCurrency = (value: number | string, currency: string = 'SGD') => {
     const numValue = typeof value === 'string' ? parseFloat(value) : value;
@@ -65,7 +68,7 @@ export default function XeroUpdatePreview({
             <div className="flex items-center justify-center mb-1">
               <ArrowUpCircleIcon className="h-8 w-8 text-blue-600" />
             </div>
-            <p className="text-2xl font-bold text-gray-900">{updates.length}</p>
+            <p className="text-2xl font-bold text-gray-900">{actualUpdatesCount}</p>
             <p className="text-sm text-gray-600">Tasks to Update</p>
           </div>
           
@@ -73,7 +76,7 @@ export default function XeroUpdatePreview({
             <div className="flex items-center justify-center mb-1">
               <PlusCircleIcon className="h-8 w-8 text-green-600" />
             </div>
-            <p className="text-2xl font-bold text-gray-900">{creates.length}</p>
+            <p className="text-2xl font-bold text-gray-900">{actualCreatesCount}</p>
             <p className="text-sm text-gray-600">Tasks to Create</p>
           </div>
           

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ensureValidToken } from '@/lib/ensureXeroToken';
 import { trackXeroApiCall, waitForXeroRateLimit, updateXeroRateLimitFromHeaders } from '@/lib/xeroApiTracker';
 import { auth } from '@/lib/auth';
-import { ExcelReportService } from '@/lib/timesheet/services/ExcelReportService';
+// Excel report temporarily disabled due to cell size limitations
+// import { ExcelReportService } from '@/lib/timesheet/services/ExcelReportService';
 
 interface ConsolidatedTask {
   name: string;
@@ -224,6 +225,9 @@ async function processTimesheetWithPython(blobUrl: string, fileName: string, ten
     throw new Error('Invalid JSON response from Python backend');
   }
   
+  // Store the raw Python response BEFORE any transformation
+  const rawPythonData = JSON.parse(JSON.stringify(data)); // Deep copy
+  
   // Handle empty response from backend
   if (Object.keys(data).length === 0) {
     console.log('[API] Backend returned empty response - using mock data for now');
@@ -234,19 +238,32 @@ async function processTimesheetWithPython(blobUrl: string, fileName: string, ten
         projects_consolidated: 0,
         period_range: 'N/A'
       },
-      consolidated_payload: {}
+      consolidated_payload: {},
+      _rawPythonResponse: rawPythonData // Include raw response
     };
   }
-  
-  // Transform the backend response structure to match expected format
-  // Backend returns: {tasks, costVerificationSummary, statistics}
-  // We need: {success, metadata, consolidated_payload, changes, cost_verification, summary}
   
   console.log('[API] Backend response structure:', Object.keys(data));
   
   // Handle error responses from backend
   if (data.error) {
     throw new Error(data.error || 'Timesheet processing failed');
+  }
+  
+  // Check if backend already returns the expected structure
+  if (data.changes && data.summary) {
+    console.log('[API] Backend returned new structured format');
+    // Backend already returns the correct structure, just add metadata if missing
+    return {
+      ...data,
+      metadata: data.metadata || {
+        entries_processed: data.summary?.total_projects_processed || 0,
+        projects_consolidated: data.summary?.total_projects_processed || 0,
+        period_range: 'Unknown',
+        total_changes: data.summary?.total_changes || 0
+      },
+      _rawPythonResponse: rawPythonData
+    };
   }
   
   // Transform tasks array into consolidated_payload and changes
@@ -366,6 +383,9 @@ async function processTimesheetWithPython(blobUrl: string, fileName: string, ten
     }
   }
 
+  // Include the raw Python response in the processed data
+  (processedData as any)._rawPythonResponse = rawPythonData;
+  
   return processedData;
 }
 
@@ -817,110 +837,182 @@ export async function POST(request: NextRequest) {
     console.log('[API] Processing file:', fileName);
 
     // Step 1: Process timesheet with Python backend
-    const timesheetData = await processTimesheetWithPython(blobUrl, fileName, tenantId);
-    console.log(`[Stats] Processed: ${timesheetData.metadata.entries_processed} entries, ${timesheetData.metadata.projects_processed || timesheetData.metadata.projects_consolidated || 0} projects`);
-    console.log('[API] Timesheet data structure:', {
-      hasMetadata: !!timesheetData.metadata,
-      hasChanges: !!timesheetData.changes,
-      hasSummary: !!timesheetData.summary,
-      hasCostVerification: !!timesheetData.cost_verification,
-      hasConsolidatedPayload: !!timesheetData.consolidated_payload,
-      changesCount: timesheetData.changes ? {
-        updates: timesheetData.changes.updates?.length || 0,
-        creates: timesheetData.changes.creates?.length || 0
-      } : null
-    });
-
-    // Create mock results for Excel report (since we're not processing with Xero yet)
-    const mockResults: any[] = [];
-    
-    // Generate Excel report
-    const excelReportService = new ExcelReportService();
-    const excelBuffer = excelReportService.generateTimesheetReport({
-      metadata: timesheetData.metadata,
-      summary: {
-        entriesProcessed: timesheetData.metadata.entries_processed,
-        projectsAnalyzed: timesheetData.metadata.projects_processed || timesheetData.metadata.projects_consolidated || 0,
-        projectsMatched: 0,
-        tasksCreated: 0,
-        tasksUpdated: 0,
-        tasksFailed: 0,
-        actualTasksFailed: 0,
-        projectsNotFound: 0,
-        processingTimeMs: Date.now() - startTime
-      },
-      results: mockResults,
-      costVerification: timesheetData.cost_verification,
-      changes: timesheetData.changes
-    });
-    
-    // Convert buffer to base64 for download
-    const excelBase64 = excelBuffer.toString('base64');
-    
-    // Check if any field is too large and truncate if necessary
-    if (timesheetData.changes) {
-      const changesStr = JSON.stringify(timesheetData.changes);
-      if (changesStr.length > 20000) {
-        console.warn('[API] Changes data too large:', changesStr.length, 'characters, truncating...');
-        // Truncate the changes to a reasonable size
-        const truncatedChanges = {
-          updates: timesheetData.changes.updates?.slice(0, 50) || [],
-          creates: timesheetData.changes.creates?.slice(0, 50) || [],
-          truncated: true,
-          original_updates_count: timesheetData.changes.updates?.length || 0,
-          original_creates_count: timesheetData.changes.creates?.length || 0
-        };
-        timesheetData.changes = truncatedChanges as any;
-      }
+    console.log('[API] About to process timesheet with Python backend...');
+    let timesheetData;
+    try {
+      timesheetData = await processTimesheetWithPython(blobUrl, fileName, tenantId);
+    } catch (procError: any) {
+      console.error('[API] Error in processTimesheetWithPython:', procError.message);
+      console.error('[API] Error stack:', procError.stack);
+      throw procError;
     }
     
+    console.log('[API] Successfully got data from Python backend');
+    
+    // No longer truncating data - keeping full response as requested
+    const dataSize = JSON.stringify(timesheetData).length;
+    console.log('[API] Timesheet data size:', dataSize, 'characters');
+    
+    // Extract the actual raw Python backend response (stored before transformation)
+    const rawPythonResponse = (timesheetData as any)._rawPythonResponse || {};
+    
+    // Log processing summary (use original counts if data was truncated)
+    const entriesProcessed = timesheetData.metadata?.entries_processed || timesheetData.summary?.total_projects_processed || 0;
+    const tasksToCreate = timesheetData.summary?.tasks_to_create || 
+                         timesheetData.changes?.creates?.length || 0;
+    const tasksToUpdate = timesheetData.summary?.tasks_to_update || 
+                          timesheetData.changes?.updates?.length || 0;
+    
+    console.log(`[API] Timesheet processed: ${entriesProcessed} entries, ${tasksToCreate} tasks to create, ${tasksToUpdate} tasks to update`);
+    
+    // Use the projects_not_in_db from Python backend if available
+    let projectsNotInDb = timesheetData.projects_not_in_db || [];
+    let projectsFoundInDb = [];
+    let timesheetProjectCodes: string[] = [];  // Declare it outside the if block
+    
+    console.log('[API] Checking projects in database...');
+    
+    // If Python backend didn't provide this info, calculate it ourselves
+    if (!timesheetData.projects_not_in_db && timesheetData.consolidated_payload) {
+      try {
+        const { XeroProjectsSyncService } = await import('@/app/api/xero/services/XeroProjectsSyncService');
+        timesheetProjectCodes = Object.keys(timesheetData.consolidated_payload || {});  // Now just assign, not declare
+        console.log('[API] Fetching stored projects from MongoDB...');
+        const storedProjects = await XeroProjectsSyncService.getStoredProjects(tenantId);
+        console.log('[API] Got stored projects:', storedProjects.length);
+        const storedProjectCodes = storedProjects.map(p => p.projectCode).filter(Boolean);
+        projectsNotInDb = timesheetProjectCodes.filter(code => !storedProjectCodes.includes(code));
+        projectsFoundInDb = timesheetProjectCodes.filter(code => storedProjectCodes.includes(code));
+      } catch (dbError: any) {
+        console.error('[API] Error fetching from MongoDB:', dbError.message);
+        throw dbError;
+      }
+    } else if (timesheetData.summary) {
+      // Use counts from Python backend summary
+      projectsFoundInDb = new Array(timesheetData.summary.projects_found_in_db || 0);
+      // Also set timesheetProjectCodes from projects_not_in_db if available
+      timesheetProjectCodes = [];  // Empty array if not available
+    }
+    
+    console.log('[API] Project check complete');
+
+    // Skip Excel report generation for now - focusing on updates
+    // Excel has a 32,767 character limit per cell which causes issues with large datasets
+    console.log('[API] Skipping Excel report generation - using JSON format instead');
+    const excelBase64 = null;
+    
+    // No truncation - keep full changes as requested
+    if (timesheetData.changes) {
+      const changesStr = JSON.stringify(timesheetData.changes);
+      console.log('[API] Changes data size:', changesStr.length, 'characters');
+      console.log('[API] Total updates:', timesheetData.changes.updates?.length || 0);
+      console.log('[API] Total creates:', timesheetData.changes.creates?.length || 0);
+    }
+    
+    console.log('[API] Creating analysis report...');
+    
+    // Create a comprehensive analysis report for download
+    const analysisReport = {
+      timestamp: new Date().toISOString(),
+      file_processed: fileName,
+      tenant_id: tenantId,
+      projects_analysis: {
+        projects_in_timesheet: timesheetProjectCodes,
+        projects_found_in_database: projectsFoundInDb,
+        projects_not_in_database: projectsNotInDb,
+        summary: {
+          total_in_timesheet: timesheetProjectCodes.length,
+          found_in_db: projectsFoundInDb.length,
+          not_in_db: projectsNotInDb.length,
+          match_percentage: timesheetProjectCodes.length > 0 
+            ? ((projectsFoundInDb.length / timesheetProjectCodes.length) * 100).toFixed(2) + '%'
+            : '0%'
+        }
+      },
+      timesheet_data: {
+        metadata: timesheetData.metadata,
+        changes: timesheetData.changes,
+        cost_verification: timesheetData.cost_verification
+      }
+    };
+
     // Prepare the response data - ensure it matches DirectProcessingResult interface
     const responseData: any = {
-      success: timesheetData.success,
+      success: timesheetData.success || true,
       message: timesheetData.message || 'Timesheet processed successfully',
-      metadata: timesheetData.metadata,
-      // Include the changes data from Python backend (possibly truncated)
-      changes: timesheetData.changes,
-      // Build summary in the expected format for frontend
+      metadata: timesheetData.metadata || {},
+      // Include the changes data from Python backend
+      changes: timesheetData.changes || { creates: [], updates: [] },
+      // Include closed projects if available
+      closed_projects_with_changes: timesheetData.closed_projects_with_changes || [],
+      // Add projects not in database
+      projects_not_in_db: projectsNotInDb,
+      // Build summary - use Python backend summary if available
       summary: {
-        entriesProcessed: timesheetData.metadata.entries_processed || 0,
-        projectsAnalyzed: timesheetData.metadata.projects_processed || timesheetData.metadata.projects_consolidated || 0,
-        projectsMatched: timesheetData.summary?.total_projects_processed || Object.keys(timesheetData.consolidated_payload || {}).length || 0,
-        tasksCreated: timesheetData.summary?.tasks_to_create || timesheetData.changes?.creates?.length || 0,
-        tasksUpdated: timesheetData.summary?.tasks_to_update || timesheetData.changes?.updates?.length || 0,
+        entriesProcessed: timesheetData.summary?.total_projects_processed || timesheetData.metadata?.entries_processed || 0,
+        projectsAnalyzed: timesheetData.summary?.total_projects_processed || timesheetData.metadata?.projects_processed || 0,
+        projectsMatched: timesheetData.summary?.projects_found_in_db || projectsFoundInDb.length || 0,
+        tasksCreated: timesheetData.summary?.tasks_to_create || 
+                     timesheetData.changes?.creates?.length || 0,
+        tasksUpdated: timesheetData.summary?.tasks_to_update || 
+                      timesheetData.changes?.updates?.length || 0,
         tasksFailed: 0, // Since we're not actually updating Xero yet
         actualTasksFailed: 0,
-        projectsNotFound: 0,
+        projectsNotFound: timesheetData.summary?.projects_not_in_db || projectsNotInDb.length || 0,
+        // Add counts for projects in/not in DB
+        projects_found_in_db: timesheetData.summary?.projects_found_in_db || projectsFoundInDb.length || 0,
+        projects_not_in_db: timesheetData.summary?.projects_not_in_db || projectsNotInDb.length || 0,
+        closedProjectsAffected: timesheetData.summary?.closed_projects_affected || 0,
         processingTimeMs: Date.now() - startTime
       },
       // Include cost verification if present
       cost_verification: timesheetData.cost_verification,
       // Results array for compatibility
       results: [],
+      // Use JSON report instead of Excel (Excel has cell size limitations)
       downloadableReport: {
-        filename: excelReportService.generateReportFilename(),
-        content: excelBase64,
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        filename: `processing-report-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}.json`,
+        content: JSON.stringify({
+          summary: {
+            entriesProcessed: timesheetData.summary?.total_projects_processed || timesheetData.metadata?.entries_processed || 0,
+            projectsAnalyzed: timesheetData.summary?.total_projects_processed || timesheetData.metadata?.projects_processed || 0,
+            projectsMatched: timesheetData.summary?.projects_found_in_db || 0,
+            tasksCreated: timesheetData.summary?.tasks_to_create || timesheetData.changes?.creates?.length || 0,
+            tasksUpdated: timesheetData.summary?.tasks_to_update || timesheetData.changes?.updates?.length || 0,
+            projectsNotFound: timesheetData.summary?.projects_not_in_db || projectsNotInDb.length || 0
+          },
+          changes: timesheetData.changes,
+          closedProjects: timesheetData.closed_projects_with_changes,
+          projectsNotInDb: projectsNotInDb,
+          metadata: timesheetData.metadata
+        }, null, 2),
+        contentType: 'application/json'
+      },
+      // Add JSON analysis report for download
+      analysisReport: {
+        filename: `analysis-report-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}.json`,
+        content: JSON.stringify(analysisReport, null, 2)
+      },
+      // Add raw Python backend response for download
+      rawBackendResponse: {
+        filename: `raw-python-response-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}.json`,
+        content: JSON.stringify(rawPythonResponse, null, 2)
       }
     };
     
-    // Final check on response size
-    const responseStr = JSON.stringify(responseData);
+    // Final check on response size and handle large responses
+    let responseStr = JSON.stringify(responseData);
+    console.log('[API] Initial response size:', responseStr.length, 'characters');
+    
+    // No truncation - keep full response as requested
     console.log('[API] Final response size:', responseStr.length, 'characters');
     console.log('[API] Response summary:', {
       success: responseData.success,
       entriesProcessed: responseData.summary.entriesProcessed,
-      projectsMatched: responseData.summary.projectsMatched,
-      tasksCreated: responseData.summary.tasksCreated,
-      tasksUpdated: responseData.summary.tasksUpdated,
+      projectsFoundInDb: responseData.summary.projects_found_in_db,
+      projectsNotInDb: responseData.summary.projects_not_in_db,
       hasDownloadableReport: !!responseData.downloadableReport
     });
-    
-    if (responseStr.length > 32000) {
-      console.error('[API] Response too large, removing downloadable report');
-      delete responseData.downloadableReport;
-      responseData.error = 'Response data was too large. Excel report generation was skipped.';
-    }
     
     return NextResponse.json(responseData);
 

@@ -35,23 +35,27 @@ interface XeroProject {
   minutesLogged?: number;
 }
 
-interface ProjectTask {
+interface XeroTask {
   taskId: string;
   name: string;
   rate?: {
     currency: string;
-    value: string;
+    value: string;  // Xero returns as string
   };
-  estimate?: {
-    hours: number;
-  };
-  totalMinutes?: number;
-  totalAmount?: {
+  chargeType?: string;
+  estimateMinutes?: number;
+  status?: string;
+}
+
+interface StoredTask {
+  taskId: string;
+  name: string;
+  rate: {
     currency: string;
-    value: string;
+    value: number;  // Store as decimal, not string
   };
-  status: string;
-  projectId: string;
+  chargeType: string;
+  estimateMinutes: number;
 }
 
 interface SyncResult {
@@ -69,34 +73,22 @@ interface StoredProject {
   tenantId: string;
   projectCode: string;
   projectData: XeroProject;
-  totalTasks: number;
+  tasks: StoredTask[];  // Store actual tasks instead of just count
   totalProjectValue: number;
   lastSyncedAt: Date;
 }
 
-interface StoredTask {
-  taskId: string;
-  projectId: string;
-  tenantId: string;
-  taskData: ProjectTask;
-  lastSyncedAt: Date;
-}
 
 export class XeroProjectsSyncService {
   private static client: MongoClient | null = null;
   private static db: Db | null = null;
   private static projectsCollections: Map<string, Collection<StoredProject>> = new Map();
-  private static tasksCollections: Map<string, Collection<StoredTask>> = new Map();
 
-  constructor(private accessToken: string, private tenantId: string) {}
 
   /**
-   * Initialize MongoDB connection and get tenant-specific collections
+   * Initialize MongoDB connection and get tenant-specific collection
    */
-  private static async initializeDb(tenantId: string): Promise<{
-    projectsCollection: Collection<StoredProject>;
-    tasksCollection: Collection<StoredTask>;
-  }> {
+  private static async initializeDb(tenantId: string): Promise<Collection<StoredProject>> {
     const mongoUri = process.env.MONGODB_URI;
     if (!mongoUri) {
       throw new Error('MONGODB_URI environment variable is not set');
@@ -116,9 +108,8 @@ export class XeroProjectsSyncService {
         this.db = this.client.db();
       }
 
-      // Get or create tenant-specific collections
+      // Get or create tenant-specific collection
       let projectsCollection = this.projectsCollections.get(tenantId);
-      let tasksCollection = this.tasksCollections.get(tenantId);
 
       if (!projectsCollection) {
         // Use tenant ID in collection name as per existing pattern
@@ -134,20 +125,7 @@ export class XeroProjectsSyncService {
         logger.info({ collectionName: projectsCollectionName }, 'Initialized projects collection');
       }
 
-      if (!tasksCollection) {
-        // Use tenant ID in collection name
-        const tasksCollectionName = `xeroProjectTasks_${tenantId}`;
-        tasksCollection = this.db.collection<StoredTask>(tasksCollectionName);
-        this.tasksCollections.set(tenantId, tasksCollection);
-
-        // Create indexes for tasks collection
-        await tasksCollection.createIndex({ taskId: 1, projectId: 1 }, { unique: true });
-        await tasksCollection.createIndex({ projectId: 1 });
-        
-        logger.info({ collectionName: tasksCollectionName }, 'Initialized tasks collection');
-      }
-
-      return { projectsCollection, tasksCollection };
+      return projectsCollection;
     } catch (error) {
       logger.error({ error }, 'Failed to initialize MongoDB connection');
       throw error;
@@ -164,8 +142,8 @@ export class XeroProjectsSyncService {
     let tasksSynced = 0;
 
     try {
-      // Initialize MongoDB connection and get tenant-specific collections
-      const { projectsCollection, tasksCollection } = await this.initializeDb(tenantId);
+      // Initialize MongoDB connection and get tenant-specific collection
+      const projectsCollection = await this.initializeDb(tenantId);
 
       const { access_token } = await ensureValidToken();
       
@@ -187,16 +165,28 @@ export class XeroProjectsSyncService {
           const totalProjectValue = this.calculateTotalProjectValue(project);
           
           // Fetch tasks for this project
-          const tasks = await this.fetchProjectTasks(access_token, tenantId, project.projectId);
-          tasksSynced += tasks.length;
+          const xeroTasks = await this.fetchProjectTasks(access_token, tenantId, project.projectId);
+          tasksSynced += xeroTasks.length;
 
-          // Store project in MongoDB (no need for tenantId in document since it's in collection name)
+          // Transform Xero tasks to our stored format
+          const storedTasks: StoredTask[] = xeroTasks.map(task => ({
+            taskId: task.taskId,
+            name: task.name,
+            rate: {
+              currency: task.rate?.currency || project.currencyCode || 'SGD',
+              value: task.rate?.value ? parseFloat(task.rate.value) : 0  // Convert string to number
+            },
+            chargeType: task.chargeType || 'TIME',
+            estimateMinutes: task.estimateMinutes || 0
+          }));
+
+          // Store project with tasks in MongoDB
           const projectDoc: StoredProject = {
             projectId: project.projectId,
             tenantId: tenantId,
             projectCode: projectCode,
             projectData: project,
-            totalTasks: tasks.length,
+            tasks: storedTasks,  // Store actual tasks
             totalProjectValue: totalProjectValue,
             lastSyncedAt: new Date()
           };
@@ -208,28 +198,6 @@ export class XeroProjectsSyncService {
           );
 
           projectsSynced++;
-
-          // Store tasks in MongoDB
-          if (tasks.length > 0) {
-            const taskDocs: StoredTask[] = tasks.map(task => ({
-              taskId: task.taskId,
-              projectId: project.projectId,
-              tenantId: tenantId,
-              taskData: task,
-              lastSyncedAt: new Date()
-            }));
-
-            // Use bulkWrite for better performance
-            const bulkOps = taskDocs.map(doc => ({
-              replaceOne: {
-                filter: { taskId: doc.taskId, projectId: doc.projectId },
-                replacement: doc,
-                upsert: true
-              }
-            }));
-
-            await tasksCollection.bulkWrite(bulkOps);
-          }
 
         } catch (error) {
           logger.error({ 
@@ -342,7 +310,7 @@ export class XeroProjectsSyncService {
     accessToken: string, 
     tenantId: string, 
     projectId: string
-  ): Promise<ProjectTask[]> {
+  ): Promise<XeroTask[]> {
     try {
       await waitForXeroRateLimit(tenantId);
       
@@ -364,7 +332,6 @@ export class XeroProjectsSyncService {
         if (response.status === 404) {
           return [];
         }
-        const errorText = await response.text();
         logger.warn({ 
           projectId, 
           status: response.status 
@@ -438,7 +405,7 @@ export class XeroProjectsSyncService {
     projectCount: number;
   }> {
     try {
-      const { projectsCollection } = await this.initializeDb(tenantId);
+      const projectsCollection = await this.initializeDb(tenantId);
 
       const lastProject = await projectsCollection
         .findOne(
@@ -464,7 +431,7 @@ export class XeroProjectsSyncService {
    */
   static async getStoredProjects(tenantId: string): Promise<StoredProject[]> {
     try {
-      const { projectsCollection } = await this.initializeDb(tenantId);
+      const projectsCollection = await this.initializeDb(tenantId);
 
       const projects = await projectsCollection
         .find({})

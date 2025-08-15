@@ -187,8 +187,9 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
       // Process the backend response
       if (result.success) {
         // Extract data from the backend response
-        const tasksToUpdate = result.changes?.updates?.length || 0;
-        const tasksToCreate = result.changes?.creates?.length || 0;
+        // Use summary values if available (correct counts), fallback to array lengths
+        const tasksToUpdate = result.summary?.tasksUpdated || result.changes?.updates?.length || 0;
+        const tasksToCreate = result.summary?.tasksCreated || result.changes?.creates?.length || 0;
         const totalChanges = result.summary?.total_changes || result.metadata?.total_changes || 0;
         const closedProjectsCount = result.closed_projects_with_changes?.length || 0;
         
@@ -199,11 +200,11 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
         setResults({
           success: true,
           summary: {
-            entriesProcessed: result.metadata?.entries_processed || 0,
-            projectsAnalyzed: result.summary?.total_projects_processed || result.metadata?.projects_processed || 0,
-            projectsMatched: result.summary?.total_projects_processed || 0,
-            tasksCreated: tasksToCreate,
-            tasksUpdated: tasksToUpdate,
+            entriesProcessed: result.summary?.entriesProcessed || result.metadata?.entries_processed || 0,
+            projectsAnalyzed: result.summary?.projectsAnalyzed || result.summary?.total_projects_processed || result.metadata?.projects_processed || 0,
+            projectsMatched: result.summary?.projectsMatched || result.summary?.total_projects_processed || 0,
+            tasksCreated: result.summary?.tasksCreated || tasksToCreate,
+            tasksUpdated: result.summary?.tasksUpdated || tasksToUpdate,
             tasksFailed: 0,
             actualTasksFailed: 0,
             projectsNotFound: 0,
@@ -259,6 +260,20 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
       const a = document.createElement('a');
       a.href = url;
       a.download = results.downloadableReport.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const handleDownloadRawResponse = () => {
+    if (processingResponse && processingResponse.rawBackendResponse) {
+      const blob = new Blob([processingResponse.rawBackendResponse.content], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = processingResponse.rawBackendResponse.filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -476,8 +491,10 @@ export default function TimesheetProcessingCardRefactored({ disabled = false }: 
               results={results}
               onReset={resetProcessor}
               onDownloadReport={handleDownloadReport}
+              onDownloadRawResponse={handleDownloadRawResponse}
               onProceedToUpdate={handleShowUpdatePreview}
               showUpdateButton={true}
+              hasRawResponse={!!processingResponse?.rawBackendResponse}
             />
           )}
 

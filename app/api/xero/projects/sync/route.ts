@@ -60,7 +60,8 @@ export async function GET(request: NextRequest) {
         name: p.projectData?.name,
         projectCode: p.projectCode,
         status: p.projectData?.status,
-        totalTasks: p.totalTasks,
+        tasks: p.tasks || [],  // Include actual tasks
+        totalTasks: p.tasks?.length || 0,
         totalProjectValue: p.totalProjectValue,
         lastSyncedAt: p.lastSyncedAt
       }))

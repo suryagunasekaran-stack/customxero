@@ -8,16 +8,20 @@ interface ProcessingResultsProps {
   results: DirectProcessingResult;
   onReset: () => void;
   onDownloadReport: () => void;
+  onDownloadRawResponse?: () => void;
   onProceedToUpdate?: () => void;
   showUpdateButton?: boolean;
+  hasRawResponse?: boolean;
 }
 
 export default function ProcessingResults({
   results,
   onReset,
   onDownloadReport,
+  onDownloadRawResponse,
   onProceedToUpdate,
-  showUpdateButton = false
+  showUpdateButton = false,
+  hasRawResponse = false
 }: ProcessingResultsProps) {
   
   const getStatusColor = () => {
@@ -129,6 +133,15 @@ export default function ProcessingResults({
           <DocumentArrowDownIcon className="w-4 h-4" />
           Download Report
         </button>
+        {hasRawResponse && onDownloadRawResponse && (
+          <button
+            onClick={onDownloadRawResponse}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-purple-600 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
+          >
+            <DocumentArrowDownIcon className="w-4 h-4" />
+            Raw Response
+          </button>
+        )}
       </div>
 
       {showUpdateButton && (results.summary.tasksCreated > 0 || results.summary.tasksUpdated > 0) && (
@@ -182,10 +195,10 @@ function SummaryItem({
 }
 
 function FailureDetails({ results }: { results: DirectProcessingResult }) {
-  const actualFailures = results.results.filter(
+  const actualFailures = (results.results || []).filter(
     r => !r.success && !r.error?.includes('not found in active Xero projects')
   );
-  const notFoundFailures = results.results.filter(
+  const notFoundFailures = (results.results || []).filter(
     r => !r.success && r.error?.includes('not found in active Xero projects')
   );
 
@@ -296,50 +309,104 @@ function ClosedProjectsList({ closedProjects }: { closedProjects: any[] }) {
 }
 
 function ClosedProjectsWarning({ closedProjects }: { closedProjects: any[] }) {
+  const [expandedProjects, setExpandedProjects] = React.useState<Set<string>>(new Set());
+
+  const toggleExpanded = (projectCode: string) => {
+    const newExpanded = new Set(expandedProjects);
+    if (newExpanded.has(projectCode)) {
+      newExpanded.delete(projectCode);
+    } else {
+      newExpanded.add(projectCode);
+    }
+    setExpandedProjects(newExpanded);
+  };
+
   return (
-    <div className="border border-amber-200 bg-amber-50 rounded-lg p-4">
+    <div className="border border-amber-200 bg-amber-50 rounded-xl p-6 shadow-sm">
       <div className="flex items-start space-x-3">
-        <ExclamationTriangleIcon className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+        <ExclamationTriangleIcon className="h-6 w-6 text-amber-600 mt-0.5 flex-shrink-0" />
         <div className="flex-1">
-          <h3 className="text-sm font-semibold text-amber-800 mb-2">
-            Warning: Changes Requested for Closed Projects ({closedProjects.length})
+          <h3 className="text-lg font-semibold text-amber-800 mb-3">
+            Closed Projects with Requested Changes ({closedProjects.length})
           </h3>
-          <p className="text-xs text-amber-700 mb-3">
-            The following projects are marked as CLOSED or COMPLETED but have changes in the timesheet. 
-            Review these carefully before applying updates:
+          <p className="text-sm text-amber-700 mb-4">
+            These projects are marked as CLOSED/COMPLETED in Xero but have changes in the timesheet:
           </p>
           
-          <div className="space-y-2 max-h-40 overflow-y-auto">
+          <div className="space-y-3 max-h-96 overflow-y-auto">
             {closedProjects.map((project, idx) => (
-              <div key={idx} className="bg-white bg-opacity-70 rounded p-2 text-xs">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-900">
-                      {project.projectCode} - {project.projectName}
-                    </p>
-                    <p className="text-gray-600 mt-0.5">
-                      Status: <span className="font-medium">{project.status}</span>
-                    </p>
+              <div key={idx} className="bg-white bg-opacity-90 rounded-xl border border-amber-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200">
+                <button
+                  onClick={() => toggleExpanded(project.projectCode)}
+                  className="w-full p-4 text-left hover:bg-amber-50 transition-colors duration-200"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900 text-sm">
+                        {project.projectCode} - {project.projectName}
+                      </p>
+                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-600">
+                        <span>Status: <span className="font-medium text-amber-700">{project.status}</span></span>
+                        <span className="text-amber-600 font-medium">
+                          {project.tasksToUpdate > 0 && `${project.tasksToUpdate} update${project.tasksToUpdate > 1 ? 's' : ''}`}
+                          {project.tasksToUpdate > 0 && project.tasksToCreate > 0 && ' • '}
+                          {project.tasksToCreate > 0 && `${project.tasksToCreate} new task${project.tasksToCreate > 1 ? 's' : ''}`}
+                        </span>
+                      </div>
+                    </div>
+                    <svg 
+                      className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${expandedProjects.has(project.projectCode) ? 'rotate-180' : ''}`}
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
                   </div>
-                  <div className="text-right ml-4">
-                    <p className="text-amber-700">
-                      {project.tasksToUpdate > 0 && (
-                        <span className="block">Updates: {project.tasksToUpdate}</span>
+                </button>
+                
+                {expandedProjects.has(project.projectCode) && project.changes && (
+                  <div className="border-t border-amber-100 px-4 py-3 bg-white bg-opacity-50">
+                    <div className="space-y-3">
+                      {project.changes.creates && project.changes.creates.length > 0 && (
+                        <div>
+                          <p className="text-sm font-semibold text-green-700 mb-2">New Tasks to Create:</p>
+                          <div className="space-y-1 pl-3">
+                            {project.changes.creates.map((task: any, tIdx: number) => (
+                              <div key={tIdx} className="text-sm text-gray-700">
+                                • {task.name || task.payload?.name} - 
+                                <span className="text-gray-600 font-medium"> {task.payload?.estimateMinutes || 0} mins @ ${task.payload?.rate?.value || 0}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
-                      {project.tasksToCreate > 0 && (
-                        <span className="block">New Tasks: {project.tasksToCreate}</span>
+                      
+                      {project.changes.updates && project.changes.updates.length > 0 && (
+                        <div>
+                          <p className="text-sm font-semibold text-blue-700 mb-2">Tasks to Update:</p>
+                          <div className="space-y-1 pl-3">
+                            {project.changes.updates.map((task: any, tIdx: number) => (
+                              <div key={tIdx} className="text-sm text-gray-700">
+                                • {task.name || task.payload?.name} - 
+                                <span className="text-gray-600 font-medium"> {task.payload?.estimateMinutes || 0} mins @ ${task.payload?.rate?.value || 0}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
-                    </p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             ))}
           </div>
           
-          <p className="text-xs text-amber-600 mt-3">
-            <strong>Important:</strong> Updating closed projects may require reopening them in Xero. 
-            Verify with project managers before proceeding.
-          </p>
+          <div className="mt-4 p-3 bg-amber-100 bg-opacity-50 rounded-lg">
+            <p className="text-sm text-amber-700 font-medium">
+              ⚠️ These projects will be skipped during updates. Contact project managers to reopen if needed.
+            </p>
+          </div>
         </div>
       </div>
     </div>
